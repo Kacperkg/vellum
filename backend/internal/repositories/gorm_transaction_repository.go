@@ -44,17 +44,28 @@ func (r *GormTransactionRepository) FindByUserID(userID uuid.UUID) ([]*models.Tr
 	return transactions, nil
 }
 
-func (r *GormTransactionRepository) Update(transaction *models.Transaction) error {
-	return r.db.Save(transaction).Error
+func (r *GormTransactionRepository) Update(userID uuid.UUID, transaction *models.Transaction) error {
+	result := r.db.Model(&models.Transaction{}).
+		Where("id = ? AND user_id = ?", transaction.ID, userID).
+		Updates(map[string]any{
+			"name":        transaction.Name,
+			"amount":      transaction.Amount,
+			"account_id":  transaction.AccountID,
+			"category_id": transaction.CategoryID,
+			"date":        transaction.Date,
+			"frequency":   transaction.Frequency,
+			"type":        transaction.Type,
+		})
+	return mutationError(result)
 }
 
-func (r *GormTransactionRepository) Delete(id uuid.UUID) error {
-	return r.db.Delete(&models.Transaction{}, "id = ?", id).Error
+func (r *GormTransactionRepository) Delete(userID, id uuid.UUID) error {
+	return mutationError(r.db.Delete(&models.Transaction{}, "id = ? AND user_id = ?", id, userID))
 }
 
-func (r *GormTransactionRepository) FindByAccountID(accountID uuid.UUID) ([]*models.Transaction, error) {
+func (r *GormTransactionRepository) FindByAccountID(userID, accountID uuid.UUID) ([]*models.Transaction, error) {
 	var transactions []*models.Transaction
-	err := r.db.Where("account_id = ?", accountID).Find(&transactions).Error
+	err := r.db.Where("account_id = ? AND user_id = ?", accountID, userID).Find(&transactions).Error
 	if err != nil {
 		return nil, err
 	}

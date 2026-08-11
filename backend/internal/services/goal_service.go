@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/google/uuid"
@@ -152,8 +153,11 @@ func (s *GoalService) Update(userID uuid.UUID, goalID uuid.UUID, req dto.UpdateG
 	goal.SavedAmount = newSavedAmount
 	goal.MonthlyContribution = newMonthlyContribution
 
-	err = s.goalRepository.Update(goal)
+	err = s.goalRepository.Update(userID, goal)
 	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return nil, ErrGoalNotFound
+		}
 		return nil, err
 	}
 
@@ -180,9 +184,12 @@ func (s *GoalService) Delete(userID uuid.UUID, goalID uuid.UUID) error {
 		return ErrGoalNotFound
 	}
 
-	err = s.goalRepository.Delete(goalID)
+	err = s.goalRepository.Delete(userID, goalID)
 
 	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return ErrGoalNotFound
+		}
 		return err
 	}
 

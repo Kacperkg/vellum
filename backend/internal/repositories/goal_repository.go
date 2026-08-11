@@ -9,6 +9,6 @@ type GoalRepository interface {
 	Create(goal *models.Goal) error
 	FindByID(id uuid.UUID) (*models.Goal, error)
 	FindByUserID(userID uuid.UUID) ([]*models.Goal, error)
-	Update(goal *models.Goal) error
-	Delete(id uuid.UUID) error
+	Update(userID uuid.UUID, goal *models.Goal) error
+	Delete(userID, id uuid.UUID) error
 }

@@ -30,8 +30,16 @@ func (r *GormUserSettingsRepository) FindByUserID(userID uuid.UUID) (*models.Use
 	return &settings, nil
 }
 
-func (r *GormUserSettingsRepository) Update(settings *models.UserSettings) error {
-	return r.db.Save(settings).Error
+func (r *GormUserSettingsRepository) Update(userID uuid.UUID, settings *models.UserSettings) error {
+	result := r.db.Model(&models.UserSettings{}).
+		Where("id = ? AND user_id = ?", settings.ID, userID).
+		Updates(map[string]any{
+			"currency":       settings.Currency,
+			"date_format":    settings.DateFormat,
+			"number_format":  settings.NumberFormat,
+			"week_starts_on": settings.WeekStartsOn,
+		})
+	return mutationError(result)
 }
 
 func (r *GormUserSettingsRepository) Create(settings *models.UserSettings) error {

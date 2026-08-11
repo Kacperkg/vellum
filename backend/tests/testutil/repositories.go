@@ -27,13 +27,13 @@ func (r *AccountRepository) GetByID(uuid.UUID) (*models.Account, error) { return
 func (r *AccountRepository) FindByUserID(uuid.UUID) ([]*models.Account, error) {
 	return r.Accounts, r.Err
 }
-func (r *AccountRepository) Update(value *models.Account) error {
+func (r *AccountRepository) Update(_ uuid.UUID, value *models.Account) error {
 	if r.Err == nil {
 		r.Updated = value
 	}
 	return r.Err
 }
-func (r *AccountRepository) Delete(id uuid.UUID) error {
+func (r *AccountRepository) Delete(_ uuid.UUID, id uuid.UUID) error {
 	if r.Err == nil {
 		r.Deleted = id
 	}
@@ -58,13 +58,13 @@ func (r *BudgetRepository) Create(value *models.Budget) error {
 	}
 	return r.Err
 }
-func (r *BudgetRepository) Update(value *models.Budget) error {
+func (r *BudgetRepository) Update(_ uuid.UUID, value *models.Budget) error {
 	if r.Err == nil {
 		r.Updated = value
 	}
 	return r.Err
 }
-func (r *BudgetRepository) Delete(id uuid.UUID) error {
+func (r *BudgetRepository) Delete(_ uuid.UUID, id uuid.UUID) error {
 	if r.Err == nil {
 		r.Deleted = id
 	}
@@ -98,13 +98,13 @@ func (r *GoalRepository) Create(value *models.Goal) error {
 }
 func (r *GoalRepository) FindByID(uuid.UUID) (*models.Goal, error)       { return r.Goal, r.Err }
 func (r *GoalRepository) FindByUserID(uuid.UUID) ([]*models.Goal, error) { return r.Goals, r.Err }
-func (r *GoalRepository) Update(value *models.Goal) error {
+func (r *GoalRepository) Update(_ uuid.UUID, value *models.Goal) error {
 	if r.Err == nil {
 		r.Updated = value
 	}
 	return r.Err
 }
-func (r *GoalRepository) Delete(id uuid.UUID) error {
+func (r *GoalRepository) Delete(_ uuid.UUID, id uuid.UUID) error {
 	if r.Err == nil {
 		r.Deleted = id
 	}
@@ -133,13 +133,13 @@ func (r *TransactionRepository) FindByID(uuid.UUID) (*models.Transaction, error)
 func (r *TransactionRepository) FindByUserID(uuid.UUID) ([]*models.Transaction, error) {
 	return r.Transactions, r.Err
 }
-func (r *TransactionRepository) Update(value *models.Transaction) error {
+func (r *TransactionRepository) Update(_ uuid.UUID, value *models.Transaction) error {
 	if r.Err == nil {
 		r.Updated = value
 	}
 	return r.Err
 }
-func (r *TransactionRepository) Delete(id uuid.UUID) error {
+func (r *TransactionRepository) Delete(_ uuid.UUID, id uuid.UUID) error {
 	if r.Err == nil {
 		r.Deleted = id
 	}
@@ -154,7 +154,7 @@ func (r *TransactionRepository) FindByDateRange(uuid.UUID, time.Time, time.Time)
 func (r *TransactionRepository) FindByFrequency(uuid.UUID, models.Frequency) ([]*models.Transaction, error) {
 	return r.Transactions, r.Err
 }
-func (r *TransactionRepository) FindByAccountID(uuid.UUID) ([]*models.Transaction, error) {
+func (r *TransactionRepository) FindByAccountID(uuid.UUID, uuid.UUID) ([]*models.Transaction, error) {
 	return r.Transactions, r.Err
 }
 
@@ -184,7 +184,7 @@ type UserSettingsRepository struct {
 func (r *UserSettingsRepository) FindByUserID(uuid.UUID) (*models.UserSettings, error) {
 	return r.Settings, r.Err
 }
-func (r *UserSettingsRepository) Update(value *models.UserSettings) error {
+func (r *UserSettingsRepository) Update(_ uuid.UUID, value *models.UserSettings) error {
 	if r.Err == nil {
 		r.Updated = value
 	}

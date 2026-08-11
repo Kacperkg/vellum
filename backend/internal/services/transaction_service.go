@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -117,7 +118,10 @@ func (s *TransactionService) Update(userID, transactionID uuid.UUID, req dto.Upd
 	transaction.Frequency = req.Frequency
 	transaction.Type = req.Type
 
-	if err := s.transactionRepository.Update(transaction); err != nil {
+	if err := s.transactionRepository.Update(userID, transaction); err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return nil, ErrTransactionNotFound
+		}
 		return nil, err
 	}
 
@@ -133,7 +137,11 @@ func (s *TransactionService) Delete(userID, transactionID uuid.UUID) error {
 		return ErrTransactionNotFound
 	}
 
-	return s.transactionRepository.Delete(transactionID)
+	err = s.transactionRepository.Delete(userID, transactionID)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return ErrTransactionNotFound
+	}
+	return err
 }
 
 func (s *TransactionService) FindByAccountID(userID, accountID uuid.UUID) ([]*dto.TransactionResponse, error) {
@@ -141,7 +149,7 @@ func (s *TransactionService) FindByAccountID(userID, accountID uuid.UUID) ([]*dt
 		return nil, err
 	}
 
-	transactions, err := s.transactionRepository.FindByAccountID(accountID)
+	transactions, err := s.transactionRepository.FindByAccountID(userID, accountID)
 	if err != nil {
 		return nil, err
 	}

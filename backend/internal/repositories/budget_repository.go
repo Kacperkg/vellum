@@ -9,6 +9,6 @@ type BudgetRepository interface {
 	FindByID(id uuid.UUID) (*models.Budget, error)
 	FindByUserID(userID uuid.UUID) ([]*models.Budget, error)
 	Create(budget *models.Budget) error
-	Update(budget *models.Budget) error
-	Delete(id uuid.UUID) error
+	Update(userID uuid.UUID, budget *models.Budget) error
+	Delete(userID, id uuid.UUID) error
 }

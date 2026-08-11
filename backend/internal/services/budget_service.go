@@ -1,6 +1,8 @@
 package services
 
 import (
+	"errors"
+
 	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/dto"
 	"github.com/kacperkg/vellum/internal/models"
@@ -96,8 +98,11 @@ func (s *BudgetService) Update(userID uuid.UUID, budgetID uuid.UUID, req dto.Upd
 	budget.CategoryID = category.ID
 	budget.AllocatedAmount = newAllocation
 
-	err = s.budgetRepository.Update(budget)
+	err = s.budgetRepository.Update(userID, budget)
 	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return nil, ErrBudgetNotFound
+		}
 		return nil, err
 	}
 
@@ -122,9 +127,12 @@ func (s *BudgetService) Delete(userID uuid.UUID, budgetID uuid.UUID) error {
 		return ErrBudgetNotFound
 	}
 
-	err = s.budgetRepository.Delete(budgetID)
+	err = s.budgetRepository.Delete(userID, budgetID)
 
 	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return ErrBudgetNotFound
+		}
 		return err
 	}
 

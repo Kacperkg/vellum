@@ -43,10 +43,18 @@ func (r *GormGoalRepository) FindByUserID(userID uuid.UUID) ([]*models.Goal, err
 	return goals, nil
 }
 
-func (r *GormGoalRepository) Update(goal *models.Goal) error {
-	return r.db.Save(goal).Error
+func (r *GormGoalRepository) Update(userID uuid.UUID, goal *models.Goal) error {
+	result := r.db.Model(&models.Goal{}).
+		Where("id = ? AND user_id = ?", goal.ID, userID).
+		Updates(map[string]any{
+			"name":                 goal.Name,
+			"target_amount":        goal.TargetAmount,
+			"saved_amount":         goal.SavedAmount,
+			"monthly_contribution": goal.MonthlyContribution,
+		})
+	return mutationError(result)
 }
 
-func (r *GormGoalRepository) Delete(id uuid.UUID) error {
-	return r.db.Delete(&models.Goal{}, "id = ?", id).Error
+func (r *GormGoalRepository) Delete(userID, id uuid.UUID) error {
+	return mutationError(r.db.Delete(&models.Goal{}, "id = ? AND user_id = ?", id, userID))
 }

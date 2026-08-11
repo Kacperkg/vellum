@@ -43,10 +43,16 @@ func (r *GormBudgetRepository) FindByUserID(userID uuid.UUID) ([]*models.Budget,
 	return budgets, nil
 }
 
-func (r *GormBudgetRepository) Update(budget *models.Budget) error {
-	return r.db.Save(budget).Error
+func (r *GormBudgetRepository) Update(userID uuid.UUID, budget *models.Budget) error {
+	result := r.db.Model(&models.Budget{}).
+		Where("id = ? AND user_id = ?", budget.ID, userID).
+		Updates(map[string]any{
+			"category_id":      budget.CategoryID,
+			"allocated_amount": budget.AllocatedAmount,
+		})
+	return mutationError(result)
 }
 
-func (r *GormBudgetRepository) Delete(id uuid.UUID) error {
-	return r.db.Delete(&models.Budget{}, "id = ?", id).Error
+func (r *GormBudgetRepository) Delete(userID, id uuid.UUID) error {
+	return mutationError(r.db.Delete(&models.Budget{}, "id = ? AND user_id = ?", id, userID))
 }

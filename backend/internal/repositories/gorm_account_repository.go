@@ -43,10 +43,13 @@ func (r *GormAccountRepository) FindByUserID(userID uuid.UUID) ([]*models.Accoun
 	return accounts, nil
 }
 
-func (r *GormAccountRepository) Update(account *models.Account) error {
-	return r.db.Save(account).Error
+func (r *GormAccountRepository) Update(userID uuid.UUID, account *models.Account) error {
+	result := r.db.Model(&models.Account{}).
+		Where("id = ? AND user_id = ?", account.ID, userID).
+		Update("name", account.Name)
+	return mutationError(result)
 }
 
-func (r *GormAccountRepository) Delete(id uuid.UUID) error {
-	return r.db.Delete(&models.Account{}, "id = ?", id).Error
+func (r *GormAccountRepository) Delete(userID, id uuid.UUID) error {
+	return mutationError(r.db.Delete(&models.Account{}, "id = ? AND user_id = ?", id, userID))
 }

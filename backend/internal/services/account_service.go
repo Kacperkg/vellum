@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/google/uuid"
@@ -121,8 +122,11 @@ func (s *AccountService) Update(userID uuid.UUID, accountID uuid.UUID, req dto.U
 	account.Name = newName
 
 	// Update the name to the repository
-	err = s.accountRepository.Update(account)
+	err = s.accountRepository.Update(userID, account)
 	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return nil, ErrAccountNotFound
+		}
 		return nil, err
 	}
 
@@ -149,9 +153,12 @@ func (s *AccountService) Delete(userID uuid.UUID, accountID uuid.UUID) error {
 		return ErrAccountNotFound
 	}
 
-	err = s.accountRepository.Delete(accountID)
+	err = s.accountRepository.Delete(userID, accountID)
 
 	if err != nil {
+		if errors.Is(err, repositories.ErrNotFound) {
+			return ErrAccountNotFound
+		}
 		return err
 	}
 
