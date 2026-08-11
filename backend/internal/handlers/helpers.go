@@ -44,7 +44,8 @@ func respondWithServiceError(c *gin.Context, err error) {
 	case errors.Is(err, services.ErrAccountNotFound),
 		errors.Is(err, services.ErrBudgetNotFound),
 		errors.Is(err, services.ErrCategoryNotFound),
-		errors.Is(err, services.ErrGoalNotFound):
+		errors.Is(err, services.ErrGoalNotFound),
+		errors.Is(err, services.ErrTransactionNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrUserEmailExists):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
@@ -55,7 +56,14 @@ func respondWithServiceError(c *gin.Context, err error) {
 		errors.Is(err, services.ErrGoalTargetPositive),
 		errors.Is(err, services.ErrGoalSavedAmountNegative),
 		errors.Is(err, services.ErrGoalSavedExceedsTarget),
-		errors.Is(err, services.ErrGoalContributionNegative):
+		errors.Is(err, services.ErrGoalContributionNegative),
+		errors.Is(err, services.ErrTransactionAccountRequired),
+		errors.Is(err, services.ErrTransactionAmountPositive),
+		errors.Is(err, services.ErrTransactionDateRange),
+		errors.Is(err, services.ErrTransactionDateRequired),
+		errors.Is(err, services.ErrTransactionFrequency),
+		errors.Is(err, services.ErrTransactionNameRequired),
+		errors.Is(err, services.ErrTransactionType):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
