@@ -27,11 +27,11 @@ func GenerateToken(userID uuid.UUID, secret string, expiry time.Duration) (strin
 
 func ValidateToken(tokenString string, secret string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(
-		tokenString, 
-		&Claims{}, 
+		tokenString,
+		&Claims{},
 		func(token *jwt.Token) (interface{}, error) {
-		return []byte(secret), nil
-	})
+			return []byte(secret), nil
+		})
 
 	if err != nil {
 		return nil, err

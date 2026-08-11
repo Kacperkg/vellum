@@ -19,24 +19,23 @@ type Config struct {
 
 	JWTSecret string
 	JWTExpiry string
-
 }
 
 func Load() *Config {
-	if err := godotenv.Load(); err != nil{
+	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
 	}
 
 	return &Config{
-		Port: required("PORT"),
-		DBHost: required("DB_HOST"),
-		DBPort: required("DB_PORT"),
-		DBUser: required("DB_USER"),
+		Port:       required("PORT"),
+		DBHost:     required("DB_HOST"),
+		DBPort:     required("DB_PORT"),
+		DBUser:     required("DB_USER"),
 		DBPassword: required("DB_PASSWORD"),
-		DBName: required("DB_NAME"),
-		DBSSLMode: required("DB_SSLMODE"),
-		JWTSecret: required("JWT_SECRET"),
-		JWTExpiry: required("JWT_EXPIRY"),
+		DBName:     required("DB_NAME"),
+		DBSSLMode:  required("DB_SSLMODE"),
+		JWTSecret:  required("JWT_SECRET"),
+		JWTExpiry:  required("JWT_EXPIRY"),
 	}
 }
 
