@@ -10,5 +10,5 @@ type Budget struct {
 
 	CategoryID uuid.UUID `gorm:"type:uuid;not null"`
 
-	AllocatedAmount float64 `gorm:"not null"`
+	AllocatedAmount int64 `gorm:"not null"`
 }

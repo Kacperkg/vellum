@@ -1,7 +1,6 @@
 package services
 
 import (
-	"errors"
 	"strings"
 
 	"github.com/google/uuid"
@@ -24,7 +23,7 @@ func (s *AccountService) Create(userID uuid.UUID, req dto.CreateAccountRequest) 
 	// Validate the request
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return nil, errors.New("account name required")
+		return nil, ErrAccountNameRequired
 	}
 
 	// Create the model with information provided
@@ -59,12 +58,12 @@ func (s *AccountService) GetByID(userID uuid.UUID, accountID uuid.UUID) (*dto.Ac
 
 	// Check if the account exists
 	if account == nil {
-		return nil, errors.New("account not found")
+		return nil, ErrAccountNotFound
 	}
 
 	// Check if the account belongs to the user - dont reveal account ownership to unauthorized users
 	if account.UserID != userID {
-		return nil, errors.New("account not found")
+		return nil, ErrAccountNotFound
 	}
 
 	return &dto.AccountResponse{
@@ -104,18 +103,18 @@ func (s *AccountService) Update(userID uuid.UUID, accountID uuid.UUID, req dto.U
 
 	// Check if the account exists
 	if account == nil {
-		return nil, errors.New("account not found")
+		return nil, ErrAccountNotFound
 	}
 
 	// Check if the account belongs to the user - dont reveal account ownership to unauthorized users
 	if account.UserID != userID {
-		return nil, errors.New("account not found")
+		return nil, ErrAccountNotFound
 	}
 
 	// Validate the new name
 	newName := strings.TrimSpace(req.Name)
 	if newName == "" {
-		return nil, errors.New("account name required")
+		return nil, ErrAccountNameRequired
 	}
 
 	// Set the new name on the existing account
@@ -142,12 +141,12 @@ func (s *AccountService) Delete(userID uuid.UUID, accountID uuid.UUID) error {
 
 	// Check if the account exists
 	if account == nil {
-		return errors.New("account not found")
+		return ErrAccountNotFound
 	}
 
 	// Check if the account belongs to the user - dont reveal account ownership to unauthorized users
 	if account.UserID != userID {
-		return errors.New("account not found")
+		return ErrAccountNotFound
 	}
 
 	err = s.accountRepository.Delete(accountID)

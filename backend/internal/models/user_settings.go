@@ -5,13 +5,13 @@ import (
 )
 
 type UserSettings struct {
-    BaseModel
+	BaseModel
 
-    UserID uuid.UUID `gorm:"type:uuid;not null"`
-    User User `gorm:"foreignKey:UserID"`
+	UserID uuid.UUID `gorm:"type:uuid;not null"`
+	User   User      `gorm:"foreignKey:UserID"`
 
-    Currency Currency `gorm:"not null"`
-    DateFormat DateFormat `gorm:"not null"`
-    NumberFormat NumberFormat `gorm:"not null"`
-    WeekStartsOn WeekStartsOn `gorm:"not null"`
+	Currency     Currency     `gorm:"not null"`
+	DateFormat   DateFormat   `gorm:"not null"`
+	NumberFormat NumberFormat `gorm:"not null"`
+	WeekStartsOn WeekStartsOn `gorm:"not null"`
 }

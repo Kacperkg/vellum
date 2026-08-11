@@ -8,44 +8,44 @@ import (
 )
 
 type CreateTransactionRequest struct {
-	Name   string
-	Amount float64
+	Name   string `json:"name" binding:"required"`
+	Amount int64  `json:"amount" binding:"required,gt=0"`
 
-	AccountID uuid.UUID
+	AccountID uuid.UUID `json:"account_id" binding:"required"`
 
-	CategoryID uuid.UUID
+	CategoryID uuid.UUID `json:"category_id" binding:"required"`
 
-	Date time.Time
+	Date time.Time `json:"date" binding:"required"`
 
-	Frequency models.Frequency
-	Type      models.TransactionType
+	Frequency models.Frequency       `json:"frequency" binding:"required,oneof=one-off daily weekly monthly yearly"`
+	Type      models.TransactionType `json:"type" binding:"required,oneof=income expense"`
 }
 
 type UpdateTransactionRequest struct {
-	Name   string
-	Amount float64
+	Name   string `json:"name" binding:"required"`
+	Amount int64  `json:"amount" binding:"required,gt=0"`
 
-	AccountID uuid.UUID
+	AccountID uuid.UUID `json:"account_id" binding:"required"`
 
-	CategoryID uuid.UUID
+	CategoryID uuid.UUID `json:"category_id" binding:"required"`
 
-	Date time.Time
+	Date time.Time `json:"date" binding:"required"`
 
-	Frequency models.Frequency
-	Type      models.TransactionType
+	Frequency models.Frequency       `json:"frequency" binding:"required,oneof=one-off daily weekly monthly yearly"`
+	Type      models.TransactionType `json:"type" binding:"required,oneof=income expense"`
 }
 
 type TransactionResponse struct {
-	ID     uuid.UUID
-	Name   string
-	Amount float64
+	ID     uuid.UUID `json:"id"`
+	Name   string    `json:"name"`
+	Amount int64     `json:"amount"`
 
-	AcountID uuid.UUID
+	AccountID uuid.UUID `json:"account_id"`
 
-	CategoryID uuid.UUID
+	CategoryID uuid.UUID `json:"category_id"`
 
-	Date time.Time
+	Date time.Time `json:"date"`
 
-	Frequency models.Frequency
-	Type      models.TransactionType
+	Frequency models.Frequency       `json:"frequency"`
+	Type      models.TransactionType `json:"type"`
 }

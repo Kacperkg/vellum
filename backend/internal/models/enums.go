@@ -13,7 +13,7 @@ const (
 type TransactionType string
 
 const (
-	Income TransactionType = "income"
+	Income  TransactionType = "income"
 	Expense TransactionType = "expense"
 )
 

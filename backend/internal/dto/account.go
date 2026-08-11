@@ -5,14 +5,14 @@ import (
 )
 
 type CreateAccountRequest struct {
-	Name string
+	Name string `json:"name" binding:"required"`
 }
 
 type UpdateAccountRequest struct {
-	Name string
+	Name string `json:"name" binding:"required"`
 }
 
 type AccountResponse struct {
-	ID   uuid.UUID
-	Name string
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
 }

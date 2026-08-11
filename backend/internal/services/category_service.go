@@ -1,8 +1,6 @@
 package services
 
 import (
-	"errors"
-
 	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/dto"
 	"github.com/kacperkg/vellum/internal/repositories"
@@ -25,7 +23,7 @@ func (s *CategoryService) FindByID(categoryID uuid.UUID) (*dto.CategoryResponse,
 	}
 
 	if category == nil {
-		return nil, errors.New("category not found")
+		return nil, ErrCategoryNotFound
 	}
 
 	return &dto.CategoryResponse{

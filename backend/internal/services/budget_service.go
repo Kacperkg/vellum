@@ -1,8 +1,6 @@
 package services
 
 import (
-	"errors"
-
 	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/dto"
 	"github.com/kacperkg/vellum/internal/models"
@@ -28,11 +26,11 @@ func (s *BudgetService) FindByID(userID uuid.UUID, budgetID uuid.UUID) (*dto.Bud
 	}
 
 	if budget == nil {
-		return nil, errors.New("budget not found")
+		return nil, ErrBudgetNotFound
 	}
 
 	if budget.UserID != userID {
-		return nil, errors.New("budget not found")
+		return nil, ErrBudgetNotFound
 	}
 
 	return &dto.BudgetResponse{
@@ -68,16 +66,16 @@ func (s *BudgetService) Update(userID uuid.UUID, budgetID uuid.UUID, req dto.Upd
 	}
 
 	if budget == nil {
-		return nil, errors.New("budget not found")
+		return nil, ErrBudgetNotFound
 	}
 
 	if budget.UserID != userID {
-		return nil, errors.New("budget not found")
+		return nil, ErrBudgetNotFound
 	}
 
 	newCategory := req.CategoryID
 	if newCategory == uuid.Nil {
-		return nil, errors.New("category is required")
+		return nil, ErrCategoryRequired
 	}
 
 	category, err := s.categoryRepository.FindByID(newCategory)
@@ -87,12 +85,12 @@ func (s *BudgetService) Update(userID uuid.UUID, budgetID uuid.UUID, req dto.Upd
 	}
 
 	if category == nil {
-		return nil, errors.New("category does not exist")
+		return nil, ErrCategoryNotFound
 	}
 
 	newAllocation := req.AllocatedAmount
 	if newAllocation <= 0 {
-		return nil, errors.New("allocated amount must be positive")
+		return nil, ErrAllocatedAmountPositive
 	}
 
 	budget.CategoryID = category.ID
@@ -117,11 +115,11 @@ func (s *BudgetService) Delete(userID uuid.UUID, budgetID uuid.UUID) error {
 	}
 
 	if budget == nil {
-		return errors.New("budget not found")
+		return ErrBudgetNotFound
 	}
 
 	if budget.UserID != userID {
-		return errors.New("budget not found")
+		return ErrBudgetNotFound
 	}
 
 	err = s.budgetRepository.Delete(budgetID)
@@ -137,7 +135,7 @@ func (s *BudgetService) Create(userID uuid.UUID, req dto.CreateBudgetRequest) (*
 	categoryID := req.CategoryID
 
 	if categoryID == uuid.Nil {
-		return nil, errors.New("category is required")
+		return nil, ErrCategoryRequired
 	}
 
 	category, err := s.categoryRepository.FindByID(categoryID)
@@ -147,13 +145,13 @@ func (s *BudgetService) Create(userID uuid.UUID, req dto.CreateBudgetRequest) (*
 	}
 
 	if category == nil {
-		return nil, errors.New("category does not exist")
+		return nil, ErrCategoryNotFound
 	}
 
 	allocatedAmount := req.AllocatedAmount
 
 	if allocatedAmount <= 0 {
-		return nil, errors.New("allocated amount must be positive")
+		return nil, ErrAllocatedAmountPositive
 	}
 
 	budget := &models.Budget{

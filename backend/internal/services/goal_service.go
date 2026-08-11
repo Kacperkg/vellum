@@ -1,7 +1,6 @@
 package services
 
 import (
-	"errors"
 	"strings"
 
 	"github.com/google/uuid"
@@ -23,22 +22,25 @@ func NewGoalService(goalRepository repositories.GoalRepository) *GoalService {
 func (s *GoalService) Create(userID uuid.UUID, req dto.CreateGoalRequest) (*dto.GoalResponse, error) {
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return nil, errors.New("goal name required")
+		return nil, ErrGoalNameRequired
 	}
 
 	targetAmount := req.TargetAmount
 	if targetAmount <= 0 {
-		return nil, errors.New("goal target must be positive value")
+		return nil, ErrGoalTargetPositive
 	}
 
 	savedAmount := req.SavedAmount
 	if savedAmount < 0 {
-		return nil, errors.New("goal current saved amount must be positive value or 0")
+		return nil, ErrGoalSavedAmountNegative
+	}
+	if savedAmount > targetAmount {
+		return nil, ErrGoalSavedExceedsTarget
 	}
 
 	monthlyContribution := req.MonthlyContribution
-	if monthlyContribution <= 0 {
-		return nil, errors.New("goal contribution must be positive")
+	if monthlyContribution < 0 {
+		return nil, ErrGoalContributionNegative
 	}
 
 	goal := &models.Goal{
@@ -71,11 +73,11 @@ func (s *GoalService) GetByID(userID uuid.UUID, goalID uuid.UUID) (*dto.GoalResp
 	}
 
 	if goal == nil {
-		return nil, errors.New("goal not found")
+		return nil, ErrGoalNotFound
 	}
 
 	if goal.UserID != userID {
-		return nil, errors.New("goal not found")
+		return nil, ErrGoalNotFound
 	}
 
 	return &dto.GoalResponse{
@@ -115,31 +117,34 @@ func (s *GoalService) Update(userID uuid.UUID, goalID uuid.UUID, req dto.UpdateG
 	}
 
 	if goal == nil {
-		return nil, errors.New("goal not found")
+		return nil, ErrGoalNotFound
 	}
 
 	if goal.UserID != userID {
-		return nil, errors.New("goal not found")
+		return nil, ErrGoalNotFound
 	}
 
 	newName := strings.TrimSpace(req.Name)
 	if newName == "" {
-		return nil, errors.New("goal name required")
+		return nil, ErrGoalNameRequired
 	}
 
 	newTargetAmount := req.TargetAmount
 	if newTargetAmount <= 0 {
-		return nil, errors.New("goal target must be positive value")
+		return nil, ErrGoalTargetPositive
 	}
 
 	newSavedAmount := req.SavedAmount
 	if newSavedAmount < 0 {
-		return nil, errors.New("goal current saved amount must be positive value or 0")
+		return nil, ErrGoalSavedAmountNegative
+	}
+	if newSavedAmount > newTargetAmount {
+		return nil, ErrGoalSavedExceedsTarget
 	}
 
 	newMonthlyContribution := req.MonthlyContribution
-	if newMonthlyContribution <= 0 {
-		return nil, errors.New("goal contribution must be positive")
+	if newMonthlyContribution < 0 {
+		return nil, ErrGoalContributionNegative
 	}
 
 	goal.Name = newName
@@ -168,11 +173,11 @@ func (s *GoalService) Delete(userID uuid.UUID, goalID uuid.UUID) error {
 	}
 
 	if goal == nil {
-		return errors.New("goal not found")
+		return ErrGoalNotFound
 	}
 
 	if goal.UserID != userID {
-		return errors.New("goal not found")
+		return ErrGoalNotFound
 	}
 
 	err = s.goalRepository.Delete(goalID)
