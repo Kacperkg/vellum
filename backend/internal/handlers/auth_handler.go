@@ -30,7 +30,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	response, err := h.userService.Register(req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithServiceError(c, err)
 		return
 	}
 
@@ -49,7 +49,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	response, err := h.userService.Login(req)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		respondWithServiceError(c, err)
 		return
 	}
 

@@ -34,7 +34,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 
 	response, err := h.accountService.Create(userID, req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithServiceError(c, err)
 		return
 	}
 
@@ -54,7 +54,7 @@ func (h *AccountHandler) GetByID(c *gin.Context) {
 
 	response, err := h.accountService.GetByID(userID, accountID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithServiceError(c, err)
 		return
 	}
 
@@ -69,7 +69,7 @@ func (h *AccountHandler) ListByUser(c *gin.Context) {
 
 	accounts, err := h.accountService.FindByUserID(userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithServiceError(c, err)
 		return
 	}
 
@@ -97,7 +97,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 
 	response, err := h.accountService.Update(userID, accountID, req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithServiceError(c, err)
 		return
 	}
 
@@ -117,7 +117,7 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 
 	err := h.accountService.Delete(userID, accountID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		respondWithServiceError(c, err)
 		return
 	}
 

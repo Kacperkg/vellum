@@ -25,7 +25,7 @@ func (h *CategoryHandler) FindByID(c *gin.Context) {
 
 	response, err := h.categoryService.FindByID(categoryID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithServiceError(c, err)
 		return
 	}
 
@@ -35,7 +35,7 @@ func (h *CategoryHandler) FindByID(c *gin.Context) {
 func (h *CategoryHandler) ListAll(c *gin.Context) {
 	response, err := h.categoryService.ListAll()
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithServiceError(c, err)
 		return
 	}
 

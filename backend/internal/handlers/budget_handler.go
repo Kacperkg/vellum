@@ -34,7 +34,7 @@ func (h *BudgetHandler) Create(c *gin.Context) {
 
 	response, err := h.budgetService.Create(userID, req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithServiceError(c, err)
 		return
 	}
 
@@ -62,7 +62,7 @@ func (h *BudgetHandler) Update(c *gin.Context) {
 
 	response, err := h.budgetService.Update(userID, budgetID, req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithServiceError(c, err)
 		return
 	}
 
@@ -82,7 +82,7 @@ func (h *BudgetHandler) FindByID(c *gin.Context) {
 
 	response, err := h.budgetService.FindByID(userID, budgetID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithServiceError(c, err)
 		return
 	}
 
@@ -97,7 +97,7 @@ func (h *BudgetHandler) ListByUser(c *gin.Context) {
 
 	response, err := h.budgetService.FindByUserID(userID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithServiceError(c, err)
 		return
 	}
 
@@ -117,7 +117,7 @@ func (h *BudgetHandler) Delete(c *gin.Context) {
 
 	err := h.budgetService.Delete(userID, budgetID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		respondWithServiceError(c, err)
 		return
 	}
 

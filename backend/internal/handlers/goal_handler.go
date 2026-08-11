@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -33,7 +32,7 @@ func (h *GoalHandler) Create(c *gin.Context) {
 
 	response, err := h.goalService.Create(userID, req)
 	if err != nil {
-		respondWithGoalError(c, err)
+		respondWithServiceError(c, err)
 		return
 	}
 
@@ -53,7 +52,7 @@ func (h *GoalHandler) GetByID(c *gin.Context) {
 
 	response, err := h.goalService.GetByID(userID, goalID)
 	if err != nil {
-		respondWithGoalError(c, err)
+		respondWithServiceError(c, err)
 		return
 	}
 
@@ -68,7 +67,7 @@ func (h *GoalHandler) ListByUser(c *gin.Context) {
 
 	response, err := h.goalService.FindByUserID(userID)
 	if err != nil {
-		respondWithGoalError(c, err)
+		respondWithServiceError(c, err)
 		return
 	}
 
@@ -94,7 +93,7 @@ func (h *GoalHandler) Update(c *gin.Context) {
 
 	response, err := h.goalService.Update(userID, goalID, req)
 	if err != nil {
-		respondWithGoalError(c, err)
+		respondWithServiceError(c, err)
 		return
 	}
 
@@ -113,24 +112,9 @@ func (h *GoalHandler) Delete(c *gin.Context) {
 	}
 
 	if err := h.goalService.Delete(userID, goalID); err != nil {
-		respondWithGoalError(c, err)
+		respondWithServiceError(c, err)
 		return
 	}
 
 	c.Status(http.StatusNoContent)
-}
-
-func respondWithGoalError(c *gin.Context, err error) {
-	switch {
-	case errors.Is(err, services.ErrGoalNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-	case errors.Is(err, services.ErrGoalNameRequired),
-		errors.Is(err, services.ErrGoalTargetPositive),
-		errors.Is(err, services.ErrGoalSavedAmountNegative),
-		errors.Is(err, services.ErrGoalSavedExceedsTarget),
-		errors.Is(err, services.ErrGoalContributionNegative):
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-	}
 }
