@@ -26,7 +26,11 @@ func getUserID(c *gin.Context) (userID uuid.UUID, ok bool) {
 }
 
 func getIDParam(c *gin.Context) (id uuid.UUID, ok bool) {
-	idParam := c.Param("id")
+	return getUUIDParam(c, "id")
+}
+
+func getUUIDParam(c *gin.Context, name string) (id uuid.UUID, ok bool) {
+	idParam := c.Param(name)
 
 	id, err := uuid.Parse(idParam)
 	if err != nil {
