@@ -180,3 +180,24 @@ func TestAuthHandler(t *testing.T) {
 		requireStatus(t, perform(router, http.MethodPost, "/login", `{"email":"ada@example.com","password":"wrongpass"}`), http.StatusUnauthorized)
 	})
 }
+
+func TestUserSettingsHandler(t *testing.T) {
+	userID := uuid.New()
+	repository := &testutil.UserSettingsRepository{Settings: &models.UserSettings{
+		BaseModel:    models.BaseModel{ID: uuid.New()},
+		UserID:       userID,
+		Currency:     models.GBP,
+		DateFormat:   models.DDMMYYYY,
+		NumberFormat: models.CommaDecimal,
+		WeekStartsOn: models.Monday,
+	}}
+	handler := handlers.NewUserSettingsHandler(services.NewUserSettingsService(repository))
+	router := authenticatedRouter(userID)
+	router.GET("/settings", handler.Get)
+	router.PUT("/settings", handler.Update)
+
+	requireStatus(t, perform(router, http.MethodGet, "/settings", ""), http.StatusOK)
+	body := `{"currency":"EUR","date_format":"YYYY-MM-DD","number_format":"dot_decimal","week_starts_on":"Sunday"}`
+	requireStatus(t, perform(router, http.MethodPut, "/settings", body), http.StatusOK)
+	requireStatus(t, perform(router, http.MethodPut, "/settings", `{}`), http.StatusBadRequest)
+}

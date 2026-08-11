@@ -49,6 +49,7 @@ func respondWithServiceError(c *gin.Context, err error) {
 		errors.Is(err, services.ErrBudgetNotFound),
 		errors.Is(err, services.ErrCategoryNotFound),
 		errors.Is(err, services.ErrGoalNotFound),
+		errors.Is(err, services.ErrSettingsNotFound),
 		errors.Is(err, services.ErrTransactionNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrUserEmailExists):
@@ -61,6 +62,10 @@ func respondWithServiceError(c *gin.Context, err error) {
 		errors.Is(err, services.ErrGoalSavedAmountNegative),
 		errors.Is(err, services.ErrGoalSavedExceedsTarget),
 		errors.Is(err, services.ErrGoalContributionNegative),
+		errors.Is(err, services.ErrSettingsCurrencyInvalid),
+		errors.Is(err, services.ErrSettingsDateFormatInvalid),
+		errors.Is(err, services.ErrSettingsNumberFormatInvalid),
+		errors.Is(err, services.ErrSettingsWeekStartInvalid),
 		errors.Is(err, services.ErrTransactionAccountRequired),
 		errors.Is(err, services.ErrTransactionAmountPositive),
 		errors.Is(err, services.ErrTransactionDateRange),

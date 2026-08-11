@@ -179,3 +179,60 @@ func TestUserService(t *testing.T) {
 		}
 	})
 }
+
+func TestUserSettingsService(t *testing.T) {
+	userID, settingsID := uuid.New(), uuid.New()
+	settings := &models.UserSettings{
+		BaseModel:    models.BaseModel{ID: settingsID},
+		UserID:       userID,
+		Currency:     models.GBP,
+		DateFormat:   models.DDMMYYYY,
+		NumberFormat: models.CommaDecimal,
+		WeekStartsOn: models.Monday,
+	}
+	repository := &testutil.UserSettingsRepository{Settings: settings}
+	service := services.NewUserSettingsService(repository)
+
+	response, err := service.Get(userID)
+	if err != nil || response.ID != settingsID || response.Currency != models.GBP {
+		t.Fatalf("Get() response=%#v error=%v", response, err)
+	}
+
+	request := dto.UpdateUserSettingsRequest{
+		Currency:     models.EUR,
+		DateFormat:   models.YYYYMMDD,
+		NumberFormat: models.DotDecimal,
+		WeekStartsOn: models.Sunday,
+	}
+	response, err = service.Update(userID, request)
+	if err != nil || repository.Updated == nil || response.Currency != models.EUR {
+		t.Fatalf("Update() response=%#v updated=%#v error=%v", response, repository.Updated, err)
+	}
+
+	t.Run("not found", func(t *testing.T) {
+		_, err := services.NewUserSettingsService(&testutil.UserSettingsRepository{}).Get(userID)
+		if !errors.Is(err, services.ErrSettingsNotFound) {
+			t.Fatalf("error=%v", err)
+		}
+	})
+
+	for _, test := range []struct {
+		name   string
+		mutate func(*dto.UpdateUserSettingsRequest)
+		want   error
+	}{
+		{"currency", func(r *dto.UpdateUserSettingsRequest) { r.Currency = "CAD" }, services.ErrSettingsCurrencyInvalid},
+		{"date format", func(r *dto.UpdateUserSettingsRequest) { r.DateFormat = "invalid" }, services.ErrSettingsDateFormatInvalid},
+		{"number format", func(r *dto.UpdateUserSettingsRequest) { r.NumberFormat = "invalid" }, services.ErrSettingsNumberFormatInvalid},
+		{"week start", func(r *dto.UpdateUserSettingsRequest) { r.WeekStartsOn = "Friday" }, services.ErrSettingsWeekStartInvalid},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req := request
+			test.mutate(&req)
+			_, err := service.Update(userID, req)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("error=%v want=%v", err, test.want)
+			}
+		})
+	}
+}
