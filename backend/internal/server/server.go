@@ -56,6 +56,11 @@ func New() (*Application, error) {
 	// Repositories
 	userRepository := repositories.NewGormUserRepository(db)
 	userSettingsRepository := repositories.NewGormUserSettingsRepository(db)
+	accountRepository := repositories.NewGormAccountRepository(db)
+	categoryRepository := repositories.NewGormCategoryRepository(db)
+	budgetRepository := repositories.NewGormBudgetRepository(db)
+	goalRepository := repositories.NewGormGoalRepository(db)
+	transactionRepository := repositories.NewGormTransactionRepository(db)
 
 	// Services
 	userService := services.NewUserService(
@@ -64,12 +69,32 @@ func New() (*Application, error) {
 		cfg.JWTSecret,
 		jwtExpiry,
 	)
+	userSettingsService := services.NewUserSettingsService(userSettingsRepository)
+	accountService := services.NewAccountService(accountRepository)
+	categoryService := services.NewCategoryService(categoryRepository)
+	budgetService := services.NewBudgetService(budgetRepository, categoryRepository)
+	goalService := services.NewGoalService(goalRepository)
+	transactionService := services.NewTransactionService(transactionRepository, accountRepository, categoryRepository)
 
 	// Handlers
 	authHandler := handlers.NewAuthHandler(userService)
+	userSettingsHandler := handlers.NewUserSettingsHandler(userSettingsService)
+	accountHandler := handlers.NewAccountHandler(accountService)
+	categoryHandler := handlers.NewCategoryHandler(categoryService)
+	budgetHandler := handlers.NewBudgetHandler(budgetService)
+	goalHandler := handlers.NewGoalHandler(goalService)
+	transactionHandler := handlers.NewTransactionHandler(transactionService)
 
 	// Routes
-	routes.Register(router, authHandler)
+	routes.Register(router, cfg.JWTSecret, routes.HandlerSet{
+		Auth:         authHandler,
+		Accounts:     accountHandler,
+		Categories:   categoryHandler,
+		Budgets:      budgetHandler,
+		Goals:        goalHandler,
+		Transactions: transactionHandler,
+		Settings:     userSettingsHandler,
+	})
 
 	return &Application{
 		Config: cfg,
