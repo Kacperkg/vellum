@@ -22,3 +22,10 @@ go tool cover -func=coverage.out
 ```
 
 Database repository tests should go in `tests/integration/`. They must use an isolated PostgreSQL database and own its setup and teardown; unit tests must not depend on Docker or shared developer data.
+
+Run repository integration tests against an isolated database:
+
+```bash
+TEST_DATABASE_DSN='host=localhost port=5432 user=vellum password=password dbname=vellum_test sslmode=disable' \
+  go test ./tests/integration -count=1
+```
