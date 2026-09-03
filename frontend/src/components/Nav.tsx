@@ -1,6 +1,7 @@
 import Dialog from "./Dialog";
 import { useState } from "react";
 import Button from "./Button";
+import NewTransactionDialog from "./NewTransactionDialog";
 
 export default function Nav() {
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -24,9 +25,11 @@ export default function Nav() {
           </>
         }
       >
-        The dialog component is working.
+        <NewTransactionDialog/>
       </Dialog>
-      <div className="w-12 h-12 rounded-full flex border-border border justify-center items-center">A</div>
+      <div className="w-12 h-12 rounded-full flex border-border border justify-center items-center">
+        A
+      </div>
     </nav>
   );
 }

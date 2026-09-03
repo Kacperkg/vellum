@@ -8,7 +8,7 @@ export default function Select({
   ...props
 }: SelectProps) {
   const classes = [
-    "inline-flex items-center justify-center gap-2 rounded-md p-2",
+    "inline-flex items-center justify-center gap-2 rounded-md p-3",
     "transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
     "bg-background text-primary-foreground border border-border",
     className,

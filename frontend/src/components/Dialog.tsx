@@ -51,23 +51,14 @@ export default function Dialog({
       }}
       {...props}
     >
-      <div className="flex items-start justify-between gap-4 border-b border-border p-5">
-        <div>
+      <div className="border-b border-border p-5">
           <h2 id={titleId} className="text-lg font-semibold">{title}</h2>
           {description && (
             <p id={descriptionId} className="mt-1 text-sm text-muted-foreground">
               {description}
             </p>
           )}
-        </div>
-        <button
-          type="button"
-          className="rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label="Close dialog"
-          onClick={() => onOpenChange(false)}
-        >
-          x
-        </button>
+
       </div>
 
       <div className="p-5">{children}</div>
