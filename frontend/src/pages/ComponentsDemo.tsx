@@ -7,12 +7,14 @@ import Card, {
   CardHeader,
   CardTitle,
 } from "../components/Card"
-import Dialog from "../components/Dialog"
+import Dialog from "../components/dialog/Dialog"
 import Input from "../components/Input"
 import Select from "../components/Select"
+import DeleteDialog from "../components/dialog/DeleteDialog"
 
 export default function ComponentsDemo() {
-  const [dialogOpen, setDialogOpen] = useState(false)
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   return (
     <main className="p-8">
@@ -26,24 +28,27 @@ export default function ComponentsDemo() {
           <Button variant="destructive" size="lg">Destructive</Button>
           <Button variant="outline">Outline</Button>
           <Button variant="ghost">Ghost</Button>
-          <Button onClick={() => setDialogOpen(true)}>Open dialog</Button>
+          <Button onClick={() => setAddDialogOpen(true)}>Open dialog</Button>
+          <Button onClick={() => setDeleteDialogOpen(true)}>Delete</Button>
         </div>
       </section>
 
       <Dialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
         title="Test dialog"
         description="Use this dialog to check the component's layout and behavior."
         footer={
           <>
-            <Button variant="ghost" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={() => setDialogOpen(false)}>Confirm</Button>
+            <Button variant="ghost" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
+            <Button onClick={() => setAddDialogOpen(false)}>Confirm</Button>
           </>
         }
       >
         The dialog component is working.
       </Dialog>
+
+      <DeleteDialog dialogOpen={deleteDialogOpen} setDialogOpen={setDeleteDialogOpen} type="Transaction" input="item"/>
 
       <section className="mt-8">
         <h2 className="mb-4 text-lg font-semibold">Form controls</h2>

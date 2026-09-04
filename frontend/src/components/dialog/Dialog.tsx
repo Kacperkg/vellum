@@ -6,6 +6,8 @@ type DialogProps = Omit<DialogHTMLAttributes<HTMLDialogElement>, "open" | "title
   title: ReactNode
   description?: ReactNode
   footer?: ReactNode
+  headerBorder?: boolean
+  footerBorder?: boolean
 }
 
 export default function Dialog({
@@ -15,6 +17,8 @@ export default function Dialog({
   description,
   children,
   footer,
+  headerBorder = true,
+  footerBorder = true,
   className = "",
   ...props
 }: DialogProps) {
@@ -51,7 +55,7 @@ export default function Dialog({
       }}
       {...props}
     >
-      <div className="border-b border-border p-5">
+      <div className={headerBorder ? "border-b border-border p-5" : "p-5"}>
           <h2 id={titleId} className="text-lg font-semibold">{title}</h2>
           {description && (
             <p id={descriptionId} className="mt-1 text-sm text-muted-foreground">
@@ -61,10 +65,12 @@ export default function Dialog({
 
       </div>
 
-      <div className="p-5">{children}</div>
+      {children != null && children !== false && (
+        <div className="p-5">{children}</div>
+      )}
 
       {footer && (
-        <div className="flex justify-end gap-3 border-t border-border p-5">
+        <div className={`flex justify-end gap-3 p-3${footerBorder ? " border-t border-border" : ""}`}>
           {footer}
         </div>
       )}
