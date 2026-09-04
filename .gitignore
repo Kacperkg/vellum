@@ -1,4 +1,5 @@
 .pnpm-store
+/backend/tmp/
 # Environment files
 .env
 .env.*
