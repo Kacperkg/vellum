@@ -14,14 +14,22 @@ import NewTransactionDialog from "../components/dialog/NewTransactionDialog"
 import EditTransactionDialog from "../components/dialog/EditTransactionDialog"
 import NewBudgetDialog from "../components/dialog/NewBudgetDialog"
 import NewGoalDialog from "../components/dialog/NewGoalDialog"
+import NewSubscriptionDialog from "../components/dialog/NewSubscriptionDialog"
+import NewAccountDialog from "../components/dialog/NewAccountDialog"
 
 export default function ComponentsDemo() {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [deleteTransDialogOpen, setDeleteTransDialogOpen] = useState(false)
+
   const [addBudgetDialogOpen, setAddBudgetDialogOpen] = useState(false)
   const [deleteBudgetDialogOpen, setDeleteBudgetDialogOpen] = useState(false)
-  const [goalBudgetDialogOpen, setAddGoaltDialogOpen] = useState(false)
+
+  const [goalDialogOpen, setAddGoalDialogOpen] = useState(false)
+
+  const [subDialogOpen, setAddSubDialogOpen] = useState(false)
+
+  const [accountDialogOpen, setAddAccountDialogOpen] = useState(false)
 
   return (
     <main className="p-8">
@@ -43,7 +51,11 @@ export default function ComponentsDemo() {
           <Button onClick={() => setAddBudgetDialogOpen(true)}>Add Budget</Button>
           <Button onClick={() => setDeleteBudgetDialogOpen(true)}>Delete Budget</Button>
 
-          <Button onClick={() => setAddGoaltDialogOpen(true)}>Add Goal</Button>
+          <Button onClick={() => setAddGoalDialogOpen(true)}>Add Goal</Button>
+
+          <Button onClick={() => setAddSubDialogOpen(true)}>Add Sub</Button>
+
+          <Button onClick={() => setAddAccountDialogOpen(true)}>Add Acc</Button>
         </div>
       </section>
 
@@ -54,7 +66,11 @@ export default function ComponentsDemo() {
       <DeleteDialog dialogOpen={deleteBudgetDialogOpen} setDialogOpen={setDeleteBudgetDialogOpen} type="Budget" input="item2" />
       <NewBudgetDialog dialogOpen={addBudgetDialogOpen} setDialogOpen={setAddBudgetDialogOpen} />
       
-      <NewGoalDialog dialogOpen={ goalBudgetDialogOpen} setDialogOpen={setAddGoaltDialogOpen}/>
+      <NewGoalDialog dialogOpen={goalDialogOpen} setDialogOpen={setAddGoalDialogOpen} />
+      
+      <NewSubscriptionDialog dialogOpen={subDialogOpen} setDialogOpen={setAddSubDialogOpen} />
+      
+      <NewAccountDialog dialogOpen={ accountDialogOpen} setDialogOpen={setAddAccountDialogOpen}/>
 
       <section className="mt-8">
         <h2 className="mb-4 text-lg font-semibold">Form controls</h2>
