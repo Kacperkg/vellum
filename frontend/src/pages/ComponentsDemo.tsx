@@ -7,14 +7,21 @@ import Card, {
   CardHeader,
   CardTitle,
 } from "../components/Card"
-import Dialog from "../components/dialog/Dialog"
 import Input from "../components/Input"
 import Select from "../components/Select"
 import DeleteDialog from "../components/dialog/DeleteDialog"
+import NewTransactionDialog from "../components/dialog/NewTransactionDialog"
+import EditTransactionDialog from "../components/dialog/EditTransactionDialog"
+import NewBudgetDialog from "../components/dialog/NewBudgetDialog"
+import NewGoalDialog from "../components/dialog/NewGoalDialog"
 
 export default function ComponentsDemo() {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [deleteTransDialogOpen, setDeleteTransDialogOpen] = useState(false)
+  const [addBudgetDialogOpen, setAddBudgetDialogOpen] = useState(false)
+  const [deleteBudgetDialogOpen, setDeleteBudgetDialogOpen] = useState(false)
+  const [goalBudgetDialogOpen, setAddGoaltDialogOpen] = useState(false)
 
   return (
     <main className="p-8">
@@ -28,27 +35,26 @@ export default function ComponentsDemo() {
           <Button variant="destructive" size="lg">Destructive</Button>
           <Button variant="outline">Outline</Button>
           <Button variant="ghost">Ghost</Button>
-          <Button onClick={() => setAddDialogOpen(true)}>Open dialog</Button>
-          <Button onClick={() => setDeleteDialogOpen(true)}>Delete</Button>
+
+          <Button onClick={() => setAddDialogOpen(true)}>Add Transaction</Button>
+          <Button onClick={() => setEditDialogOpen(true)}>Edit Transaction</Button>
+          <Button onClick={() => setDeleteTransDialogOpen(true)}>Delete Transaction</Button>
+
+          <Button onClick={() => setAddBudgetDialogOpen(true)}>Add Budget</Button>
+          <Button onClick={() => setDeleteBudgetDialogOpen(true)}>Delete Budget</Button>
+
+          <Button onClick={() => setAddGoaltDialogOpen(true)}>Add Goal</Button>
         </div>
       </section>
 
-      <Dialog
-        open={addDialogOpen}
-        onOpenChange={setAddDialogOpen}
-        title="Test dialog"
-        description="Use this dialog to check the component's layout and behavior."
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
-            <Button onClick={() => setAddDialogOpen(false)}>Confirm</Button>
-          </>
-        }
-      >
-        The dialog component is working.
-      </Dialog>
-
-      <DeleteDialog dialogOpen={deleteDialogOpen} setDialogOpen={setDeleteDialogOpen} type="Transaction" input="item"/>
+      <NewTransactionDialog dialogOpen={addDialogOpen} setDialogOpen={setAddDialogOpen} />
+      <EditTransactionDialog dialogOpen={ editDialogOpen} setDialogOpen={setEditDialogOpen}/>
+      <DeleteDialog dialogOpen={deleteTransDialogOpen} setDialogOpen={setDeleteTransDialogOpen} type="Transaction" input="item" />
+      
+      <DeleteDialog dialogOpen={deleteBudgetDialogOpen} setDialogOpen={setDeleteBudgetDialogOpen} type="Budget" input="item2" />
+      <NewBudgetDialog dialogOpen={addBudgetDialogOpen} setDialogOpen={setAddBudgetDialogOpen} />
+      
+      <NewGoalDialog dialogOpen={ goalBudgetDialogOpen} setDialogOpen={setAddGoaltDialogOpen}/>
 
       <section className="mt-8">
         <h2 className="mb-4 text-lg font-semibold">Form controls</h2>

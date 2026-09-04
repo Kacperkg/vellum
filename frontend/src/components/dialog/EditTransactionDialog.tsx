@@ -23,7 +23,7 @@ export default function EditTransactionDialog({
           <Button variant="outline" onClick={() => setDialogOpen(false)}>
             Cancel
           </Button>
-          <Button onClick={() => setDialogOpen(false)}>Save Changes</Button>
+          <Button onClick={() => setDialogOpen(false)}>Save changes</Button>
         </>
       }
     >

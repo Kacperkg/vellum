@@ -18,12 +18,13 @@ export default function NewTransactionDialog({
       onOpenChange={setDialogOpen}
       title="New Transaction"
       description="Log an expense or income."
+      footerBorder={false}
       footer={
         <>
           <Button variant="outline" onClick={() => setDialogOpen(false)}>
             Cancel
           </Button>
-          <Button onClick={() => setDialogOpen(false)}>Add Transaction</Button>
+          <Button onClick={() => setDialogOpen(false)}>Add transaction</Button>
         </>
       }
     >
