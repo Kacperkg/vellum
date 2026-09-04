@@ -1,10 +1,10 @@
-import type { InputHTMLAttributes } from "react"
+import type { InputHTMLAttributes } from "react";
 
-type InputVariant = "email" | "password" | "string" | "number" | "date"
+type InputVariant = "email" | "password" | "string" | "number" | "date";
 
 type InputProps = InputHTMLAttributes<HTMLInputElement> & {
-  variant?: InputVariant
-}
+  variant?: InputVariant;
+};
 
 const variantClasses: Record<InputVariant, string> = {
   email: "bg-surface text-primary-foreground border border-border",
@@ -12,16 +12,15 @@ const variantClasses: Record<InputVariant, string> = {
   string: "bg-background text-primary-foreground border border-border",
   number: "bg-background text-primary-foreground border border-border",
   date: "bg-background text-primary-foreground border border-border dark:[color-scheme:dark]",
-}
+};
 
 const variantTypes: Record<InputVariant, string> = {
-    email: "email",
-    password: "password",
-    string: "text",
-    number: "number",
-    date: "date"
-}
-
+  email: "email",
+  password: "password",
+  string: "text",
+  number: "number",
+  date: "date",
+};
 
 export default function Input({
   variant = "string",
@@ -37,7 +36,14 @@ export default function Input({
     className,
   ]
     .filter(Boolean)
-    .join(" ")
+    .join(" ");
 
-  return <input type={type ?? variantTypes[variant]} placeholder={placeholder} className={classes} {...props} />
+  return (
+    <input
+      type={type ?? variantTypes[variant]}
+      placeholder={placeholder}
+      className={classes}
+      {...props}
+    />
+  );
 }

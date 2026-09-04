@@ -59,7 +59,9 @@ export default function SideNav() {
         </Card>
         <div className="flex justify-start items-center py-4">
           <p>icon</p>
-          <Button variant="ghost" className="text-muted-foreground">Sign out</Button>
+          <Button variant="ghost" className="text-muted-foreground">
+            Sign out
+          </Button>
         </div>
       </div>
     </nav>

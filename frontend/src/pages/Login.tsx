@@ -1,10 +1,10 @@
-import { useState } from "react"
-import Logo from "../components/Logo"
-import RegisterForm from "../components/auth/RegisterForm"
-import SignInForm from "../components/auth/SignInForm"
+import { useState } from "react";
+import Logo from "../components/Logo";
+import RegisterForm from "../components/auth/RegisterForm";
+import SignInForm from "../components/auth/SignInForm";
 
 export default function Login() {
-  const [register, setRegister] = useState(false)
+  const [register, setRegister] = useState(false);
 
   return (
     <section className="flex min-h-screen items-center justify-center">
@@ -31,5 +31,5 @@ export default function Login() {
         )}
       </div>
     </section>
-  )
+  );
 }

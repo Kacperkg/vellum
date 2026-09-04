@@ -1,26 +1,29 @@
-import type { ButtonHTMLAttributes } from "react"
+import type { ButtonHTMLAttributes } from "react";
 
-type ButtonVariant = "primary" | "secondary" | "destructive" | "outline" | "ghost"
-type ButtonSize = "sm" | "md" | "lg"
+type ButtonVariant =
+  "primary" | "secondary" | "destructive" | "outline" | "ghost";
+type ButtonSize = "sm" | "md" | "lg";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: ButtonVariant
-  size?: ButtonSize
-}
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+};
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary: "bg-primary text-primary-foreground hover:brightness-110",
   secondary: "bg-secondary text-secondary-foreground hover:bg-surface-elevated",
-  destructive: "bg-destructive text-destructive-foreground hover:brightness-110",
-  outline: "border border-border bg-transparent text-foreground hover:bg-secondary",
+  destructive:
+    "bg-destructive text-destructive-foreground hover:brightness-110",
+  outline:
+    "border border-border bg-transparent text-foreground hover:bg-secondary",
   ghost: "bg-transparent text-foreground hover:bg-secondary",
-}
+};
 
 const sizeClasses: Record<ButtonSize, string> = {
   sm: "h-8 px-3 text-sm",
   md: "h-10 px-4 text-sm",
   lg: "h-12 px-6 text-base",
-}
+};
 
 export default function Button({
   variant = "primary",
@@ -38,7 +41,7 @@ export default function Button({
     className,
   ]
     .filter(Boolean)
-    .join(" ")
+    .join(" ");
 
-  return <button type={type} className={classes} {...props} />
+  return <button type={type} className={classes} {...props} />;
 }

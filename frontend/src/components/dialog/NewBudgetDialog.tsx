@@ -38,7 +38,7 @@ export default function NewBudgetDialog({
         </div>
         <div className="flex flex-col gap-2">
           <h1>Monthly Allocation</h1>
-          <Input variant="number" placeholder="500" ></Input>
+          <Input variant="number" placeholder="500"></Input>
         </div>
       </div>
     </Dialog>

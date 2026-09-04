@@ -1,6 +1,6 @@
-import type { SelectHTMLAttributes } from "react"
+import type { SelectHTMLAttributes } from "react";
 
-type SelectProps = SelectHTMLAttributes<HTMLSelectElement>
+type SelectProps = SelectHTMLAttributes<HTMLSelectElement>;
 
 export default function Select({
   className = "",
@@ -14,11 +14,11 @@ export default function Select({
     className,
   ]
     .filter(Boolean)
-    .join(" ")
+    .join(" ");
 
   return (
     <select className={classes} {...props}>
       {children}
     </select>
-  )
+  );
 }

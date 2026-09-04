@@ -23,9 +23,7 @@ export default function NewAccountDialog({
           <Button variant="outline" onClick={() => setDialogOpen(false)}>
             Cancel
           </Button>
-          <Button onClick={() => setDialogOpen(false)}>
-            Add account
-          </Button>
+          <Button onClick={() => setDialogOpen(false)}>Add account</Button>
         </>
       }
     >

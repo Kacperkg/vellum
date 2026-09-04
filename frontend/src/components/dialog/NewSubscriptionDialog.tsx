@@ -50,7 +50,7 @@ export default function NewSubscriptionDialog({
         </div>
         <div className="flex flex-col gap-2 w-full">
           <h1>Next renewal</h1>
-          <Input variant="date"/>
+          <Input variant="date" />
         </div>
       </div>
     </Dialog>

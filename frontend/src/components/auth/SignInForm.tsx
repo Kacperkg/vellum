@@ -1,9 +1,9 @@
-import Button from "../Button"
-import Input from "../Input"
+import Button from "../Button";
+import Input from "../Input";
 
 type SignInFormProps = {
-  onRegister: () => void
-}
+  onRegister: () => void;
+};
 
 export default function SignInForm({ onRegister }: SignInFormProps) {
   return (
@@ -34,5 +34,5 @@ export default function SignInForm({ onRegister }: SignInFormProps) {
         </Button>
       </p>
     </div>
-  )
+  );
 }
