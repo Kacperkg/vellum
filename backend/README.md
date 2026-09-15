@@ -78,8 +78,11 @@ Required variables:
 - `DB_SSLMODE`
 - `JWT_SECRET`
 - `JWT_EXPIRY`
+- `JWT_REFRESH_EXPIRY`
 
-`JWT_EXPIRY` uses Go duration format, for example `1h` or `24h`.
+Both expiry values use Go duration format. A typical setup is a short-lived access
+token such as `JWT_EXPIRY=15m` and a longer-lived refresh token such as
+`JWT_REFRESH_EXPIRY=720h`.
 
 ## API
 
@@ -98,10 +101,10 @@ Content-Type: application/json
 
 ```json
 {
-  "FirstName": "Ada",
-  "LastName": "Lovelace",
-  "Email": "ada@example.com",
-  "Password": "<password>"
+  "first_name": "Ada",
+  "last_name": "Lovelace",
+  "email": "ada@example.com",
+  "password": "<password>"
 }
 ```
 
@@ -109,7 +112,8 @@ Returns:
 
 ```json
 {
-  "access_token": "<jwt>"
+  "access_token": "<jwt>",
+  "refresh_token": "<opaque-token>"
 }
 ```
 
@@ -122,8 +126,8 @@ Content-Type: application/json
 
 ```json
 {
-  "Email": "ada@example.com",
-  "Password": "<password>"
+  "email": "ada@example.com",
+  "password": "<password>"
 }
 ```
 
@@ -131,9 +135,41 @@ Returns:
 
 ```json
 {
-  "access_token": "<jwt>"
+  "access_token": "<jwt>",
+  "refresh_token": "<opaque-token>"
 }
 ```
+
+### Refresh
+
+```http
+POST /refresh
+Content-Type: application/json
+```
+
+```json
+{
+  "refresh_token": "<opaque-token>"
+}
+```
+
+Returns a new access and refresh token pair. Each refresh token is single-use: a
+successful refresh revokes it and returns its replacement.
+
+### Logout
+
+```http
+POST /logout
+Content-Type: application/json
+```
+
+```json
+{
+  "refresh_token": "<opaque-token>"
+}
+```
+
+Returns `204 No Content` and revokes that refresh token.
 
 ## Authentication
 
@@ -143,8 +179,9 @@ Authenticated requests use a Bearer token:
 Authorization: Bearer <jwt>
 ```
 
-The auth middleware validates the token and stores the authenticated user ID in
-the Gin context as `userID`.
+The auth middleware validates the access token and stores the authenticated user
+ID in the Gin context as `userID`. Refresh tokens are random opaque values; only
+their SHA-256 hashes are stored in the database.
 
 ## Project Structure
 
@@ -178,6 +215,7 @@ The backend defines models for:
 - Transactions
 - Budgets
 - Goals
+- Refresh tokens
 
 All models embed a shared base model with a UUID primary key and timestamps.
 Migrations run automatically on startup through GORM.

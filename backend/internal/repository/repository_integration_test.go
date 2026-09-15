@@ -136,4 +136,35 @@ func TestTenantScopedRepositories(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+
+	t.Run("refresh token rotation is single use", func(t *testing.T) {
+		repo := repository.NewRefreshTokenRepository(tx)
+		now := time.Now()
+		current := &models.RefreshToken{
+			UserID:    userA.ID,
+			TokenHash: "current-" + uuid.NewString(),
+			ExpiresAt: now.Add(time.Hour),
+		}
+		if err := repo.Create(current); err != nil {
+			t.Fatal(err)
+		}
+
+		replacement := &models.RefreshToken{
+			UserID:    userA.ID,
+			TokenHash: "replacement-" + uuid.NewString(),
+			ExpiresAt: now.Add(time.Hour),
+		}
+		if err := repo.Rotate(current.ID, replacement, now); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repo.FindValid(current.TokenHash, now); !errors.Is(err, repository.ErrNotFound) {
+			t.Fatalf("rotated token error = %v", err)
+		}
+		if _, err := repo.FindValid(replacement.TokenHash, now); err != nil {
+			t.Fatalf("replacement token error = %v", err)
+		}
+		if err := repo.Rotate(current.ID, &models.RefreshToken{UserID: userA.ID, TokenHash: "reuse-" + uuid.NewString(), ExpiresAt: now.Add(time.Hour)}, now); !errors.Is(err, repository.ErrNotFound) {
+			t.Fatalf("reused rotation error = %v", err)
+		}
+	})
 }

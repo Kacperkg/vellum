@@ -157,6 +157,7 @@ Required backend variables:
 - `DB_SSLMODE`
 - `JWT_SECRET`
 - `JWT_EXPIRY`
+- `JWT_REFRESH_EXPIRY`
 
 Frontend API requests are configured to call the backend at:
 

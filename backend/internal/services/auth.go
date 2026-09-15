@@ -1,9 +1,15 @@
 package services
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/auth"
 	"github.com/kacperkg/vellum/internal/models"
 	"github.com/kacperkg/vellum/internal/repository"
@@ -13,17 +19,28 @@ import (
 type UserService struct {
 	userRepository         repository.UserRepository
 	userSettingsRepository repository.UserSettingsRepository
+	refreshTokenRepository repository.RefreshTokenRepository
 
-	jwtSecret string
-	jwtExpiry time.Duration
+	jwtSecret     string
+	jwtExpiry     time.Duration
+	refreshExpiry time.Duration
 }
 
-func NewUserService(userRepository repository.UserRepository, userSettingsRepository repository.UserSettingsRepository, jwtSecret string, jwtExpiry time.Duration) *UserService {
+func NewUserService(
+	userRepository repository.UserRepository,
+	userSettingsRepository repository.UserSettingsRepository,
+	refreshTokenRepository repository.RefreshTokenRepository,
+	jwtSecret string,
+	jwtExpiry time.Duration,
+	refreshExpiry time.Duration,
+) *UserService {
 	return &UserService{
 		userRepository:         userRepository,
 		userSettingsRepository: userSettingsRepository,
+		refreshTokenRepository: refreshTokenRepository,
 		jwtSecret:              jwtSecret,
 		jwtExpiry:              jwtExpiry,
+		refreshExpiry:          refreshExpiry,
 	}
 }
 
@@ -77,15 +94,7 @@ func (s *UserService) Register(req RegisterRequest) (*AuthResponse, error) {
 		return nil, err
 	}
 
-	// Generate token
-	token, err := auth.GenerateToken(user.ID, s.jwtSecret, s.jwtExpiry)
-	if err != nil {
-		return nil, err
-	}
-
-	return &AuthResponse{
-		AccessToken: token,
-	}, nil
+	return s.issueTokenPair(user.ID, s.refreshTokenRepository.Create)
 }
 
 func (s *UserService) Login(req LoginRequest) (*AuthResponse, error) {
@@ -108,13 +117,75 @@ func (s *UserService) Login(req LoginRequest) (*AuthResponse, error) {
 		return nil, ErrInvalidCredentials
 	}
 
-	// Generate token
-	token, err := auth.GenerateToken(user.ID, s.jwtSecret, s.jwtExpiry)
+	return s.issueTokenPair(user.ID, s.refreshTokenRepository.Create)
+}
+
+func (s *UserService) Refresh(req RefreshRequest) (*AuthResponse, error) {
+	now := time.Now()
+	current, err := s.refreshTokenRepository.FindValid(hashRefreshToken(req.RefreshToken), now)
 	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrInvalidRefreshToken
+		}
 		return nil, err
 	}
 
+	user, err := s.userRepository.FindByID(current.UserID)
+	if err != nil || user == nil {
+		return nil, ErrInvalidRefreshToken
+	}
+
+	return s.issueTokenPair(user.ID, func(replacement *models.RefreshToken) error {
+		return s.refreshTokenRepository.Rotate(current.ID, replacement, now)
+	})
+}
+
+func (s *UserService) Logout(req RefreshRequest) error {
+	return s.refreshTokenRepository.RevokeByHash(hashRefreshToken(req.RefreshToken), time.Now())
+}
+
+func (s *UserService) issueTokenPair(
+	userID uuid.UUID,
+	persist func(*models.RefreshToken) error,
+) (*AuthResponse, error) {
+	accessToken, err := auth.GenerateToken(userID, s.jwtSecret, s.jwtExpiry)
+	if err != nil {
+		return nil, fmt.Errorf("generate access token: %w", err)
+	}
+
+	rawRefreshToken, err := generateRefreshToken()
+	if err != nil {
+		return nil, fmt.Errorf("generate refresh token: %w", err)
+	}
+
+	refreshToken := &models.RefreshToken{
+		UserID:    userID,
+		TokenHash: hashRefreshToken(rawRefreshToken),
+		ExpiresAt: time.Now().Add(s.refreshExpiry),
+	}
+	if err := persist(refreshToken); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrInvalidRefreshToken
+		}
+		return nil, fmt.Errorf("persist refresh token: %w", err)
+	}
+
 	return &AuthResponse{
-		AccessToken: token,
+		AccessToken:  accessToken,
+		RefreshToken: rawRefreshToken,
 	}, nil
+}
+
+func generateRefreshToken() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+
+	return base64.RawURLEncoding.EncodeToString(bytes), nil
+}
+
+func hashRefreshToken(rawToken string) string {
+	hash := sha256.Sum256([]byte(rawToken))
+	return hex.EncodeToString(hash[:])
 }

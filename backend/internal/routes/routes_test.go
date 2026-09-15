@@ -25,7 +25,7 @@ func testHandlerSet(userID uuid.UUID) routes.HandlerSet {
 	transactions := &fakeTransactionRepository{Transactions: []*models.Transaction{}}
 
 	return routes.HandlerSet{
-		Auth:         handlers.NewAuthHandler(services.NewUserService(users, settings, "secret", time.Hour)),
+		Auth:         handlers.NewAuthHandler(services.NewUserService(users, settings, &fakeRefreshTokenRepository{}, "secret", time.Hour, 30*24*time.Hour)),
 		Accounts:     handlers.NewAccountHandler(services.NewAccountService(accounts)),
 		Categories:   handlers.NewCategoryHandler(services.NewCategoryService(categories)),
 		Budgets:      handlers.NewBudgetHandler(services.NewBudgetService(budgets, categories)),
@@ -41,8 +41,8 @@ func TestRegisteredRoutesAndAuthentication(t *testing.T) {
 	router := gin.New()
 	routes.Register(router, "secret", testHandlerSet(userID))
 
-	if got := len(router.Routes()); got != 31 {
-		t.Fatalf("registered route count = %d, want 31", got)
+	if got := len(router.Routes()); got != 33 {
+		t.Fatalf("registered route count = %d, want 33", got)
 	}
 
 	request := func(path, authorization string) *httptest.ResponseRecorder {

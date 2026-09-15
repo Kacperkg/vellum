@@ -1,6 +1,7 @@
 package handlers_test
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -159,7 +160,7 @@ func TestAuthHandler(t *testing.T) {
 	const secret = "test-secret"
 	settings := &fakeUserSettingsRepository{}
 	t.Run("register", func(t *testing.T) {
-		handler := handlers.NewAuthHandler(services.NewUserService(&fakeUserRepository{}, settings, secret, time.Hour))
+		handler := handlers.NewAuthHandler(services.NewUserService(&fakeUserRepository{}, settings, &fakeRefreshTokenRepository{}, secret, time.Hour, 30*24*time.Hour))
 		router := gin.New()
 		router.POST("/register", handler.Register)
 		body := `{"first_name":"Ada","last_name":"Lovelace","email":"ada@example.com","password":"password123"}`
@@ -172,11 +173,31 @@ func TestAuthHandler(t *testing.T) {
 			t.Fatal(err)
 		}
 		repo := &fakeUserRepository{User: &models.User{BaseModel: models.BaseModel{ID: uuid.New()}, Email: "ada@example.com", PasswordHash: string(hash)}}
-		handler := handlers.NewAuthHandler(services.NewUserService(repo, settings, secret, time.Hour))
+		refreshTokens := &fakeRefreshTokenRepository{}
+		handler := handlers.NewAuthHandler(services.NewUserService(repo, settings, refreshTokens, secret, time.Hour, 30*24*time.Hour))
 		router := gin.New()
 		router.POST("/login", handler.Login)
+		router.POST("/refresh", handler.Refresh)
+		router.POST("/logout", handler.Logout)
 		requireStatus(t, perform(router, http.MethodPost, "/login", `{"email":"ada@example.com","password":"password123"}`), http.StatusOK)
 		requireStatus(t, perform(router, http.MethodPost, "/login", `{"email":"ada@example.com","password":"wrongpass"}`), http.StatusUnauthorized)
+
+		login := perform(router, http.MethodPost, "/login", `{"email":"ada@example.com","password":"password123"}`)
+		var tokens services.AuthResponse
+		if err := json.Unmarshal(login.Body.Bytes(), &tokens); err != nil {
+			t.Fatal(err)
+		}
+		refreshBody := `{"refresh_token":"` + tokens.RefreshToken + `"}`
+		refreshed := perform(router, http.MethodPost, "/refresh", refreshBody)
+		requireStatus(t, refreshed, http.StatusOK)
+		var rotatedTokens services.AuthResponse
+		if err := json.Unmarshal(refreshed.Body.Bytes(), &rotatedTokens); err != nil {
+			t.Fatal(err)
+		}
+		requireStatus(t, perform(router, http.MethodPost, "/refresh", refreshBody), http.StatusUnauthorized)
+		rotatedRefreshBody := `{"refresh_token":"` + rotatedTokens.RefreshToken + `"}`
+		requireStatus(t, perform(router, http.MethodPost, "/logout", rotatedRefreshBody), http.StatusNoContent)
+		requireStatus(t, perform(router, http.MethodPost, "/refresh", rotatedRefreshBody), http.StatusUnauthorized)
 	})
 }
 

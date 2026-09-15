@@ -29,10 +29,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("invalid JWT expiry: %v", err)
 	}
+	refreshExpiry, err := time.ParseDuration(cfg.JWTRefreshExpiry)
+	if err != nil {
+		log.Fatalf("invalid JWT refresh expiry: %v", err)
+	}
 
 	// Repositories
 	userRepo := repository.NewUserRepository(db)
 	userSettingsRepo := repository.NewUserSettingsRepository(db)
+	refreshTokenRepo := repository.NewRefreshTokenRepository(db)
 	accountRepo := repository.NewAccountRepository(db)
 	categoryRepo := repository.NewCategoryRepository(db)
 	budgetRepo := repository.NewBudgetRepository(db)
@@ -40,7 +45,7 @@ func main() {
 	transactionRepo := repository.NewTransactionRepository(db)
 
 	// Services
-	userSvc := services.NewUserService(userRepo, userSettingsRepo, cfg.JWTSecret, jwtExpiry)
+	userSvc := services.NewUserService(userRepo, userSettingsRepo, refreshTokenRepo, cfg.JWTSecret, jwtExpiry, refreshExpiry)
 	userSettingsSvc := services.NewUserSettingsService(userSettingsRepo)
 	accountSvc := services.NewAccountService(accountRepo)
 	categorySvc := services.NewCategoryService(categoryRepo)

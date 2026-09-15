@@ -22,6 +22,7 @@ var (
 	ErrGoalSavedExceedsTarget      = invalid("goal saved amount cannot exceed target amount")
 	ErrGoalTargetPositive          = invalid("goal target must be positive")
 	ErrInvalidCredentials          = unauthorized("invalid email or password")
+	ErrInvalidRefreshToken         = unauthorized("invalid or expired refresh token")
 	ErrSettingsCurrencyInvalid     = invalid("settings currency is invalid")
 	ErrSettingsDateFormatInvalid   = invalid("settings date format is invalid")
 	ErrSettingsNotFound            = notFound("user settings not found")

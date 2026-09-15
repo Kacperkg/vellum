@@ -143,8 +143,9 @@ func TestUserService(t *testing.T) {
 	t.Run("register creates user settings and token", func(t *testing.T) {
 		users := &fakeUserRepository{}
 		settings := &fakeUserSettingsRepository{}
-		response, err := services.NewUserService(users, settings, secret, time.Hour).Register(request)
-		if err != nil || response.AccessToken == "" || users.Created == nil || settings.Created == nil {
+		refreshTokens := &fakeRefreshTokenRepository{}
+		response, err := services.NewUserService(users, settings, refreshTokens, secret, time.Hour, 30*24*time.Hour).Register(request)
+		if err != nil || response.AccessToken == "" || response.RefreshToken == "" || users.Created == nil || settings.Created == nil || refreshTokens.Created == nil {
 			t.Fatalf("response=%#v err=%v", response, err)
 		}
 		if settings.Created.Currency != models.GBP || settings.Created.UserID != users.Created.ID {
@@ -154,7 +155,7 @@ func TestUserService(t *testing.T) {
 
 	t.Run("duplicate registration", func(t *testing.T) {
 		users := &fakeUserRepository{User: &models.User{}}
-		_, err := services.NewUserService(users, &fakeUserSettingsRepository{}, secret, time.Hour).Register(request)
+		_, err := services.NewUserService(users, &fakeUserSettingsRepository{}, &fakeRefreshTokenRepository{}, secret, time.Hour, 30*24*time.Hour).Register(request)
 		if !errors.Is(err, services.ErrUserEmailExists) {
 			t.Fatalf("error=%v", err)
 		}
@@ -166,14 +167,44 @@ func TestUserService(t *testing.T) {
 			t.Fatal(err)
 		}
 		users := &fakeUserRepository{User: &models.User{BaseModel: models.BaseModel{ID: uuid.New()}, Email: request.Email, PasswordHash: string(hash)}}
-		service := services.NewUserService(users, &fakeUserSettingsRepository{}, secret, time.Hour)
+		refreshTokens := &fakeRefreshTokenRepository{}
+		service := services.NewUserService(users, &fakeUserSettingsRepository{}, refreshTokens, secret, time.Hour, 30*24*time.Hour)
 		response, err := service.Login(services.LoginRequest{Email: request.Email, Password: request.Password})
-		if err != nil || response.AccessToken == "" {
+		if err != nil || response.AccessToken == "" || response.RefreshToken == "" {
 			t.Fatalf("response=%#v err=%v", response, err)
 		}
 		_, err = service.Login(services.LoginRequest{Email: request.Email, Password: "wrong"})
 		if !errors.Is(err, services.ErrInvalidCredentials) {
 			t.Fatalf("error=%v", err)
+		}
+	})
+
+	t.Run("refresh rotates token and rejects reuse", func(t *testing.T) {
+		userID := uuid.New()
+		hash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.MinCost)
+		if err != nil {
+			t.Fatal(err)
+		}
+		users := &fakeUserRepository{User: &models.User{BaseModel: models.BaseModel{ID: userID}, Email: "ada@example.com", PasswordHash: string(hash)}}
+		refreshTokens := &fakeRefreshTokenRepository{}
+		service := services.NewUserService(users, &fakeUserSettingsRepository{}, refreshTokens, secret, time.Hour, 30*24*time.Hour)
+
+		initial, err := service.Login(services.LoginRequest{Email: "ada@example.com", Password: "password123"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rotated, err := service.Refresh(services.RefreshRequest{RefreshToken: initial.RefreshToken})
+		if err != nil || rotated.AccessToken == "" || rotated.RefreshToken == "" || rotated.RefreshToken == initial.RefreshToken {
+			t.Fatalf("rotated=%#v error=%v", rotated, err)
+		}
+		if _, err := service.Refresh(services.RefreshRequest{RefreshToken: initial.RefreshToken}); !errors.Is(err, services.ErrInvalidRefreshToken) {
+			t.Fatalf("reused token error=%v", err)
+		}
+		if err := service.Logout(services.RefreshRequest{RefreshToken: rotated.RefreshToken}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := service.Refresh(services.RefreshRequest{RefreshToken: rotated.RefreshToken}); !errors.Is(err, services.ErrInvalidRefreshToken) {
+			t.Fatalf("logged-out token error=%v", err)
 		}
 	})
 }

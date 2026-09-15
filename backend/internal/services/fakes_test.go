@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/models"
+	"github.com/kacperkg/vellum/internal/repository"
 )
 
 type fakeAccountRepository struct {
@@ -199,4 +200,58 @@ func (r *fakeUserSettingsRepository) Create(value *models.UserSettings) error {
 		r.Created = value
 	}
 	return r.Err
+}
+
+type fakeRefreshTokenRepository struct {
+	Token   *models.RefreshToken
+	Created *models.RefreshToken
+	Err     error
+}
+
+func (r *fakeRefreshTokenRepository) Create(token *models.RefreshToken) error {
+	if r.Err != nil {
+		return r.Err
+	}
+	if token.ID == uuid.Nil {
+		token.ID = uuid.New()
+	}
+	r.Token = token
+	r.Created = token
+	return nil
+}
+
+func (r *fakeRefreshTokenRepository) FindValid(hash string, now time.Time) (*models.RefreshToken, error) {
+	if r.Err != nil {
+		return nil, r.Err
+	}
+	if r.Token == nil || r.Token.TokenHash != hash || r.Token.RevokedAt != nil || !r.Token.ExpiresAt.After(now) {
+		return nil, repository.ErrNotFound
+	}
+	return r.Token, nil
+}
+
+func (r *fakeRefreshTokenRepository) Rotate(currentID uuid.UUID, replacement *models.RefreshToken, now time.Time) error {
+	if r.Err != nil {
+		return r.Err
+	}
+	if r.Token == nil || r.Token.ID != currentID || r.Token.RevokedAt != nil {
+		return repository.ErrNotFound
+	}
+	r.Token.RevokedAt = &now
+	if replacement.ID == uuid.Nil {
+		replacement.ID = uuid.New()
+	}
+	r.Token = replacement
+	r.Created = replacement
+	return nil
+}
+
+func (r *fakeRefreshTokenRepository) RevokeByHash(hash string, now time.Time) error {
+	if r.Err != nil {
+		return r.Err
+	}
+	if r.Token != nil && r.Token.TokenHash == hash && r.Token.RevokedAt == nil {
+		r.Token.RevokedAt = &now
+	}
+	return nil
 }

@@ -24,6 +24,8 @@ func Register(router *gin.Engine, jwtSecret string, handlerSet HandlerSet) {
 	})
 	router.POST("/register", handlerSet.Auth.Register)
 	router.POST("/login", handlerSet.Auth.Login)
+	router.POST("/refresh", handlerSet.Auth.Refresh)
+	router.POST("/logout", handlerSet.Auth.Logout)
 
 	api := router.Group("/api")
 	api.Use(middleware.AuthMiddleware(jwtSecret))
