@@ -88,7 +88,7 @@ export default function RegisterForm({ onSignIn }: RegisterFormProps) {
         />
       </div>
       <Button size="lg" type="submit" disabled={isSubmitting}>
-        Create account
+        {isSubmitting ? "Creating account..." : "Create account"}
       </Button>
       <p className="pt-4 text-sm text-muted-foreground">
         Already have an account?{" "}
