@@ -39,7 +39,7 @@ export default function RegisterForm({ onSignIn }: RegisterFormProps) {
       });
     } catch (error) {
       if (axios.isAxiosError<ApiErrorResponse>(error)) {
-        setErrorMessage(error.response?.data?.error ?? "Unable to sign in");
+        setErrorMessage(error.response?.data?.error ?? "Unable to create account");
       } else {
         setErrorMessage("An unexpected error occurred");
       }
