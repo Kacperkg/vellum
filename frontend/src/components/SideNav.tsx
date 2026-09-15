@@ -27,7 +27,7 @@ export default function SideNav() {
   }
 
   return (
-    <nav className="pl-8 pt-8 pr-4 bg-sidebar border-r border-border flex flex-col justify-between">
+    <nav className="pl-8 pt-8 pr-4 bg-sidebar border-r border-border flex flex-col justify-between max-h-screen sticky top-0">
       <div>
         <Logo />
         <div className="flex flex-col pt-8 text-muted-foreground">

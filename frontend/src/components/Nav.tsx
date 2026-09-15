@@ -6,7 +6,7 @@ export default function Nav() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   return (
-    <nav className="w-full border-b border-border flex gap-4 justify-end items-center pr-8 py-2">
+    <nav className="w-full border-b border-border flex gap-4 justify-end items-center pr-8 py-2 sticky top-0 bg-background">
       <Button onClick={() => setDialogOpen(true)}>+ New</Button>
       <NewTransactionDialog
         dialogOpen={dialogOpen}
