@@ -1,7 +1,8 @@
 import Logo from "./Logo";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import Card, { CardContent, CardFooter, CardHeader, CardTitle } from "./Card";
 import Button from "./Button";
+import { logout } from "../api/endpoints/auth";
 
 const routes = [
   { label: "Overview", path: "/" },
@@ -15,6 +16,16 @@ const routes = [
 ] as const;
 
 export default function SideNav() {
+  const navigate = useNavigate();
+
+  async function handleLogout(): Promise<void> {
+    await logout();
+    await navigate({
+      to: "/login",
+      replace: true,
+    });
+  }
+
   return (
     <nav className="pl-8 pt-8 pr-4 bg-sidebar border-r border-border flex flex-col justify-between">
       <div>
@@ -59,7 +70,11 @@ export default function SideNav() {
         </Card>
         <div className="flex justify-start items-center py-4">
           <p>icon</p>
-          <Button variant="ghost" className="text-muted-foreground">
+          <Button
+            variant="ghost"
+            className="text-muted-foreground"
+            onClick={handleLogout}
+          >
             Sign out
           </Button>
         </div>

@@ -1,16 +1,71 @@
 import Button from "../Button";
 import Input from "../Input";
+import { useState, type SubmitEvent } from "react";
+import { login } from "../../api/endpoints/auth";
+import axios from "axios";
+import type { ApiErrorResponse } from "../../api/types";
+import { useNavigate } from "@tanstack/react-router";
 
 type SignInFormProps = {
   onRegister: () => void;
 };
 
 export default function SignInForm({ onRegister }: SignInFormProps) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const navigate = useNavigate();
+
+  async function handleSubmit(
+    event: SubmitEvent<HTMLFormElement>,
+  ): Promise<void> {
+    event.preventDefault();
+    setErrorMessage("");
+    setIsSubmitting(true);
+    try {
+      await login({
+        email,
+        password,
+      });
+      await navigate({
+        to: "/",
+        replace: true,
+      });
+    } catch (error) {
+      if (axios.isAxiosError<ApiErrorResponse>(error)) {
+        setErrorMessage(error.response?.data?.error ?? "Unable to sign in");
+      } else {
+        setErrorMessage("An unexpected error occurred");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
-    <div className="flex flex-col">
+    <form className="flex flex-col" onSubmit={handleSubmit}>
       <div className="flex flex-col gap-4">
-        <Input variant="email" placeholder="john@doe.com" />
-        <Input variant="password" placeholder="Password" />
+        {errorMessage && (
+          <p role="alert" className="pb-2 text-sm max-w-2xs text-destructive">
+            {errorMessage}
+          </p>
+        )}
+        <Input
+          required
+          variant="email"
+          placeholder="john@doe.com"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+        <Input
+          required
+          variant="password"
+          placeholder="Password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
       </div>
       <div className="flex w-full justify-end py-2">
         <Button
@@ -21,7 +76,9 @@ export default function SignInForm({ onRegister }: SignInFormProps) {
           Forgot password?
         </Button>
       </div>
-      <Button size="lg">Sign in</Button>
+      <Button size="lg" type="submit" disabled={isSubmitting}>
+        {isSubmitting ? "Signing in..." : "Sign in"}
+      </Button>
       <p className="pt-4 text-sm text-muted-foreground">
         Don't have an account?{" "}
         <Button
@@ -33,6 +90,6 @@ export default function SignInForm({ onRegister }: SignInFormProps) {
           Create one
         </Button>
       </p>
-    </div>
+    </form>
   );
 }
