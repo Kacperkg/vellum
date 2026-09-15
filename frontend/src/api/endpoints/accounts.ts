@@ -3,7 +3,7 @@ import type {
   Account,
   CreateAccountRequest,
   UpdateAccountRequest,
-} from "../types/accounts";
+} from "../types/index";
 
 const accountsPath = "/api/accounts";
 

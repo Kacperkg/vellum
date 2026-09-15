@@ -113,7 +113,15 @@ Returns:
 ```json
 {
   "access_token": "<jwt>",
-  "refresh_token": "<opaque-token>"
+  "refresh_token": "<opaque-token>",
+  "user": {
+    "id": "<uuid>",
+    "created_at": "<timestamp>",
+    "updated_at": "<timestamp>",
+    "first_name": "Ada",
+    "last_name": "Lovelace",
+    "email": "ada@example.com"
+  }
 }
 ```
 
@@ -136,7 +144,15 @@ Returns:
 ```json
 {
   "access_token": "<jwt>",
-  "refresh_token": "<opaque-token>"
+  "refresh_token": "<opaque-token>",
+  "user": {
+    "id": "<uuid>",
+    "created_at": "<timestamp>",
+    "updated_at": "<timestamp>",
+    "first_name": "Ada",
+    "last_name": "Lovelace",
+    "email": "ada@example.com"
+  }
 }
 ```
 

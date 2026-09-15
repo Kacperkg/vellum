@@ -145,7 +145,7 @@ func TestUserService(t *testing.T) {
 		settings := &fakeUserSettingsRepository{}
 		refreshTokens := &fakeRefreshTokenRepository{}
 		response, err := services.NewUserService(users, settings, refreshTokens, secret, time.Hour, 30*24*time.Hour).Register(request)
-		if err != nil || response.AccessToken == "" || response.RefreshToken == "" || users.Created == nil || settings.Created == nil || refreshTokens.Created == nil {
+		if err != nil || response.AccessToken == "" || response.RefreshToken == "" || response.User.Email != request.Email || users.Created == nil || settings.Created == nil || refreshTokens.Created == nil {
 			t.Fatalf("response=%#v err=%v", response, err)
 		}
 		if settings.Created.Currency != models.GBP || settings.Created.UserID != users.Created.ID {
@@ -170,7 +170,7 @@ func TestUserService(t *testing.T) {
 		refreshTokens := &fakeRefreshTokenRepository{}
 		service := services.NewUserService(users, &fakeUserSettingsRepository{}, refreshTokens, secret, time.Hour, 30*24*time.Hour)
 		response, err := service.Login(services.LoginRequest{Email: request.Email, Password: request.Password})
-		if err != nil || response.AccessToken == "" || response.RefreshToken == "" {
+		if err != nil || response.AccessToken == "" || response.RefreshToken == "" || response.User.ID != users.User.ID || response.User.Email != request.Email {
 			t.Fatalf("response=%#v err=%v", response, err)
 		}
 		_, err = service.Login(services.LoginRequest{Email: request.Email, Password: "wrong"})
@@ -194,7 +194,7 @@ func TestUserService(t *testing.T) {
 			t.Fatal(err)
 		}
 		rotated, err := service.Refresh(services.RefreshRequest{RefreshToken: initial.RefreshToken})
-		if err != nil || rotated.AccessToken == "" || rotated.RefreshToken == "" || rotated.RefreshToken == initial.RefreshToken {
+		if err != nil || rotated.AccessToken == "" || rotated.RefreshToken == "" || rotated.RefreshToken == initial.RefreshToken || rotated.User.ID != userID {
 			t.Fatalf("rotated=%#v error=%v", rotated, err)
 		}
 		if _, err := service.Refresh(services.RefreshRequest{RefreshToken: initial.RefreshToken}); !errors.Is(err, services.ErrInvalidRefreshToken) {

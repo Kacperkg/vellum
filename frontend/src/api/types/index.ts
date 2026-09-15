@@ -3,14 +3,20 @@ export type {
   CreateAccountRequest,
   UpdateAccountRequest,
 } from "./accounts";
-export type { AuthResponse, LoginRequest, RegisterRequest } from "./auth";
+export type {
+  AuthResponse,
+  LoginRequest,
+  RefreshTokenRequest,
+  RegisterRequest,
+  User,
+} from "./auth";
 export type {
   Budget,
   CreateBudgetRequest,
   UpdateBudgetRequest,
 } from "./budgets";
 export type { Category } from "./categories";
-export type { ApiErrorResponse } from "./common";
+export type { ApiErrorResponse, BaseModel } from "./common";
 export type { CreateGoalRequest, Goal, UpdateGoalRequest } from "./goals";
 export type {
   Currency,

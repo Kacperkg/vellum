@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/auth"
 	"github.com/kacperkg/vellum/internal/models"
 	"github.com/kacperkg/vellum/internal/repository"
@@ -94,7 +93,7 @@ func (s *UserService) Register(req RegisterRequest) (*AuthResponse, error) {
 		return nil, err
 	}
 
-	return s.issueTokenPair(user.ID, s.refreshTokenRepository.Create)
+	return s.issueTokenPair(user, s.refreshTokenRepository.Create)
 }
 
 func (s *UserService) Login(req LoginRequest) (*AuthResponse, error) {
@@ -117,7 +116,7 @@ func (s *UserService) Login(req LoginRequest) (*AuthResponse, error) {
 		return nil, ErrInvalidCredentials
 	}
 
-	return s.issueTokenPair(user.ID, s.refreshTokenRepository.Create)
+	return s.issueTokenPair(user, s.refreshTokenRepository.Create)
 }
 
 func (s *UserService) Refresh(req RefreshRequest) (*AuthResponse, error) {
@@ -135,7 +134,7 @@ func (s *UserService) Refresh(req RefreshRequest) (*AuthResponse, error) {
 		return nil, ErrInvalidRefreshToken
 	}
 
-	return s.issueTokenPair(user.ID, func(replacement *models.RefreshToken) error {
+	return s.issueTokenPair(user, func(replacement *models.RefreshToken) error {
 		return s.refreshTokenRepository.Rotate(current.ID, replacement, now)
 	})
 }
@@ -145,10 +144,10 @@ func (s *UserService) Logout(req RefreshRequest) error {
 }
 
 func (s *UserService) issueTokenPair(
-	userID uuid.UUID,
+	user *models.User,
 	persist func(*models.RefreshToken) error,
 ) (*AuthResponse, error) {
-	accessToken, err := auth.GenerateToken(userID, s.jwtSecret, s.jwtExpiry)
+	accessToken, err := auth.GenerateToken(user.ID, s.jwtSecret, s.jwtExpiry)
 	if err != nil {
 		return nil, fmt.Errorf("generate access token: %w", err)
 	}
@@ -159,7 +158,7 @@ func (s *UserService) issueTokenPair(
 	}
 
 	refreshToken := &models.RefreshToken{
-		UserID:    userID,
+		UserID:    user.ID,
 		TokenHash: hashRefreshToken(rawRefreshToken),
 		ExpiresAt: time.Now().Add(s.refreshExpiry),
 	}
@@ -173,6 +172,14 @@ func (s *UserService) issueTokenPair(
 	return &AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: rawRefreshToken,
+		User: UserResponse{
+			ID:        user.ID,
+			CreatedAt: user.CreatedAt,
+			UpdatedAt: user.UpdatedAt,
+			FirstName: user.FirstName,
+			LastName:  user.LastName,
+			Email:     user.Email,
+		},
 	}, nil
 }
 
