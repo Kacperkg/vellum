@@ -25,7 +25,21 @@ The backend follows a layered structure:
 - Routes and middleware handle HTTP entry points and authentication.
 - Handlers parse requests and return JSON responses.
 - Services contain business logic, validation, and ownership checks.
-- Repositories are the only layer that talks to PostgreSQL through GORM.
+- Repository implementations are the only layer that talks to PostgreSQL through GORM.
+
+Dependencies flow in one direction:
+
+```text
+handlers → services → repository → GORM/PostgreSQL
+               ↑            ↑
+           apperrors     apperrors
+```
+
+`internal/apperrors` contains dependency-free error categories. Repositories
+translate persistence errors into those categories, services add domain context,
+and handlers map them to HTTP status codes in one place. HTTP request structs and
+validation tags stay private to handlers; service input/output contracts live in
+the service package.
 
 ## Getting Started
 
@@ -45,7 +59,7 @@ To run the backend directly:
 
 ```bash
 cd backend
-go run ./cmd/api
+go run ./cmd/server
 ```
 
 ## Configuration
@@ -136,19 +150,18 @@ the Gin context as `userID`.
 
 ```text
 cmd/
-└── api/              # Application entry point
+└── server/           # Application entry point and dependency wiring
 
 internal/
 ├── auth/             # JWT helpers
+├── apperrors/        # Shared application error categories
 ├── config/           # Environment configuration
 ├── database/         # Database connection and migrations
-├── dto/              # Request and response payloads
 ├── handlers/         # HTTP handlers
 ├── middleware/       # Gin middleware
 ├── models/           # GORM models and enums
-├── repositories/     # Data access layer
+├── repository/       # Data access interfaces and GORM implementations
 ├── routes/           # Route registration
-├── server/           # Application wiring
 └── services/         # Business logic
 ```
 
@@ -177,6 +190,18 @@ Common commands:
 go fmt ./...
 go test ./...
 go mod tidy
+```
+
+Tests are colocated with the package they exercise. Service and handler
+repository fakes live in package-local `fakes_test.go` files, while PostgreSQL
+repository integration tests live in `internal/repository` and skip unless
+`TEST_DATABASE_DSN` is configured.
+
+Run repository integration tests against an isolated database:
+
+```bash
+TEST_DATABASE_DSN='host=localhost port=5432 user=vellum password=password dbname=vellum_test sslmode=disable' \
+  go test ./internal/repository -count=1
 ```
 
 Docker logs:

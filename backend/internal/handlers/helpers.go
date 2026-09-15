@@ -43,36 +43,13 @@ func getUUIDParam(c *gin.Context, name string) (id uuid.UUID, ok bool) {
 
 func respondWithServiceError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, services.ErrInvalidCredentials):
+	case errors.Is(err, services.ErrUnauthorized):
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-	case errors.Is(err, services.ErrAccountNotFound),
-		errors.Is(err, services.ErrBudgetNotFound),
-		errors.Is(err, services.ErrCategoryNotFound),
-		errors.Is(err, services.ErrGoalNotFound),
-		errors.Is(err, services.ErrSettingsNotFound),
-		errors.Is(err, services.ErrTransactionNotFound):
+	case errors.Is(err, services.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-	case errors.Is(err, services.ErrUserEmailExists):
+	case errors.Is(err, services.ErrConflict):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
-	case errors.Is(err, services.ErrAccountNameRequired),
-		errors.Is(err, services.ErrAllocatedAmountPositive),
-		errors.Is(err, services.ErrCategoryRequired),
-		errors.Is(err, services.ErrGoalNameRequired),
-		errors.Is(err, services.ErrGoalTargetPositive),
-		errors.Is(err, services.ErrGoalSavedAmountNegative),
-		errors.Is(err, services.ErrGoalSavedExceedsTarget),
-		errors.Is(err, services.ErrGoalContributionNegative),
-		errors.Is(err, services.ErrSettingsCurrencyInvalid),
-		errors.Is(err, services.ErrSettingsDateFormatInvalid),
-		errors.Is(err, services.ErrSettingsNumberFormatInvalid),
-		errors.Is(err, services.ErrSettingsWeekStartInvalid),
-		errors.Is(err, services.ErrTransactionAccountRequired),
-		errors.Is(err, services.ErrTransactionAmountPositive),
-		errors.Is(err, services.ErrTransactionDateRange),
-		errors.Is(err, services.ErrTransactionDateRequired),
-		errors.Is(err, services.ErrTransactionFrequency),
-		errors.Is(err, services.ErrTransactionNameRequired),
-		errors.Is(err, services.ErrTransactionType):
+	case errors.Is(err, services.ErrInvalidInput):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
