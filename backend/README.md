@@ -1,279 +1,141 @@
 # Vellum Backend
 
-Go API for **Vellum**, a personal budgeting and finance application.
+Central REST API for Vellum. It owns PostgreSQL data, authentication,
+authorization, validation, and business rules for the browser client.
 
-The service uses Gin for HTTP routing, GORM for PostgreSQL persistence, bcrypt
-for password hashing, and JWTs for authentication.
+## Commands
 
-## Tech Stack
+Run these from `backend/`:
 
-- Go
-- Gin
-- GORM
-- PostgreSQL
-- JWT
-- bcrypt
-- Docker Compose
-- Air
+```bash
+go run ./cmd/server                         # run locally
+go build ./...                              # compile every package
+go test ./...                               # run unit tests
+go test -race ./...                         # run tests with race detection
+go vet ./...                                # static analysis
+go fmt ./...                                # format Go source
+```
+
+The server listens on the configured `PORT` and runs GORM migrations during
+startup.
 
 ## Architecture
 
-![Vellum Backend UML Component Diagram](doc/layered-uml-component-diagram.png)
-
-The backend follows a layered structure:
-
-- Routes and middleware handle HTTP entry points and authentication.
-- Handlers parse requests and return JSON responses.
-- Services contain business logic, validation, and ownership checks.
-- Repository implementations are the only layer that talks to PostgreSQL through GORM.
-
-Dependencies flow in one direction:
-
 ```text
-handlers → services → repository → GORM/PostgreSQL
-               ↑            ↑
-           apperrors     apperrors
+routes and middleware
+          ↓
+       handlers
+          ↓
+       services
+          ↓
+      repository
+          ↓
+   GORM/PostgreSQL
 ```
 
-`internal/apperrors` contains dependency-free error categories. Repositories
-translate persistence errors into those categories, services add domain context,
-and handlers map them to HTTP status codes in one place. HTTP request structs and
-validation tags stay private to handlers; service input/output contracts live in
-the service package.
+- `handlers` own HTTP request binding and response status codes.
+- `services` own validation, business rules, ownership checks, and API contracts.
+- `repository` owns database access and translates persistence failures.
+- `apperrors` provides shared, dependency-free error categories.
+- `models` contains GORM persistence models.
 
-## Getting Started
-
-From the repository root:
-
-```bash
-docker compose up --build
-```
-
-The backend runs on:
-
-```text
-http://localhost:8080
-```
-
-To run the backend directly:
-
-```bash
-cd backend
-go run ./cmd/server
-```
-
-## Configuration
-
-Configuration is loaded from environment variables. Local environment files
-should not be committed.
-
-Required variables:
-
-- `PORT`
-- `DB_HOST`
-- `DB_PORT`
-- `DB_USER`
-- `DB_PASSWORD`
-- `DB_NAME`
-- `DB_SSLMODE`
-- `JWT_SECRET`
-- `JWT_EXPIRY`
-- `JWT_REFRESH_EXPIRY`
-
-Both expiry values use Go duration format. A typical setup is a short-lived access
-token such as `JWT_EXPIRY=15m` and a longer-lived refresh token such as
-`JWT_REFRESH_EXPIRY=720h`.
-
-## API
-
-### Health Check
-
-```http
-GET /ping
-```
-
-### Register
-
-```http
-POST /register
-Content-Type: application/json
-```
-
-```json
-{
-  "first_name": "Ada",
-  "last_name": "Lovelace",
-  "email": "ada@example.com",
-  "password": "<password>"
-}
-```
-
-Returns:
-
-```json
-{
-  "access_token": "<jwt>",
-  "refresh_token": "<opaque-token>",
-  "user": {
-    "id": "<uuid>",
-    "created_at": "<timestamp>",
-    "updated_at": "<timestamp>",
-    "first_name": "Ada",
-    "last_name": "Lovelace",
-    "email": "ada@example.com"
-  }
-}
-```
-
-### Login
-
-```http
-POST /login
-Content-Type: application/json
-```
-
-```json
-{
-  "email": "ada@example.com",
-  "password": "<password>"
-}
-```
-
-Returns:
-
-```json
-{
-  "access_token": "<jwt>",
-  "refresh_token": "<opaque-token>",
-  "user": {
-    "id": "<uuid>",
-    "created_at": "<timestamp>",
-    "updated_at": "<timestamp>",
-    "first_name": "Ada",
-    "last_name": "Lovelace",
-    "email": "ada@example.com"
-  }
-}
-```
-
-### Refresh
-
-```http
-POST /refresh
-Content-Type: application/json
-```
-
-```json
-{
-  "refresh_token": "<opaque-token>"
-}
-```
-
-Returns a new access and refresh token pair. Each refresh token is single-use: a
-successful refresh revokes it and returns its replacement.
-
-### Logout
-
-```http
-POST /logout
-Content-Type: application/json
-```
-
-```json
-{
-  "refresh_token": "<opaque-token>"
-}
-```
-
-Returns `204 No Content` and revokes that refresh token.
+HTTP-specific request structs stay private to handlers. Services accept their
+own input contracts and return response types that do not expose persistence
+internals such as password hashes.
 
 ## Authentication
 
-Authenticated requests use a Bearer token:
+Registration and login return a short-lived HS256 JWT access token, an opaque
+refresh token, and the authenticated user.
+
+- Access tokens authenticate protected `/api` routes through the Bearer header.
+- Refresh tokens are random values; only SHA-256 hashes are stored.
+- `POST /refresh` atomically revokes the submitted refresh token and creates its
+  replacement.
+- `POST /logout` revokes the submitted refresh token.
+- Reused, expired, or revoked refresh tokens are rejected.
 
 ```http
-Authorization: Bearer <jwt>
+Authorization: Bearer <access-token>
 ```
 
-The auth middleware validates the access token and stores the authenticated user
-ID in the Gin context as `userID`. Refresh tokens are random opaque values; only
-their SHA-256 hashes are stored in the database.
+## Environment variables
 
-## Project Structure
+Every variable is required. Expiry values use Go duration syntax.
+
+| Variable | Example | Purpose |
+| --- | --- | --- |
+| `PORT` | `8080` | HTTP server port. |
+| `DB_HOST` | `localhost` | PostgreSQL host. Use `postgres` in Docker Compose. |
+| `DB_PORT` | `5432` | PostgreSQL port. |
+| `DB_USER` | `vellum` | PostgreSQL user. |
+| `DB_PASSWORD` | `password` | PostgreSQL password. |
+| `DB_NAME` | `vellum` | PostgreSQL database. |
+| `DB_SSLMODE` | `disable` | PostgreSQL SSL mode. |
+| `JWT_SECRET` | `<long-random-value>` | Access-token signing secret. |
+| `JWT_EXPIRY` | `15m` | Access-token lifetime. |
+| `JWT_REFRESH_EXPIRY` | `720h` | Refresh-token lifetime. |
+
+Local values may be placed in `backend/.env`; do not commit that file.
+
+## API overview
+
+Public routes:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/ping` | Health check. |
+| `POST` | `/register` | Create a user and token pair. |
+| `POST` | `/login` | Authenticate and create a token pair. |
+| `POST` | `/refresh` | Rotate a refresh token and create a new pair. |
+| `POST` | `/logout` | Revoke a refresh token. |
+
+Protected resource groups:
+
+| Prefix | Operations |
+| --- | --- |
+| `/api/accounts` | Create, list, read, update, and delete accounts. |
+| `/api/categories` | List and read categories. |
+| `/api/transactions` | CRUD plus account, category, date-range, and frequency filters. |
+| `/api/budgets` | Create, list, read, update, and delete budgets. |
+| `/api/goals` | Create, list, read, update, and delete goals. |
+| `/api/settings` | Read and update the authenticated user's settings. |
+
+All protected resources are scoped or ownership-checked against the user ID from
+the validated access token.
+
+## Project layout
 
 ```text
-cmd/
-└── server/           # Application entry point and dependency wiring
-
-internal/
-├── auth/             # JWT helpers
-├── apperrors/        # Shared application error categories
-├── config/           # Environment configuration
-├── database/         # Database connection and migrations
-├── handlers/         # HTTP handlers
-├── middleware/       # Gin middleware
-├── models/           # GORM models and enums
-├── repository/       # Data access interfaces and GORM implementations
-├── routes/           # Route registration
-└── services/         # Business logic
+cmd/server/            application entry point and dependency wiring
+internal/auth/         JWT generation and validation
+internal/apperrors/    shared application error categories
+internal/config/       environment configuration
+internal/database/     PostgreSQL connection and migrations
+internal/handlers/     HTTP request and response handling
+internal/middleware/   authentication middleware
+internal/models/       GORM models and enums
+internal/repository/   repository interfaces and GORM implementations
+internal/routes/       route registration
+internal/services/     business logic and API contracts
 ```
 
-## Data Model
+## Testing
 
-![Vellum Backend ERD](doc/ERD.png)
+Tests are colocated with the packages they exercise. Package-local
+`fakes_test.go` files provide repository fakes for service, handler, and route
+tests.
 
-The backend defines models for:
-
-- Users
-- User settings
-- Accounts
-- Categories
-- Transactions
-- Budgets
-- Goals
-- Refresh tokens
-
-All models embed a shared base model with a UUID primary key and timestamps.
-Migrations run automatically on startup through GORM.
-
-## Development
-
-Common commands:
-
-```bash
-go fmt ./...
-go test ./...
-go mod tidy
-```
-
-Tests are colocated with the package they exercise. Service and handler
-repository fakes live in package-local `fakes_test.go` files, while PostgreSQL
-repository integration tests live in `internal/repository` and skip unless
-`TEST_DATABASE_DSN` is configured.
-
-Run repository integration tests against an isolated database:
+Repository integration tests require an isolated PostgreSQL database and skip
+when `TEST_DATABASE_DSN` is absent:
 
 ```bash
 TEST_DATABASE_DSN='host=localhost port=5432 user=vellum password=password dbname=vellum_test sslmode=disable' \
   go test ./internal/repository -count=1
 ```
 
-Docker logs:
+## Data model
 
-```bash
-docker compose logs -f backend
-```
+![Vellum entity relationship diagram](./doc/ERD.png)
 
-## Roadmap
-
-- Account routes
-- Category routes
-- Transaction routes
-- Budget routes
-- Goal routes
-- Subscription routes
-- User settings routes
-- Dashboard and analytics routes
-- CSV export
-- Request validation
-- Test coverage
+![Vellum backend layers](./doc/layered-uml-component-diagram.png)

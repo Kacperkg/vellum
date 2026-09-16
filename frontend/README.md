@@ -1,73 +1,102 @@
-# React + TypeScript + Vite
+# Vellum Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Browser client for Vellum. Built with React, TypeScript, Vite, Tailwind CSS,
+TanStack Router, and Axios.
 
-Currently, two official plugins are available:
+## Development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Run these from `frontend/`:
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
+```bash
+pnpm install          # install dependencies
+pnpm dev              # start the Vite development server
+pnpm build            # type-check and create the production bundle
+pnpm lint             # run ESLint
+pnpm format           # format source with Prettier
+pnpm format:check     # verify formatting without changing files
+pnpm preview          # serve the production bundle locally
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The development server runs at `http://localhost:5173`. API requests currently
+target `http://localhost:8080` through the Axios instance in
+`src/api/client.ts`.
 
-```js
-// eslint.config.js
-import reactX from "eslint-plugin-react-x";
-import reactDom from "eslint-plugin-react-dom";
+## Authentication flow
 
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs["recommended-typescript"],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
+1. Register or login returns an access token, rotating refresh token, and user.
+2. `tokenStorage.ts` stores both tokens in browser `localStorage`.
+3. The request interceptor attaches the access token as a Bearer token.
+4. A `401` from a protected `/api/...` request starts one shared refresh request.
+5. Successful refresh stores the replacement pair and retries the original
+   request once.
+6. Failed refresh clears local authentication.
+7. Logout clears local tokens and asks the backend to revoke the refresh token.
+
+Refresh requests are shared because backend refresh tokens are single-use; this
+prevents simultaneous `401` responses from trying to rotate the same token more
+than once.
+
+The local storage keys are:
+
+```text
+vellum:access_token
+vellum:refresh_token
 ```
+
+## Key pieces
+
+- **`src/api/client.ts`** — shared Axios instance and access-token request
+  interceptor.
+- **`src/api/interceptors.ts`** — `401` handling, refresh coordination, and
+  one-time request retry.
+- **`src/api/tokenStorage.ts`** — access and refresh token persistence.
+- **`src/api/endpoints/`** — endpoint functions grouped by backend resource.
+- **`src/api/types/`** — request and response contracts grouped by domain.
+- **`src/routes/`** — TanStack file-based route definitions and guards.
+- **`src/pages/`** — page-level components.
+- **`src/components/`** — reusable UI and form components.
+
+## API organization
+
+Endpoint functions use the shared Axios client rather than creating their own
+clients. Domain types are defined in separate files and re-exported from
+`src/api/types/index.ts` for convenient imports.
+
+```text
+src/api/
+├── client.ts
+├── interceptors.ts
+├── tokenStorage.ts
+├── endpoints/
+│   ├── accounts.ts
+│   └── auth.ts
+└── types/
+    ├── accounts.ts
+    ├── auth.ts
+    ├── budgets.ts
+    ├── categories.ts
+    ├── common.ts
+    ├── goals.ts
+    ├── settings.ts
+    └── transactions.ts
+```
+
+## Routing
+
+- `/login` contains the sign-in and registration forms.
+- `/` is the authenticated application entry page.
+- Route guards redirect unauthenticated users to `/login` and prevent an
+  authenticated user from reopening the login page.
+
+As more authenticated pages are added, their guards should move under a shared
+authenticated parent route rather than being repeated on every page.
+
+## Production build
+
+```bash
+pnpm build
+```
+
+Vite writes the static production bundle to `dist/`. The deployment must serve
+those assets and make the Go API reachable at the base URL configured in
+`src/api/client.ts`.
