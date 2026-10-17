@@ -11,7 +11,9 @@ var (
 
 	ErrAccountNameRequired         = invalid("account name required")
 	ErrAccountNotFound             = notFound("account not found")
+	ErrAccountInUse                = conflict("account is referenced by transactions, transfers or goals; move, unlink or delete those records first")
 	ErrAllocatedAmountPositive     = invalid("allocated amount must be positive")
+	ErrBudgetCategoryExists        = conflict("a budget already exists for this category")
 	ErrBudgetNotFound              = notFound("budget not found")
 	ErrCategoryNotFound            = notFound("category not found")
 	ErrCategoryRequired            = invalid("category is required")
@@ -36,6 +38,13 @@ var (
 	ErrTransactionNameRequired     = invalid("transaction name required")
 	ErrTransactionNotFound         = notFound("transaction not found")
 	ErrTransactionType             = invalid("transaction type is invalid")
+	ErrTransferNameRequired        = invalid("transfer name required")
+	ErrTransferAmountPositive      = invalid("transfer amount must be positive")
+	ErrTransferAccountsRequired    = invalid("source and destination accounts are required")
+	ErrTransferAccountsDistinct    = invalid("source and destination accounts must be different")
+	ErrTransferDateRequired        = invalid("transfer date is required")
+	ErrTransferFrequency           = invalid("transfer frequency is invalid")
+	ErrTransferNotFound            = notFound("transfer not found")
 	ErrUserEmailExists             = conflict("user with this email already exists")
 )
 
