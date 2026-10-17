@@ -6,3 +6,5 @@ import "github.com/kacperkg/vellum/internal/apperrors"
 // implementations return the shared application sentinel so callers can map
 // errors without depending on persistence details.
 var ErrNotFound = apperrors.ErrNotFound
+
+var ErrConflict = apperrors.ErrConflict
