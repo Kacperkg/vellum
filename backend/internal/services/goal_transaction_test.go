@@ -16,7 +16,7 @@ func TestGoalService(t *testing.T) {
 
 	t.Run("create", func(t *testing.T) {
 		repo := &fakeGoalRepository{}
-		response, err := services.NewGoalService(repo).Create(userID, valid)
+		response, err := services.NewGoalService(repo, &fakeAccountRepository{}).Create(userID, valid)
 		if err != nil || repo.Created == nil || repo.Created.Name != "Emergency" || response.ID == uuid.Nil {
 			t.Fatalf("response=%#v created=%#v err=%v", response, repo.Created, err)
 		}
@@ -36,7 +36,7 @@ func TestGoalService(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			req := valid
 			test.mutate(&req)
-			_, err := services.NewGoalService(&fakeGoalRepository{}).Create(userID, req)
+			_, err := services.NewGoalService(&fakeGoalRepository{}, &fakeAccountRepository{}).Create(userID, req)
 			if !errors.Is(err, test.want) {
 				t.Fatalf("error=%v want=%v", err, test.want)
 			}
@@ -46,7 +46,7 @@ func TestGoalService(t *testing.T) {
 	t.Run("zero contribution is allowed", func(t *testing.T) {
 		req := valid
 		req.MonthlyContribution = 0
-		if _, err := services.NewGoalService(&fakeGoalRepository{}).Create(userID, req); err != nil {
+		if _, err := services.NewGoalService(&fakeGoalRepository{}, &fakeAccountRepository{}).Create(userID, req); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -54,7 +54,7 @@ func TestGoalService(t *testing.T) {
 	t.Run("ownership update delete and list", func(t *testing.T) {
 		goal := &models.Goal{BaseModel: models.BaseModel{ID: goalID}, UserID: userID}
 		repo := &fakeGoalRepository{Goal: goal, Goals: []*models.Goal{goal}}
-		service := services.NewGoalService(repo)
+		service := services.NewGoalService(repo, &fakeAccountRepository{})
 		update := services.UpdateGoalRequest{Name: "Holiday", TargetAmount: 200000, SavedAmount: 50000, MonthlyContribution: 20000}
 		if _, err := service.Update(userID, goalID, update); err != nil || repo.Updated == nil {
 			t.Fatalf("updated=%#v err=%v", repo.Updated, err)

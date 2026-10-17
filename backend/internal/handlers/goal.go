@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/services"
 )
 
@@ -12,10 +13,11 @@ type GoalHandler struct {
 }
 
 type goalRequest struct {
-	Name                string `json:"name" binding:"required"`
-	TargetAmount        int64  `json:"target_amount" binding:"required,gt=0"`
-	SavedAmount         int64  `json:"saved_amount" binding:"gte=0"`
-	MonthlyContribution int64  `json:"monthly_contribution" binding:"gte=0"`
+	AccountID           *uuid.UUID `json:"account_id"`
+	Name                string     `json:"name" binding:"required"`
+	TargetAmount        int64      `json:"target_amount" binding:"required,gt=0"`
+	SavedAmount         int64      `json:"saved_amount" binding:"gte=0"`
+	MonthlyContribution int64      `json:"monthly_contribution" binding:"gte=0"`
 }
 
 func NewGoalHandler(goalService *services.GoalService) *GoalHandler {

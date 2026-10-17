@@ -51,7 +51,7 @@ func main() {
 	accountSvc := services.NewAccountService(accountRepo)
 	categorySvc := services.NewCategoryService(categoryRepo)
 	budgetSvc := services.NewBudgetService(budgetRepo, categoryRepo)
-	goalSvc := services.NewGoalService(goalRepo)
+	goalSvc := services.NewGoalService(goalRepo, accountRepo)
 	transactionSvc := services.NewTransactionService(transactionRepo, accountRepo, categoryRepo)
 	transferSvc := services.NewTransferService(transferRepo, accountRepo)
 

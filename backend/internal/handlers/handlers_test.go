@@ -110,7 +110,7 @@ func TestGoalHandler(t *testing.T) {
 	userID, goalID := uuid.New(), uuid.New()
 	goal := &models.Goal{BaseModel: models.BaseModel{ID: goalID}, UserID: userID, Name: "Emergency", TargetAmount: 100000, SavedAmount: 10000}
 	repo := &fakeGoalRepository{Goal: goal, Goals: []*models.Goal{goal}}
-	handler := handlers.NewGoalHandler(services.NewGoalService(repo))
+	handler := handlers.NewGoalHandler(services.NewGoalService(repo, &fakeAccountRepository{}))
 	router := authenticatedRouter(userID)
 	router.POST("/goals", handler.Create)
 	router.GET("/goals", handler.ListByUser)

@@ -30,7 +30,7 @@ func testHandlerSet(userID uuid.UUID) routes.HandlerSet {
 		Accounts:     handlers.NewAccountHandler(services.NewAccountService(accounts)),
 		Categories:   handlers.NewCategoryHandler(services.NewCategoryService(categories)),
 		Budgets:      handlers.NewBudgetHandler(services.NewBudgetService(budgets, categories)),
-		Goals:        handlers.NewGoalHandler(services.NewGoalService(goals)),
+		Goals:        handlers.NewGoalHandler(services.NewGoalService(goals, accounts)),
 		Transactions: handlers.NewTransactionHandler(services.NewTransactionService(transactions, accounts, categories)),
 		Transfers:    handlers.NewTransferHandler(services.NewTransferService(transfers, accounts)),
 		Settings:     handlers.NewUserSettingsHandler(services.NewUserSettingsService(settings)),

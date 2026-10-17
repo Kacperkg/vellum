@@ -5,6 +5,7 @@ import (
 )
 
 type CreateGoalRequest struct {
+	AccountID           *uuid.UUID
 	Name                string
 	TargetAmount        int64
 	SavedAmount         int64
@@ -12,6 +13,7 @@ type CreateGoalRequest struct {
 }
 
 type UpdateGoalRequest struct {
+	AccountID           *uuid.UUID
 	Name                string
 	TargetAmount        int64
 	SavedAmount         int64
@@ -19,9 +21,10 @@ type UpdateGoalRequest struct {
 }
 
 type GoalResponse struct {
-	ID                  uuid.UUID `json:"id"`
-	Name                string    `json:"name"`
-	TargetAmount        int64     `json:"target_amount"`
-	SavedAmount         int64     `json:"saved_amount"`
-	MonthlyContribution int64     `json:"monthly_contribution"`
+	AccountID           *uuid.UUID `json:"account_id"`
+	ID                  uuid.UUID  `json:"id"`
+	Name                string     `json:"name"`
+	TargetAmount        int64      `json:"target_amount"`
+	SavedAmount         int64      `json:"saved_amount"`
+	MonthlyContribution int64      `json:"monthly_contribution"`
 }

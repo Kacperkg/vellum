@@ -10,12 +10,14 @@ import (
 )
 
 type GoalService struct {
-	goalRepository repository.GoalRepository
+	goalRepository    repository.GoalRepository
+	accountRepository repository.AccountRepository
 }
 
-func NewGoalService(goalRepository repository.GoalRepository) *GoalService {
+func NewGoalService(goalRepository repository.GoalRepository, accountRepository repository.AccountRepository) *GoalService {
 	return &GoalService{
-		goalRepository: goalRepository,
+		goalRepository:    goalRepository,
+		accountRepository: accountRepository,
 	}
 }
 
@@ -42,9 +44,13 @@ func (s *GoalService) Create(userID uuid.UUID, req CreateGoalRequest) (*GoalResp
 	if monthlyContribution < 0 {
 		return nil, ErrGoalContributionNegative
 	}
+	if err := s.validateAccount(userID, req.AccountID); err != nil {
+		return nil, err
+	}
 
 	goal := &models.Goal{
-		UserID: userID,
+		UserID:    userID,
+		AccountID: req.AccountID,
 
 		Name:                name,
 		TargetAmount:        targetAmount,
@@ -58,6 +64,7 @@ func (s *GoalService) Create(userID uuid.UUID, req CreateGoalRequest) (*GoalResp
 	}
 
 	return &GoalResponse{
+		AccountID:           goal.AccountID,
 		ID:                  goal.ID,
 		Name:                goal.Name,
 		TargetAmount:        goal.TargetAmount,
@@ -84,6 +91,7 @@ func (s *GoalService) GetByID(userID uuid.UUID, goalID uuid.UUID) (*GoalResponse
 	}
 
 	return &GoalResponse{
+		AccountID:           goal.AccountID,
 		ID:                  goal.ID,
 		Name:                goal.Name,
 		TargetAmount:        goal.TargetAmount,
@@ -102,6 +110,7 @@ func (s *GoalService) FindByUserID(userID uuid.UUID) ([]*GoalResponse, error) {
 
 	for _, goal := range goals {
 		responses = append(responses, &GoalResponse{
+			AccountID:           goal.AccountID,
 			ID:                  goal.ID,
 			Name:                goal.Name,
 			TargetAmount:        goal.TargetAmount,
@@ -152,7 +161,11 @@ func (s *GoalService) Update(userID uuid.UUID, goalID uuid.UUID, req UpdateGoalR
 	if newMonthlyContribution < 0 {
 		return nil, ErrGoalContributionNegative
 	}
+	if err := s.validateAccount(userID, req.AccountID); err != nil {
+		return nil, err
+	}
 
+	goal.AccountID = req.AccountID
 	goal.Name = newName
 	goal.TargetAmount = newTargetAmount
 	goal.SavedAmount = newSavedAmount
@@ -167,6 +180,7 @@ func (s *GoalService) Update(userID uuid.UUID, goalID uuid.UUID, req UpdateGoalR
 	}
 
 	return &GoalResponse{
+		AccountID:           goal.AccountID,
 		ID:                  goal.ID,
 		Name:                goal.Name,
 		TargetAmount:        goal.TargetAmount,
@@ -201,5 +215,25 @@ func (s *GoalService) Delete(userID uuid.UUID, goalID uuid.UUID) error {
 		return err
 	}
 
+	return nil
+}
+
+func (s *GoalService) validateAccount(userID uuid.UUID, accountID *uuid.UUID) error {
+	if accountID == nil {
+		return nil
+	}
+	if *accountID == uuid.Nil {
+		return ErrAccountNotFound
+	}
+	account, err := s.accountRepository.GetByID(*accountID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return ErrAccountNotFound
+		}
+		return err
+	}
+	if account == nil || account.UserID != userID {
+		return ErrAccountNotFound
+	}
 	return nil
 }

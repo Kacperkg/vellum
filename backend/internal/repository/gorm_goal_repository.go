@@ -47,6 +47,7 @@ func (r *goalRepository) Update(userID uuid.UUID, goal *models.Goal) error {
 	result := r.db.Model(&models.Goal{}).
 		Where("id = ? AND user_id = ?", goal.ID, userID).
 		Updates(map[string]any{
+			"account_id":           goal.AccountID,
 			"name":                 goal.Name,
 			"target_amount":        goal.TargetAmount,
 			"saved_amount":         goal.SavedAmount,
