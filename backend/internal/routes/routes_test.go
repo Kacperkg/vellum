@@ -23,6 +23,7 @@ func testHandlerSet(userID uuid.UUID) routes.HandlerSet {
 	budgets := &fakeBudgetRepository{Budgets: []*models.Budget{}}
 	goals := &fakeGoalRepository{Goals: []*models.Goal{}}
 	transactions := &fakeTransactionRepository{Transactions: []*models.Transaction{}}
+	transfers := &fakeTransferRepository{}
 
 	return routes.HandlerSet{
 		Auth:         handlers.NewAuthHandler(services.NewUserService(users, settings, &fakeRefreshTokenRepository{}, "secret", time.Hour, 30*24*time.Hour)),
@@ -31,6 +32,7 @@ func testHandlerSet(userID uuid.UUID) routes.HandlerSet {
 		Budgets:      handlers.NewBudgetHandler(services.NewBudgetService(budgets, categories)),
 		Goals:        handlers.NewGoalHandler(services.NewGoalService(goals)),
 		Transactions: handlers.NewTransactionHandler(services.NewTransactionService(transactions, accounts, categories)),
+		Transfers:    handlers.NewTransferHandler(services.NewTransferService(transfers, accounts)),
 		Settings:     handlers.NewUserSettingsHandler(services.NewUserSettingsService(settings)),
 	}
 }
@@ -41,8 +43,8 @@ func TestRegisteredRoutesAndAuthentication(t *testing.T) {
 	router := gin.New()
 	routes.Register(router, "secret", testHandlerSet(userID))
 
-	if got := len(router.Routes()); got != 33 {
-		t.Fatalf("registered route count = %d, want 33", got)
+	if got := len(router.Routes()); got != 38 {
+		t.Fatalf("registered route count = %d, want 38", got)
 	}
 
 	request := func(path, authorization string) *httptest.ResponseRecorder {
@@ -61,11 +63,17 @@ func TestRegisteredRoutesAndAuthentication(t *testing.T) {
 	if recorder := request("/api/accounts", ""); recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated status = %d", recorder.Code)
 	}
+	if recorder := request("/api/transfers", ""); recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated transfers status = %d", recorder.Code)
+	}
 	token, err := auth.GenerateToken(userID, "secret", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if recorder := request("/api/accounts", "Bearer "+token); recorder.Code != http.StatusOK {
 		t.Fatalf("authenticated status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+	if recorder := request("/api/transfers", "Bearer "+token); recorder.Code != http.StatusOK {
+		t.Fatalf("authenticated transfers status = %d body = %s", recorder.Code, recorder.Body.String())
 	}
 }

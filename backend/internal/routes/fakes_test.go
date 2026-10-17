@@ -125,6 +125,18 @@ type fakeTransactionRepository struct {
 	Deleted      uuid.UUID
 }
 
+type fakeTransferRepository struct{}
+
+func (r *fakeTransferRepository) Create(*models.Transfer) error { return nil }
+func (r *fakeTransferRepository) FindByID(uuid.UUID) (*models.Transfer, error) {
+	return nil, repository.ErrNotFound
+}
+func (r *fakeTransferRepository) FindByUserID(uuid.UUID) ([]*models.Transfer, error) {
+	return []*models.Transfer{}, nil
+}
+func (r *fakeTransferRepository) Update(uuid.UUID, *models.Transfer) error { return nil }
+func (r *fakeTransferRepository) Delete(uuid.UUID, uuid.UUID) error        { return nil }
+
 func (r *fakeTransactionRepository) Create(value *models.Transaction) error {
 	if r.Err == nil {
 		value.ID = uuid.New()

@@ -15,6 +15,7 @@ type HandlerSet struct {
 	Budgets      *handlers.BudgetHandler
 	Goals        *handlers.GoalHandler
 	Transactions *handlers.TransactionHandler
+	Transfers    *handlers.TransferHandler
 	Settings     *handlers.UserSettingsHandler
 }
 
@@ -60,6 +61,12 @@ func Register(router *gin.Engine, jwtSecret string, handlerSet HandlerSet) {
 	api.GET("/transactions/:id", handlerSet.Transactions.GetByID)
 	api.PUT("/transactions/:id", handlerSet.Transactions.Update)
 	api.DELETE("/transactions/:id", handlerSet.Transactions.Delete)
+
+	api.POST("/transfers", handlerSet.Transfers.Create)
+	api.GET("/transfers", handlerSet.Transfers.ListByUser)
+	api.GET("/transfers/:id", handlerSet.Transfers.GetByID)
+	api.PUT("/transfers/:id", handlerSet.Transfers.Update)
+	api.DELETE("/transfers/:id", handlerSet.Transfers.Delete)
 
 	api.GET("/settings", handlerSet.Settings.Get)
 	api.PUT("/settings", handlerSet.Settings.Update)

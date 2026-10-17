@@ -43,6 +43,7 @@ func main() {
 	budgetRepo := repository.NewBudgetRepository(db)
 	goalRepo := repository.NewGoalRepository(db)
 	transactionRepo := repository.NewTransactionRepository(db)
+	transferRepo := repository.NewTransferRepository(db)
 
 	// Services
 	userSvc := services.NewUserService(userRepo, userSettingsRepo, refreshTokenRepo, cfg.JWTSecret, jwtExpiry, refreshExpiry)
@@ -52,6 +53,7 @@ func main() {
 	budgetSvc := services.NewBudgetService(budgetRepo, categoryRepo)
 	goalSvc := services.NewGoalService(goalRepo)
 	transactionSvc := services.NewTransactionService(transactionRepo, accountRepo, categoryRepo)
+	transferSvc := services.NewTransferService(transferRepo, accountRepo)
 
 	// Handlers
 	handlerSet := routes.HandlerSet{
@@ -61,6 +63,7 @@ func main() {
 		Budgets:      handlers.NewBudgetHandler(budgetSvc),
 		Goals:        handlers.NewGoalHandler(goalSvc),
 		Transactions: handlers.NewTransactionHandler(transactionSvc),
+		Transfers:    handlers.NewTransferHandler(transferSvc),
 		Settings:     handlers.NewUserSettingsHandler(userSettingsSvc),
 	}
 
