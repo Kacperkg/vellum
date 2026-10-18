@@ -75,7 +75,7 @@ func TestAccountHandler(t *testing.T) {
 
 func TestBudgetHandler(t *testing.T) {
 	userID, budgetID, categoryID := uuid.New(), uuid.New(), uuid.New()
-	repo := &fakeBudgetRepository{Budget: &models.Budget{BaseModel: models.BaseModel{ID: budgetID}, UserID: userID, CategoryID: categoryID, AllocatedAmount: 10000}, Budgets: []*models.Budget{{UserID: userID, CategoryID: categoryID, AllocatedAmount: 10000}}}
+	repo := &fakeBudgetRepository{Budget: &models.Budget{BaseModel: models.BaseModel{ID: budgetID}, UserID: userID, CategoryID: categoryID, AllocatedAmount: 10000}}
 	categoryRepo := &fakeCategoryRepository{Category: &models.Category{BaseModel: models.BaseModel{ID: categoryID}}}
 	handler := handlers.NewBudgetHandler(services.NewBudgetService(repo, categoryRepo))
 	router := authenticatedRouter(userID)

@@ -95,6 +95,18 @@ func TestBudgetService(t *testing.T) {
 		}
 	})
 
+	t.Run("rejects duplicate category", func(t *testing.T) {
+		repo := &fakeBudgetRepository{Budgets: []*models.Budget{{
+			BaseModel:  models.BaseModel{ID: uuid.New()},
+			UserID:     userID,
+			CategoryID: categoryID,
+		}}}
+		_, err := services.NewBudgetService(repo, categoryRepo).Create(userID, services.CreateBudgetRequest{CategoryID: categoryID, AllocatedAmount: 1})
+		if !errors.Is(err, services.ErrBudgetCategoryExists) {
+			t.Fatalf("error=%v", err)
+		}
+	})
+
 	t.Run("ownership update delete", func(t *testing.T) {
 		repo := &fakeBudgetRepository{Budget: &models.Budget{BaseModel: models.BaseModel{ID: budgetID}, UserID: userID}}
 		service := services.NewBudgetService(repo, categoryRepo)

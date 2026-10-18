@@ -103,6 +103,10 @@ func (s *BudgetService) Update(userID uuid.UUID, budgetID uuid.UUID, req UpdateB
 		return nil, ErrAllocatedAmountPositive
 	}
 
+	if err := s.ensureCategoryAvailable(userID, newCategory, budget.ID); err != nil {
+		return nil, err
+	}
+
 	budget.CategoryID = category.ID
 	budget.AllocatedAmount = newAllocation
 
@@ -176,6 +180,10 @@ func (s *BudgetService) Create(userID uuid.UUID, req CreateBudgetRequest) (*Budg
 		return nil, ErrAllocatedAmountPositive
 	}
 
+	if err := s.ensureCategoryAvailable(userID, category.ID, uuid.Nil); err != nil {
+		return nil, err
+	}
+
 	budget := &models.Budget{
 		UserID:          userID,
 		CategoryID:      category.ID,
@@ -192,4 +200,19 @@ func (s *BudgetService) Create(userID uuid.UUID, req CreateBudgetRequest) (*Budg
 		CategoryID:      budget.CategoryID,
 		AllocatedAmount: budget.AllocatedAmount,
 	}, nil
+}
+
+func (s *BudgetService) ensureCategoryAvailable(userID, categoryID, excludedBudgetID uuid.UUID) error {
+	budgets, err := s.budgetRepository.FindByUserID(userID)
+	if err != nil {
+		return err
+	}
+
+	for _, budget := range budgets {
+		if budget.CategoryID == categoryID && budget.ID != excludedBudgetID {
+			return ErrBudgetCategoryExists
+		}
+	}
+
+	return nil
 }
