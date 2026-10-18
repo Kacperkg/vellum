@@ -40,8 +40,12 @@ func (s *AccountService) Create(userID uuid.UUID, req CreateAccountRequest) (*Ac
 
 	// return to frontend the newly created account information
 	return &AccountResponse{
-		ID:   account.ID,
-		Name: account.Name,
+		ID:                account.ID,
+		Name:              account.Name,
+		Balance:           account.Balance,
+		AllocatedAmount:   account.AllocatedAmount,
+		UnallocatedAmount: account.Balance - account.AllocatedAmount,
+		GoalCount:         account.GoalCount,
 	}, nil
 }
 
@@ -70,8 +74,12 @@ func (s *AccountService) GetByID(userID uuid.UUID, accountID uuid.UUID) (*Accoun
 	}
 
 	return &AccountResponse{
-		ID:   account.ID,
-		Name: account.Name,
+		ID:                account.ID,
+		Name:              account.Name,
+		Balance:           account.Balance,
+		AllocatedAmount:   account.AllocatedAmount,
+		UnallocatedAmount: account.Balance - account.AllocatedAmount,
+		GoalCount:         account.GoalCount,
 	}, nil
 }
 
@@ -89,8 +97,12 @@ func (s *AccountService) FindByUserID(userID uuid.UUID) ([]*AccountResponse, err
 	// for each account append AccountResponse into responses
 	for _, account := range accounts {
 		responses = append(responses, &AccountResponse{
-			ID:   account.ID,
-			Name: account.Name,
+			ID:                account.ID,
+			Name:              account.Name,
+			Balance:           account.Balance,
+			AllocatedAmount:   account.AllocatedAmount,
+			UnallocatedAmount: account.Balance - account.AllocatedAmount,
+			GoalCount:         account.GoalCount,
 		})
 	}
 
@@ -137,8 +149,12 @@ func (s *AccountService) Update(userID uuid.UUID, accountID uuid.UUID, req Updat
 
 	// return to frontend the newly updated account information
 	return &AccountResponse{
-		ID:   account.ID,
-		Name: account.Name,
+		ID:                account.ID,
+		Name:              account.Name,
+		Balance:           account.Balance,
+		AllocatedAmount:   account.AllocatedAmount,
+		UnallocatedAmount: account.Balance - account.AllocatedAmount,
+		GoalCount:         account.GoalCount,
 	}, nil
 }
 
@@ -164,6 +180,9 @@ func (s *AccountService) Delete(userID uuid.UUID, accountID uuid.UUID) error {
 	err = s.accountRepository.Delete(userID, accountID)
 
 	if err != nil {
+		if errors.Is(err, repository.ErrConflict) {
+			return ErrAccountInUse
+		}
 		if errors.Is(err, repository.ErrNotFound) {
 			return ErrAccountNotFound
 		}
