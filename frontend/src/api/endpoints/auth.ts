@@ -4,6 +4,7 @@ import {
   getRefreshToken,
   setAccessToken,
   setRefreshToken,
+  setStoredUser,
 } from "../tokenStorage";
 import type {
   AuthResponse,
@@ -22,6 +23,7 @@ export async function register(
   const response = await api.post<AuthResponse>(registerPath, request);
   setAccessToken(response.data.access_token);
   setRefreshToken(response.data.refresh_token);
+  setStoredUser(response.data.user);
   return response.data;
 }
 
@@ -29,6 +31,7 @@ export async function login(request: LoginRequest): Promise<AuthResponse> {
   const response = await api.post<AuthResponse>(loginPath, request);
   setAccessToken(response.data.access_token);
   setRefreshToken(response.data.refresh_token);
+  setStoredUser(response.data.user);
   return response.data;
 }
 
@@ -44,6 +47,7 @@ export async function refresh(): Promise<void> {
     });
     setAccessToken(response.data.access_token);
     setRefreshToken(response.data.refresh_token);
+    setStoredUser(response.data.user);
   } catch {
     clearAuth();
     throw new Error("Session expired, please log in again");

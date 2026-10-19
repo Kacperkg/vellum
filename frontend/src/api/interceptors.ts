@@ -38,7 +38,12 @@ api.interceptors.response.use(
       });
     }
 
-    await refreshPromise;
+    try {
+      await refreshPromise;
+    } catch (refreshError) {
+      window.location.assign("/login");
+      return Promise.reject(refreshError);
+    }
 
     return api(originalRequest);
   },

@@ -72,6 +72,8 @@ export default function SignInForm({ onRegister }: SignInFormProps) {
           variant="ghost"
           className="cursor-pointer pr-0 text-muted-foreground hover:bg-transparent!"
           size="sm"
+          disabled
+          title="Password recovery is not available yet"
         >
           Forgot password?
         </Button>

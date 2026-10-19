@@ -1,14 +1,8 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
-import { hasAccessToken } from "../api/tokenStorage";
+import { createFileRoute } from "@tanstack/react-router";
 import Home from "../pages/Home";
+import { requireAuth } from "../lib/requireAuth";
 
 export const Route = createFileRoute("/")({
-  beforeLoad: () => {
-    if (!hasAccessToken()) {
-      throw redirect({
-        to: "/login",
-      });
-    }
-  },
+  beforeLoad: requireAuth,
   component: Home,
 });
