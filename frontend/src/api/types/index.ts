@@ -19,6 +19,11 @@ export type { Category } from "./categories";
 export type { ApiErrorResponse, BaseModel } from "./common";
 export type { CreateGoalRequest, Goal, UpdateGoalRequest } from "./goals";
 export type {
+  CreateTransferRequest,
+  Transfer,
+  UpdateTransferRequest,
+} from "./transfers";
+export type {
   Currency,
   DateFormat,
   NumberFormat,
