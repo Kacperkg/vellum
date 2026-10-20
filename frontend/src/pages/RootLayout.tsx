@@ -1,6 +1,7 @@
 import { Outlet, useLocation } from "@tanstack/react-router";
 import SideNav from "../components/SideNav";
 import Nav from "../components/Nav";
+import { FinanceDataProvider } from "../context/FinanceDataContext";
 
 export default function RootLayout() {
   const { pathname } = useLocation();
@@ -10,12 +11,14 @@ export default function RootLayout() {
   }
 
   return (
-    <div className="flex min-h-screen">
-      <SideNav />
-      <main className="min-w-0 flex-1">
-        <Nav />
-        <Outlet />
-      </main>
-    </div>
+    <FinanceDataProvider>
+      <div className="app-frame">
+        <SideNav />
+        <main className="app-main">
+          <Nav />
+          <Outlet />
+        </main>
+      </div>
+    </FinanceDataProvider>
   );
 }
