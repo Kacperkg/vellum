@@ -17,6 +17,7 @@ type DialogProps = Omit<
   footer?: ReactNode;
   headerBorder?: boolean;
   footerBorder?: boolean;
+  busy?: boolean;
 };
 
 export default function Dialog({
@@ -28,6 +29,7 @@ export default function Dialog({
   footer,
   headerBorder = true,
   footerBorder = true,
+  busy = false,
   className = "",
   ...props
 }: DialogProps) {
@@ -57,10 +59,14 @@ export default function Dialog({
       className={classes}
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
-      onCancel={() => onOpenChange(false)}
+      aria-busy={busy}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onOpenChange(false);
+      }}
       onClose={() => onOpenChange(false)}
       onClick={(event) => {
-        if (event.target === event.currentTarget) onOpenChange(false);
+        if (!busy && event.target === event.currentTarget) onOpenChange(false);
       }}
       {...props}
     >
@@ -76,15 +82,18 @@ export default function Dialog({
       </div>
 
       {children != null && children !== false && (
-        <div className="p-5">{children}</div>
+        <fieldset disabled={busy} className="min-w-0 border-0 p-5">
+          {children}
+        </fieldset>
       )}
 
       {footer && (
-        <div
+        <fieldset
+          disabled={busy}
           className={`flex justify-end gap-3 p-3${footerBorder ? " border-t border-border" : ""}`}
         >
           {footer}
-        </div>
+        </fieldset>
       )}
     </dialog>
   );
