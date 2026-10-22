@@ -1,4 +1,5 @@
 import { useId, useState, type FormEvent } from "react";
+import { Link } from "@tanstack/react-router";
 import {
   createTransaction,
   updateTransaction,
@@ -230,13 +231,13 @@ export default function NewTransactionDialog({
               ? "Add at least two accounts"
               : "Create an account and ensure categories are available"}{" "}
             in{" "}
-            <a
-              href="/settings"
+            <Link
+              to="/settings"
               onClick={() => setDialogOpen(false)}
               className="underline"
             >
               Settings
-            </a>{" "}
+            </Link>{" "}
             before recording {isTransfer ? "transfers" : "transactions"}.
           </p>
         )}

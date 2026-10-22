@@ -9,11 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ComponentsRouteImport } from './routes/components'
 import { Route as AccountsRouteImport } from './routes/accounts'
 import { Route as IndexRouteImport } from './routes/index'
 
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -40,12 +46,14 @@ export interface FileRoutesByFullPath {
   '/accounts': typeof AccountsRoute
   '/components': typeof ComponentsRoute
   '/login': typeof LoginRoute
+  '/settings': typeof SettingsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
   '/components': typeof ComponentsRoute
   '/login': typeof LoginRoute
+  '/settings': typeof SettingsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,14 @@ export interface FileRoutesById {
   '/accounts': typeof AccountsRoute
   '/components': typeof ComponentsRoute
   '/login': typeof LoginRoute
+  '/settings': typeof SettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/accounts' | '/components' | '/login'
+  fullPaths: '/' | '/accounts' | '/components' | '/login' | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/accounts' | '/components' | '/login'
-  id: '__root__' | '/' | '/accounts' | '/components' | '/login'
+  to: '/' | '/accounts' | '/components' | '/login' | '/settings'
+  id: '__root__' | '/' | '/accounts' | '/components' | '/login' | '/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,10 +76,18 @@ export interface RootRouteChildren {
   AccountsRoute: typeof AccountsRoute
   ComponentsRoute: typeof ComponentsRoute
   LoginRoute: typeof LoginRoute
+  SettingsRoute: typeof SettingsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -107,6 +124,7 @@ const rootRouteChildren: RootRouteChildren = {
   AccountsRoute: AccountsRoute,
   ComponentsRoute: ComponentsRoute,
   LoginRoute: LoginRoute,
+  SettingsRoute: SettingsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
