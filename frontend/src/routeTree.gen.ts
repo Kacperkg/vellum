@@ -13,6 +13,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as GoalsRouteImport } from './routes/goals'
 import { Route as ComponentsRouteImport } from './routes/components'
+import { Route as BudgetsRouteImport } from './routes/budgets'
 import { Route as AccountsRouteImport } from './routes/accounts'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -36,6 +37,11 @@ const ComponentsRoute = ComponentsRouteImport.update({
   path: '/components',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BudgetsRoute = BudgetsRouteImport.update({
+  id: '/budgets',
+  path: '/budgets',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AccountsRoute = AccountsRouteImport.update({
   id: '/accounts',
   path: '/accounts',
@@ -50,6 +56,7 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
+  '/budgets': typeof BudgetsRoute
   '/components': typeof ComponentsRoute
   '/goals': typeof GoalsRoute
   '/login': typeof LoginRoute
@@ -58,6 +65,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
+  '/budgets': typeof BudgetsRoute
   '/components': typeof ComponentsRoute
   '/goals': typeof GoalsRoute
   '/login': typeof LoginRoute
@@ -67,6 +75,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
+  '/budgets': typeof BudgetsRoute
   '/components': typeof ComponentsRoute
   '/goals': typeof GoalsRoute
   '/login': typeof LoginRoute
@@ -75,13 +84,27 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/accounts' | '/components' | '/goals' | '/login' | '/settings'
+    | '/'
+    | '/accounts'
+    | '/budgets'
+    | '/components'
+    | '/goals'
+    | '/login'
+    | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/accounts' | '/components' | '/goals' | '/login' | '/settings'
+  to:
+    | '/'
+    | '/accounts'
+    | '/budgets'
+    | '/components'
+    | '/goals'
+    | '/login'
+    | '/settings'
   id:
     | '__root__'
     | '/'
     | '/accounts'
+    | '/budgets'
     | '/components'
     | '/goals'
     | '/login'
@@ -91,6 +114,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountsRoute: typeof AccountsRoute
+  BudgetsRoute: typeof BudgetsRoute
   ComponentsRoute: typeof ComponentsRoute
   GoalsRoute: typeof GoalsRoute
   LoginRoute: typeof LoginRoute
@@ -127,6 +151,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ComponentsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/budgets': {
+      id: '/budgets'
+      path: '/budgets'
+      fullPath: '/budgets'
+      preLoaderRoute: typeof BudgetsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/accounts': {
       id: '/accounts'
       path: '/accounts'
@@ -147,6 +178,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountsRoute: AccountsRoute,
+  BudgetsRoute: BudgetsRoute,
   ComponentsRoute: ComponentsRoute,
   GoalsRoute: GoalsRoute,
   LoginRoute: LoginRoute,
