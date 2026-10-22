@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as GoalsRouteImport } from './routes/goals'
 import { Route as ComponentsRouteImport } from './routes/components'
 import { Route as AccountsRouteImport } from './routes/accounts'
 import { Route as IndexRouteImport } from './routes/index'
@@ -23,6 +24,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GoalsRoute = GoalsRouteImport.update({
+  id: '/goals',
+  path: '/goals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ComponentsRoute = ComponentsRouteImport.update({
@@ -45,6 +51,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
   '/components': typeof ComponentsRoute
+  '/goals': typeof GoalsRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
 }
@@ -52,6 +59,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
   '/components': typeof ComponentsRoute
+  '/goals': typeof GoalsRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
 }
@@ -60,21 +68,31 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
   '/components': typeof ComponentsRoute
+  '/goals': typeof GoalsRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/accounts' | '/components' | '/login' | '/settings'
+  fullPaths:
+    '/' | '/accounts' | '/components' | '/goals' | '/login' | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/accounts' | '/components' | '/login' | '/settings'
-  id: '__root__' | '/' | '/accounts' | '/components' | '/login' | '/settings'
+  to: '/' | '/accounts' | '/components' | '/goals' | '/login' | '/settings'
+  id:
+    | '__root__'
+    | '/'
+    | '/accounts'
+    | '/components'
+    | '/goals'
+    | '/login'
+    | '/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountsRoute: typeof AccountsRoute
   ComponentsRoute: typeof ComponentsRoute
+  GoalsRoute: typeof GoalsRoute
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRoute
 }
@@ -93,6 +111,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/goals': {
+      id: '/goals'
+      path: '/goals'
+      fullPath: '/goals'
+      preLoaderRoute: typeof GoalsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/components': {
@@ -123,6 +148,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountsRoute: AccountsRoute,
   ComponentsRoute: ComponentsRoute,
+  GoalsRoute: GoalsRoute,
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRoute,
 }

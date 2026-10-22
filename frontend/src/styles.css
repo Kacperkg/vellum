@@ -482,6 +482,100 @@ select:focus-visible {
   text-transform: uppercase;
 }
 
+/* Goals */
+.goal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.goal-card {
+  min-height: 314px;
+  padding: 29px 28px;
+}
+.goal-card-head {
+  display: flex;
+  justify-content: space-between;
+}
+.goal-card-head h2 {
+  margin: 12px 0 0;
+  font-size: 19px;
+}
+.goal-eta {
+  text-align: right;
+}
+.goal-eta span {
+  display: block;
+  margin-top: 11px;
+  font-size: 13px;
+}
+.goal-icons {
+  display: flex;
+  gap: 14px;
+  color: #8d8e95;
+}
+.goal-icons button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+.goal-icons button:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+}
+.goal-amount {
+  margin: 27px 0 19px;
+  font-size: 37px;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+.goal-amount span {
+  color: #8d8e95;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.milestones {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 14px;
+  color: #8d8e95;
+  font-size: 10.5px;
+}
+.milestones span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.milestones i {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  font-style: normal;
+  font-size: 9px;
+}
+.milestones .complete i {
+  border-color: #e2416c;
+  background: #e2416c;
+  color: white;
+}
+.goal-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 29px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 24px;
+}
+.goal-stats strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 15px;
+}
+
 /* Accounts */
 .account-grid {
   display: grid;
