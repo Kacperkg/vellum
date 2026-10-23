@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TransactionsRouteImport } from './routes/transactions'
+import { Route as SubscriptionsRouteImport } from './routes/subscriptions'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as GoalsRouteImport } from './routes/goals'
@@ -21,6 +22,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const TransactionsRoute = TransactionsRouteImport.update({
   id: '/transactions',
   path: '/transactions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SubscriptionsRoute = SubscriptionsRouteImport.update({
+  id: '/subscriptions',
+  path: '/subscriptions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -67,6 +73,7 @@ export interface FileRoutesByFullPath {
   '/goals': typeof GoalsRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
+  '/subscriptions': typeof SubscriptionsRoute
   '/transactions': typeof TransactionsRoute
 }
 export interface FileRoutesByTo {
@@ -77,6 +84,7 @@ export interface FileRoutesByTo {
   '/goals': typeof GoalsRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
+  '/subscriptions': typeof SubscriptionsRoute
   '/transactions': typeof TransactionsRoute
 }
 export interface FileRoutesById {
@@ -88,6 +96,7 @@ export interface FileRoutesById {
   '/goals': typeof GoalsRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
+  '/subscriptions': typeof SubscriptionsRoute
   '/transactions': typeof TransactionsRoute
 }
 export interface FileRouteTypes {
@@ -100,6 +109,7 @@ export interface FileRouteTypes {
     | '/goals'
     | '/login'
     | '/settings'
+    | '/subscriptions'
     | '/transactions'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -110,6 +120,7 @@ export interface FileRouteTypes {
     | '/goals'
     | '/login'
     | '/settings'
+    | '/subscriptions'
     | '/transactions'
   id:
     | '__root__'
@@ -120,6 +131,7 @@ export interface FileRouteTypes {
     | '/goals'
     | '/login'
     | '/settings'
+    | '/subscriptions'
     | '/transactions'
   fileRoutesById: FileRoutesById
 }
@@ -131,6 +143,7 @@ export interface RootRouteChildren {
   GoalsRoute: typeof GoalsRoute
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRoute
+  SubscriptionsRoute: typeof SubscriptionsRoute
   TransactionsRoute: typeof TransactionsRoute
 }
 
@@ -141,6 +154,13 @@ declare module '@tanstack/react-router' {
       path: '/transactions'
       fullPath: '/transactions'
       preLoaderRoute: typeof TransactionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/subscriptions': {
+      id: '/subscriptions'
+      path: '/subscriptions'
+      fullPath: '/subscriptions'
+      preLoaderRoute: typeof SubscriptionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -203,6 +223,7 @@ const rootRouteChildren: RootRouteChildren = {
   GoalsRoute: GoalsRoute,
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRoute,
+  SubscriptionsRoute: SubscriptionsRoute,
   TransactionsRoute: TransactionsRoute,
 }
 export const routeTree = rootRouteImport
