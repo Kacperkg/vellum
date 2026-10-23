@@ -1,22 +1,48 @@
+import { useState } from "react";
 import Logo from "./Logo";
 import { Link, useNavigate } from "@tanstack/react-router";
 import Card, { CardContent, CardFooter, CardHeader, CardTitle } from "./Card";
 import Button from "./Button";
 import { logout } from "../api/endpoints/auth";
+import Icon, { type IconName } from "./Icon";
+import Progress from "./Progress";
+import { useFinanceData } from "../context/FinanceDataContext";
+import { formatMoney, isCurrentMonth } from "../lib/finance";
 
 const routes = [
-  { label: "Overview", path: "/" },
-  { label: "Transactions", path: "/transactions" },
-  { label: "Budgets", path: "/budgets" },
-  { label: "Analytics", path: "/analytics" },
-  { label: "Goals", path: "/goals" },
-  { label: "Subscriptions", path: "/subscriptions" },
-  { label: "Settings", path: "/settings" },
-  { label: "Components", path: "/components" },
+  { label: "Overview", path: "/", icon: "overview" },
+  { label: "Accounts", path: "/accounts", icon: "accounts" },
+  { label: "Transactions", path: "/transactions", icon: "transactions" },
+  { label: "Budgets", path: "/budgets", icon: "budgets" },
+  { label: "Analytics", path: "/analytics", icon: "analytics" },
+  { label: "Goals", path: "/goals", icon: "goals" },
+  { label: "Subscriptions", path: "/subscriptions", icon: "subscriptions" },
+  { label: "Settings", path: "/settings", icon: "settings" },
 ] as const;
 
 export default function SideNav() {
   const navigate = useNavigate();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const { budgets, transactions, settings } = useFinanceData();
+  const allocated = budgets.reduce(
+    (sum, budget) => sum + budget.allocated_amount,
+    0,
+  );
+  const budgetCategoryIds = new Set(
+    budgets.map((budget) => budget.category_id),
+  );
+  const spent = transactions
+    .filter(
+      (transaction) =>
+        transaction.type === "expense" &&
+        isCurrentMonth(transaction.date) &&
+        budgetCategoryIds.has(transaction.category_id),
+    )
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
+  const utilisation = allocated > 0 ? (spent / allocated) * 100 : 0;
+  const month = new Intl.DateTimeFormat("en", { month: "long" }).format(
+    new Date(),
+  );
 
   async function handleLogout(): Promise<void> {
     await logout();
@@ -27,58 +53,71 @@ export default function SideNav() {
   }
 
   return (
-    <nav className="pl-8 pt-8 pr-4 bg-sidebar border-r border-border flex flex-col justify-between max-h-screen sticky top-0">
-      <div>
-        <Logo />
-        <div className="flex flex-col pt-8 text-muted-foreground">
-          <h2 className="uppercase tracking-widest pb-2 text-md">Workspace</h2>
-          <div className="flex flex-col text-md">
+    <>
+      <button
+        type="button"
+        className="mobile-menu-toggle"
+        aria-label="Open workspace navigation"
+        aria-expanded={mobileOpen}
+        onClick={() => setMobileOpen(true)}
+      >
+        <span />
+        <span />
+        <span />
+      </button>
+      {mobileOpen && (
+        <button
+          className="mobile-nav-scrim"
+          aria-label="Close workspace navigation"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+      <aside className={`side-nav ${mobileOpen ? "mobile-open" : ""}`}>
+        <div>
+          <Logo />
+          <div className="side-nav-links">
+            <h2>Workspace</h2>
             {routes.map((item) => (
               <Link
                 key={item.path}
                 to={item.path}
+                onClick={() => setMobileOpen(false)}
                 activeProps={{
-                  className:
-                    "bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:bg-accent before:w-0.5 before:h-5 before:-translate-y-1/2 before:top-1/2 before:left-0.5",
+                  className: "active",
                 }}
-                inactiveProps={{
-                  className:
-                    "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                }}
-                className="py-2 px-4 rounded-xl min-w-50 relative"
+                className="side-nav-link"
               >
+                <Icon name={item.icon as IconName} />
                 {item.label}
               </Link>
             ))}
           </div>
         </div>
-      </div>
-      <div className="flex flex-col gap-2">
-        <Card>
-          <CardHeader className="pb-1 pt-2">
-            <CardTitle className="uppercase text-muted-foreground text-sm">
-              month
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="py-0">
-            <h1 className="text-2xl">3,000.00</h1>
-            <p className="text-muted-foreground text-sm">of 4,180 budget</p>
-          </CardContent>
-          <CardFooter>
-            <div className="w-full h-1 bg-muted-foreground rounded-md"></div>
-          </CardFooter>
-        </Card>
-        <div className="flex justify-start items-center py-4">
-          <p>icon</p>
-          <Button
-            variant="ghost"
-            className="text-muted-foreground"
-            onClick={handleLogout}
-          >
-            Sign out
+        <div className="side-nav-bottom">
+          {budgets.length > 0 && (
+            <Card className="month-card">
+              <CardHeader>
+                <CardTitle>{month}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <strong>{settings ? formatMoney(spent, settings) : "—"}</strong>
+                <p>
+                  {settings
+                    ? `of ${formatMoney(allocated, settings)} budget`
+                    : "Loading budget"}
+                </p>
+              </CardContent>
+              <CardFooter>
+                <Progress value={utilisation} />
+              </CardFooter>
+            </Card>
+          )}
+          <Button variant="ghost" className="sign-out" onClick={handleLogout}>
+            <Icon name="logout" />
+            <span>Sign out</span>
           </Button>
         </div>
-      </div>
-    </nav>
+      </aside>
+    </>
   );
 }

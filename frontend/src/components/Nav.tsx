@@ -1,19 +1,28 @@
 import { useState } from "react";
 import Button from "./Button";
 import NewTransactionDialog from "./dialog/NewTransactionDialog";
+import Icon from "./Icon";
 
 export default function Nav() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   return (
-    <nav className="w-full border-b border-border flex gap-4 justify-end items-center pr-8 py-2 sticky top-0 bg-background">
-      <Button onClick={() => setDialogOpen(true)}>+ New</Button>
-      <NewTransactionDialog
-        dialogOpen={dialogOpen}
-        setDialogOpen={setDialogOpen}
-      />
-      <div className="w-12 h-12 rounded-full flex border-border border justify-center items-center">
-        A
+    <nav className="app-topbar">
+      <div className="topbar-inner">
+        <Button
+          className="topbar-new"
+          title="Add transaction"
+          aria-label="Add transaction"
+          onClick={() => setDialogOpen(true)}
+        >
+          <Icon name="plus" /> New
+        </Button>
+        {dialogOpen && (
+          <NewTransactionDialog
+            dialogOpen={dialogOpen}
+            setDialogOpen={setDialogOpen}
+          />
+        )}
       </div>
     </nav>
   );
