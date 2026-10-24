@@ -4,12 +4,11 @@ Vellum is a personal-finance application for managing accounts, transactions,
 budgets, savings goals, categories, and user preferences. The repository pairs
 a substantially implemented Go/PostgreSQL API with an early-stage React client.
 
-The backend is the strongest part of the project: it uses explicit handler,
-service, and repository boundaries; enforces ownership in the service and data
-layers; and supports short-lived JWT access tokens with rotating, revocable
-refresh tokens. The frontend currently provides authentication, protected
-routing, token refresh, navigation shells, reusable UI primitives, and component
-prototypes. The finance dashboard and most user workflows are not yet connected.
+The backend uses explicit handler, service, and repository boundaries; enforces
+ownership in the service and data layers; and supports short-lived JWT access
+tokens with rotating, revocable refresh tokens. The React client consumes those
+APIs through typed resource modules and derives dashboard and analytics views
+from live account, transaction, budget, goal, category, and settings data.
 
 ## Project status
 
@@ -19,35 +18,48 @@ prototypes. The finance dashboard and most user workflows are not yet connected.
 - JWT access tokens plus high-entropy, hashed, single-use refresh tokens.
 - Refresh-token rotation and logout revocation.
 - Authenticated CRUD APIs for accounts, budgets, goals, and transactions.
+- Account-to-account transfers with authenticated CRUD, ownership checks on both
+  accounts, a single atomic record for both sides of the movement, and the same
+  frequency options as income and expenses.
 - Transaction filtering by date range, recurrence, account, and category.
 - Shared category reads and per-user settings reads/updates.
+- Idempotent canonical category initialization for fresh databases.
 - Per-user ownership checks that avoid revealing foreign resources.
 - PostgreSQL persistence through GORM and automatic schema migration.
 - React registration/login forms, route guards, logout, and automatic retry
   after one coordinated token refresh.
+- Live overview, transaction, budget, goal, analytics, account, and settings
+  screens backed by the REST API.
+- Persisted account, transaction, budget, goal, and settings forms.
+- Dedicated Accounts tab with server-calculated recorded balances, linked goal
+  target allocations, unallocated money, and shortfall warnings. Goals can be
+  linked to an owned account or left unlinked; associations persist in PostgreSQL.
+- Subscriptions use recurring transactions: daily, weekly, monthly, and yearly
+  income, expense, and transfer entries appear in Subscriptions; one-off entries
+  do not. Each type uses its existing resource API for persistence.
 - Reusable buttons, cards, inputs, selects, navigation, and dialog prototypes.
 - Docker Compose development environment for the client, API, and database.
 - Backend unit, handler, routing, middleware, and repository integration tests.
 
-### In progress
+### Not yet modeled
 
-- The authenticated home route is a placeholder rather than a finance dashboard.
-- The frontend exposes typed account requests, but account, transaction, budget,
-  goal, category, and settings screens are not wired to the API.
-- Several finance dialogs are UI demonstrations and do not persist data.
-- Subscription and analytics features appear in older design notes but have no
-  backend model, route, or working frontend flow.
+- Accounts show recorded balances derived from income, expenses, and transfers.
+  Opening bank balances and provider types are not currently modeled.
+- Goal allocation uses the full target of each linked goal, independently of
+  saved progress, and does not create transactions or move money.
+- Dashboard and analytics values are derived client-side because aggregate API
+  endpoints are not defined.
 
 ## Technology stack
 
-| Area | Technologies |
-| --- | --- |
-| Web client | React 19, TypeScript, Vite, TanStack Router, Tailwind CSS 4, Axios |
-| API | Go, Gin, GORM |
-| Authentication | bcrypt, HS256 JWT access tokens, opaque refresh tokens |
-| Database | PostgreSQL 17 |
-| Development | Docker, Docker Compose, Air, pnpm |
-| Testing | Go `testing`, Gin test utilities, GORM/PostgreSQL integration tests |
+| Area           | Technologies                                                        |
+| -------------- | ------------------------------------------------------------------- |
+| Web client     | React 19, TypeScript, Vite, TanStack Router, Tailwind CSS 4, Axios  |
+| API            | Go, Gin, GORM                                                       |
+| Authentication | bcrypt, HS256 JWT access tokens, opaque refresh tokens              |
+| Database       | PostgreSQL 17                                                       |
+| Development    | Docker, Docker Compose, Air, pnpm                                   |
+| Testing        | Go `testing`, Gin test utilities, GORM/PostgreSQL integration tests |
 
 ## Architecture
 
@@ -80,17 +92,17 @@ public deployment.
 
 ## Repository layout
 
-| Path | Purpose |
-| --- | --- |
-| `backend/cmd/server` | API composition and process entry point |
-| `backend/internal/handlers` | HTTP parsing and response mapping |
-| `backend/internal/services` | validation, business rules, and ownership checks |
-| `backend/internal/repository` | persistence interfaces and GORM implementations |
-| `backend/internal/models` | PostgreSQL/GORM entities and relationships |
-| `frontend/src/api` | typed API client, token storage, and refresh behavior |
-| `frontend/src/components` | reusable UI primitives and dialog prototypes |
-| `frontend/src/routes` | TanStack Router file-based routes and guards |
-| `docs` | architecture notes and diagrams |
+| Path                          | Purpose                                               |
+| ----------------------------- | ----------------------------------------------------- |
+| `backend/cmd/server`          | API composition and process entry point               |
+| `backend/internal/handlers`   | HTTP parsing and response mapping                     |
+| `backend/internal/services`   | validation, business rules, and ownership checks      |
+| `backend/internal/repository` | persistence interfaces and GORM implementations       |
+| `backend/internal/models`     | PostgreSQL/GORM entities and relationships            |
+| `frontend/src/api`            | typed API client, token storage, and refresh behavior |
+| `frontend/src/components`     | reusable UI primitives and dialog prototypes          |
+| `frontend/src/routes`         | TanStack Router file-based routes and guards          |
+| `docs`                        | architecture notes and diagrams                       |
 
 ## Screenshots
 
@@ -136,12 +148,12 @@ Then start the development stack:
 docker compose up --build
 ```
 
-| Service | Local address |
-| --- | --- |
-| Web client | `http://localhost:5173` |
-| REST API | `http://localhost:8080` |
+| Service      | Local address                |
+| ------------ | ---------------------------- |
+| Web client   | `http://localhost:5173`      |
+| REST API     | `http://localhost:8080`      |
 | Health check | `http://localhost:8080/ping` |
-| PostgreSQL | `localhost:5432` |
+| PostgreSQL   | `localhost:5432`             |
 
 Stop the stack with `docker compose down`. Running
 `docker compose down -v` also deletes the local database volume.
@@ -164,8 +176,8 @@ pnpm install
 pnpm dev
 ```
 
-The client API base URL is currently hard-coded to `http://localhost:8080` in
-`frontend/src/api/client.ts`.
+The client API base URL defaults to `http://localhost:8080` and can be
+overridden with `VITE_API_BASE_URL` for local development.
 
 ## Testing and quality checks
 
@@ -204,15 +216,16 @@ secret management, migration strategy, and CI.
 
 - **Layered backend:** repository interfaces make service logic testable without
   HTTP or database concerns, at the cost of additional types and mapping code.
-- **Integer money values:** transaction, budget, and goal amounts use `int64`,
-  avoiding binary floating-point errors; API units should be documented before
-  the UI formats currency.
+- **Integer money values:** transaction, budget, and goal amounts use `int64`
+  minor currency units, avoiding binary floating-point errors while allowing
+  clients to represent cents precisely.
 - **Rotating refresh tokens:** server-side hashes enable revocation and replay
   prevention, but token storage and cleanup require database operations.
 - **GORM AutoMigrate:** convenient while the schema is evolving, but explicit,
   versioned migrations would provide safer production change control.
-- **Local component state:** appropriate for the current small client; server
-  state and cache strategy should be selected when finance screens are wired.
+- **Shared server state:** a lightweight React context hydrates resource lists,
+  refreshes them after mutations, and isolates resource-loading failures without
+  adding a separate caching dependency.
 
 ## Further documentation
 
