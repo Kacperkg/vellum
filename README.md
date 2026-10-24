@@ -2,7 +2,7 @@
 
 Vellum is a personal-finance application for managing accounts, transactions,
 budgets, savings goals, categories, and user preferences. The repository pairs
-a substantially implemented Go/PostgreSQL API with an early-stage React client.
+a Go/PostgreSQL API with a feature-oriented React client.
 
 The backend uses explicit handler, service, and repository boundaries; enforces
 ownership in the service and data layers; and supports short-lived JWT access
@@ -100,7 +100,10 @@ public deployment.
 | `backend/internal/repository` | persistence interfaces and GORM implementations       |
 | `backend/internal/models`     | PostgreSQL/GORM entities and relationships            |
 | `frontend/src/api`            | typed API client, token storage, and refresh behavior |
-| `frontend/src/components`     | reusable UI primitives and dialog prototypes          |
+| `frontend/src/features`       | domain pages, forms, utilities, tests, and styles     |
+| `frontend/src/components`     | shared UI primitives and presentation components      |
+| `frontend/src/layout`         | application shell and navigation                      |
+| `frontend/src/contexts`       | shared finance resource state                         |
 | `frontend/src/routes`         | TanStack Router file-based routes and guards          |
 | `docs`                        | architecture notes and diagrams                       |
 
@@ -199,10 +202,14 @@ Frontend:
 cd frontend
 pnpm lint
 pnpm build
+pnpm test
 ```
 
-Both commands passed during the documentation audit on 16 October 2026. There
-are no frontend automated tests and no committed CI workflow.
+The frontend suite covers transfer accounting, activity sorting, CSV export,
+local import resolution, feature boundaries, and runtime import cycles. Finance
+tests are colocated under the transactions feature; repository-wide architecture
+checks and their compiler helper live in `frontend/tests/`. There is no committed
+CI workflow.
 
 ## Deployment
 

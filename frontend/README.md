@@ -12,6 +12,7 @@ pnpm install          # install dependencies
 pnpm dev              # start the Vite development server
 pnpm build            # type-check and create the production bundle
 pnpm lint             # run ESLint
+pnpm test             # finance regressions and architecture boundaries
 pnpm format           # format source with Prettier
 pnpm format:check     # verify formatting without changing files
 pnpm preview          # serve the production bundle locally
@@ -54,9 +55,71 @@ vellum:user
 - **`src/api/tokenStorage.ts`** — access and refresh token persistence.
 - **`src/api/endpoints/`** — endpoint functions grouped by backend resource.
 - **`src/api/types/`** — request and response contracts grouped by domain.
-- **`src/routes/`** — TanStack file-based route definitions and guards.
-- **`src/pages/`** — page-level components.
-- **`src/components/`** — reusable UI and form components.
+- **`src/app/`** — application setup and router creation.
+- **`src/routes/`** — thin TanStack file-based route definitions and guards.
+- **`src/features/`** — domain pages, forms, styles, and feature utilities/tests.
+- **`src/components/ui/`** — reusable UI primitives with no domain dependencies.
+- **`src/components/shared/`** — shared page headers, states, branding, and confirmation UI.
+- **`src/layout/`** — application shell, navigation, and layout styles.
+- **`src/contexts/`** — shared finance resource state.
+- **`src/utils/`** — shared money, date, and finance calculations.
+- **`src/assets/styles/`** — theme, base styles, stylesheet entry, and shared responsive rules.
+
+## Feature structure and imports
+
+The frontend groups related implementation by feature, following the
+[feature-oriented approach in the React/Vite guide](https://sandeshrathnayake.medium.com/mastering-modern-react-vite-folder-structure-a-production-ready-guide-for-scalable-applications-9ad8e233f8b9).
+The existing TanStack routes, Axios modules, shared finance context, and backend
+contracts remain in place. Directories are added when there is code to put in
+them rather than creating empty scaffolding.
+
+```text
+src/
+├── app/router.ts
+├── api/                       # existing resource endpoints and contracts
+├── assets/styles/globals.css  # ordered stylesheet entry point
+├── components/
+│   ├── ui/
+│   └── shared/
+├── contexts/FinanceDataContext.tsx
+├── features/
+│   ├── accounts/              # components, pages, styles, public exports
+│   ├── analytics/
+│   ├── auth/
+│   ├── budgets/
+│   ├── goals/
+│   ├── overview/
+│   ├── settings/
+│   ├── subscriptions/
+│   └── transactions/
+│       ├── components/
+│       ├── pages/Transactions.tsx
+│       ├── utils/             # activity, CSV export, and colocated tests
+│       ├── index.ts           # public cross-feature exports
+│       └── styles.css
+├── layout/
+├── pages/ComponentsDemo.tsx    # development catalogue composition
+├── routes/                   # filenames and URLs remain stable
+└── utils/finance.ts
+```
+
+Use `@/` for imports across shared directories; it resolves to `src/` in both
+TypeScript and Vite. Use relative imports within a feature. When one feature
+needs another feature's functionality, import its named public exports from
+`@/features/<name>`, rather than reaching into its internals. Only features with
+cross-feature consumers need an `index.ts`.
+
+Routes and application composition can import feature pages directly. Pages
+are deliberately excluded from feature public barrels to preserve route loading
+boundaries. UI primitives cannot depend on API, context, routing, or product
+features. Shared API, contexts, utilities, and components cannot import product
+features. Runtime imports must remain acyclic; `pnpm test:architecture` checks
+these boundaries and resolves local imports.
+
+Feature styles live beside their implementation. `globals.css` imports them in
+the original cascade order, with shared responsive overrides last. Keep that
+ordering when changing styles. The stylesheet extraction preserved the compiled
+production CSS byte for byte.
 
 ## API organization
 
@@ -76,6 +139,7 @@ src/api/
 │   ├── categories.ts
 │   ├── goals.ts
 │   ├── settings.ts
+│   ├── transfers.ts
 │   └── transactions.ts
 └── types/
     ├── accounts.ts
@@ -85,6 +149,7 @@ src/api/
     ├── common.ts
     ├── goals.ts
     ├── settings.ts
+    ├── transfers.ts
     └── transactions.ts
 ```
 
@@ -100,8 +165,8 @@ authenticated parent route rather than being repeated on every page.
 
 ## Live finance data
 
-`FinanceDataContext` loads accounts, categories, transactions, budgets, goals,
-and settings through the typed endpoint modules. Screens select only the
+`FinanceDataContext` loads accounts, categories, transactions, transfers, budgets,
+goals, and settings through the typed endpoint modules. Screens select only the
 resource errors relevant to them, and successful mutations refresh the shared
 state. Overview and analytics values are derived from those live resources.
 
@@ -156,7 +221,7 @@ buttons in Transactions and Settings reuse this form. Editing or deleting a
 transfer changes its effect on both accounts together. Transactions, account
 filters, overview activity, and CSV exports include the transfer record.
 
-`src/lib/activity.ts` combines the display history and computes recorded account
+`src/features/transactions/utils/activity.ts` combines the display history and computes recorded account
 balances. A transfer reduces its source and increases its destination by the
 same integer amount. It has zero global net impact and is excluded from income,
 spending, budgets, and analytics. Recurring transfers appear in the recurring
@@ -168,7 +233,9 @@ It does not generate future ledger occurrences automatically.
 
 Run `pnpm test:finance` for the accounting regression tests, including the
 salary → transfer → subscription scenario, edits, deletion, return transfers,
-account-filter signs, and CSV net impact.
+account-filter signs, and CSV net impact. These tests live beside the activity
+utility and use the installed TypeScript compiler through a small native Node
+test helper in `tests/helpers/`; no additional test framework is required.
 
 ## Production build
 
