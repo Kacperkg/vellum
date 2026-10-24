@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { requireAuth } from "../lib/requireAuth";
-import Analytics from "../pages/Analytics";
+import { requireAuth } from "@/features/auth";
+import Analytics from "@/features/analytics/pages/Analytics";
 
 export const Route = createFileRoute("/analytics")({
   beforeLoad: requireAuth,

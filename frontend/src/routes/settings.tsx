@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { requireAuth } from "../lib/requireAuth";
-import Settings from "../pages/Settings";
+import { requireAuth } from "@/features/auth";
+import Settings from "@/features/settings/pages/Settings";
 
 export const Route = createFileRoute("/settings")({
   beforeLoad: requireAuth,

@@ -1,21 +1,21 @@
 import { useState } from "react";
-import Button from "../components/Button";
+import Button from "@/components/ui/Button";
 import Card, {
   CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
-} from "../components/Card";
-import Input from "../components/Input";
-import Select from "../components/Select";
-import DeleteDialog from "../components/dialog/DeleteDialog";
-import NewTransactionDialog from "../components/dialog/NewTransactionDialog";
-import EditTransactionDialog from "../components/dialog/EditTransactionDialog";
-import NewBudgetDialog from "../components/dialog/NewBudgetDialog";
-import NewGoalDialog from "../components/dialog/NewGoalDialog";
-import NewSubscriptionDialog from "../components/dialog/NewSubscriptionDialog";
-import NewAccountDialog from "../components/dialog/NewAccountDialog";
+} from "@/components/ui/Card";
+import Input from "@/components/ui/Input";
+import Select from "@/components/ui/Select";
+import DeleteDialog from "@/components/shared/DeleteDialog";
+import { NewTransactionDialog } from "@/features/transactions";
+import { EditTransactionDialog } from "@/features/transactions";
+import { NewBudgetDialog } from "@/features/budgets";
+import { NewGoalDialog } from "@/features/goals";
+import { NewSubscriptionDialog } from "@/features/subscriptions";
+import { NewAccountDialog } from "@/features/accounts";
 
 export default function ComponentsDemo() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);

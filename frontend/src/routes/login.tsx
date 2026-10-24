@@ -1,6 +1,6 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { hasAccessToken } from "../api/tokenStorage";
-import Login from "../pages/Login";
+import { hasAccessToken } from "@/api/tokenStorage";
+import Login from "@/features/auth/pages/Login";
 
 export const Route = createFileRoute("/login")({
   beforeLoad: () => {
