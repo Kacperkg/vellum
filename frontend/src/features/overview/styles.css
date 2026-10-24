@@ -1,0 +1,248 @@
+/* Overview */
+.overview-hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2.08fr) minmax(300px, 1fr);
+  gap: 24px;
+}
+
+.balance-card,
+.remaining-card {
+  min-height: 382px;
+  padding: 34px 28px 0;
+  overflow: hidden;
+}
+
+.balance-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.balance-amount {
+  margin: 14px 0 10px;
+  font-size: clamp(56px, 6vw, 80px);
+  font-weight: 650;
+  letter-spacing: -0.055em;
+  line-height: 1;
+}
+
+.balance-amount span {
+  color: #8f9097;
+}
+
+.balance-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: #8d8e95;
+}
+
+.balance-note span,
+.balance-summaries strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.balance-note span {
+  color: #78c995;
+}
+.balance-note i {
+  width: 1px;
+  height: 14px;
+  background: var(--color-border);
+}
+
+.balance-summaries {
+  display: flex;
+  gap: 30px;
+}
+
+.balance-summaries > div {
+  text-align: right;
+}
+.balance-summaries strong {
+  margin-top: 12px;
+  font-size: 19px;
+}
+.balance-summaries svg {
+  width: 14px;
+}
+
+.balance-chart {
+  width: calc(100% + 8px);
+  height: 150px;
+  margin: 39px 0 0 -4px;
+}
+
+.remaining-card > strong {
+  display: block;
+  margin-top: 17px;
+  font-size: 45px;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+.remaining-card > p:not(.metric-label) {
+  margin: 9px 0 0;
+  color: #8d8e95;
+  font-size: 12.5px;
+}
+
+.remaining-progress {
+  margin-top: 61px;
+}
+.remaining-progress > div:last-child {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 13px;
+  color: #8d8e95;
+  font-size: 12px;
+}
+
+.forecast-card {
+  margin-top: 25px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: #1b1c20;
+  padding: 15px 16px;
+}
+
+.forecast-card p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  color: #8d8e95;
+  font-size: 12px;
+}
+.forecast-card p svg {
+  color: #e2416c;
+}
+.forecast-card strong {
+  display: block;
+  font-size: 17px;
+}
+.forecast-card span {
+  display: block;
+  margin-top: 6px;
+  color: #9a9ba2;
+  font-size: 12px;
+}
+
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 24px;
+}
+.insight-card {
+  min-height: 183px;
+  padding: 24px;
+}
+.insight-card > div {
+  display: flex;
+  justify-content: space-between;
+  color: #8d8e95;
+}
+.insight-card h2 {
+  margin: 18px 0 9px;
+  font-size: 16px;
+  font-weight: 620;
+}
+.insight-card p {
+  margin: 0;
+  color: #93949b;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.overview-lower-grid {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 24px;
+  margin-top: 24px;
+}
+.section-card {
+  overflow: hidden;
+}
+.section-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--color-border);
+  padding: 22px 24px;
+}
+.section-card-header h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.section-card-header p {
+  margin: 3px 0 0;
+  color: #8d8e95;
+  font-size: 12px;
+}
+.section-card-header button,
+.section-card-header a {
+  border: 0;
+  background: transparent;
+  color: #8d8e95;
+  font-size: 12px;
+  text-decoration: none;
+}
+.activity-row {
+  display: grid;
+  grid-template-columns: 38px 1fr auto;
+  align-items: center;
+  gap: 13px;
+  min-height: 68px;
+  border-bottom: 1px solid var(--color-border);
+  padding: 0 24px;
+}
+.activity-row > strong {
+  font-size: 13px;
+}
+.activity-row div strong {
+  font-size: 13px;
+}
+.activity-row div p {
+  margin: 3px 0 0;
+  color: #8d8e95;
+  font-size: 11px;
+}
+.merchant-mark {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #1a1b20;
+  color: #a2a3aa;
+  font-size: 12px;
+}
+.mini-budget-list {
+  display: grid;
+  gap: 24px;
+  padding: 24px;
+}
+.mini-budget-list > div > div {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 9px;
+}
+.mini-budget-list strong {
+  font-size: 13px;
+}
+.mini-budget-list span {
+  color: #8d8e95;
+  font-size: 11px;
+}
+.overview-total {
+  margin: 0;
+  border-top: 1px solid var(--color-border);
+  padding: 18px 24px;
+  color: #8d8e95;
+  font-size: 12px;
+}

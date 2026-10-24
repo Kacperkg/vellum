@@ -1,0 +1,136 @@
+/* Transactions */
+.transactions-page .page-heading {
+  min-height: 153px;
+}
+.transactions-card {
+  overflow: hidden;
+}
+.transaction-tools {
+  display: flex;
+  gap: 12px;
+  border-bottom: 1px solid var(--color-border);
+  padding: 16px;
+}
+.transaction-tools label {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  height: 38px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #0b0c0e;
+  padding: 0 13px;
+  color: #8d8e95;
+}
+.transaction-tools input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #f3f3f5;
+}
+.transaction-tools input::placeholder {
+  color: #85868d;
+}
+.transaction-tools button {
+  height: 38px;
+}
+.transaction-tools button.transaction-edit-toggle {
+  width: 38px;
+  padding: 0;
+  flex-shrink: 0;
+}
+.transaction-sort-controls {
+  display: none;
+}
+.transaction-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+.transaction-head button:hover,
+.transaction-head [aria-sort="ascending"] button,
+.transaction-head [aria-sort="descending"] button {
+  color: var(--color-foreground);
+}
+.transaction-head button span {
+  letter-spacing: 0;
+  font-size: 14px;
+}
+.category-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--color-border);
+  padding: 15px 16px;
+  scrollbar-width: none;
+}
+.category-tabs button {
+  flex-shrink: 0;
+  min-height: 29px;
+  white-space: nowrap;
+  border: 1px solid var(--color-border);
+  border-radius: 99px;
+  background: transparent;
+  padding: 0 13px;
+  color: #8d8e95;
+  font-size: 12px;
+}
+.category-tabs button.active {
+  border-color: #e2416c;
+  background: rgb(226 65 108 / 10%);
+  color: #f27091;
+}
+.transaction-table-wrap {
+  min-width: 760px;
+}
+.transaction-row {
+  display: grid;
+  grid-template-columns: minmax(280px, 2.5fr) 1fr 1fr 0.8fr 1fr;
+  min-height: 69px;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+  padding: 0 24px;
+  color: #8d8e95;
+  font-size: 12.5px;
+}
+.transaction-row:last-child {
+  border-bottom: 0;
+}
+.transaction-head {
+  min-height: 41px;
+  color: #8d8e95;
+  font-size: 10px;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+}
+.transaction-head span:last-child {
+  text-align: right;
+}
+.transaction-row > strong {
+  text-align: right;
+  color: #f1f1f3;
+  font-size: 14px;
+}
+.merchant-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.merchant-cell strong {
+  display: block;
+  color: #f1f1f3;
+  font-size: 13.5px;
+}
+.merchant-cell small {
+  display: block;
+  margin-top: 3px;
+  color: #8d8e95;
+}

@@ -4,7 +4,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import "./api/interceptors";
 
 import { router } from "./router";
-import "./styles.css";
+import "./assets/styles/globals.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

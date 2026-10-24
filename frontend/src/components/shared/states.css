@@ -1,0 +1,20 @@
+.unavailable-card {
+  max-width: 640px;
+  padding: 48px;
+  text-align: center;
+}
+.unavailable-card > svg {
+  width: 32px;
+  height: 32px;
+  margin-inline: auto;
+  color: #e2416c;
+}
+.unavailable-card h2 {
+  margin: 22px 0 10px;
+  font-size: 20px;
+}
+.unavailable-card p {
+  margin: 0;
+  color: #8d8e95;
+  line-height: 1.65;
+}
