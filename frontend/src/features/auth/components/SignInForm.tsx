@@ -1,6 +1,6 @@
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
-import { useState, type SubmitEvent } from "react";
+import { useId, useState, type SubmitEvent } from "react";
 import { login } from "@/api/endpoints/auth";
 import axios from "axios";
 import type { ApiErrorResponse } from "@/api/types";
@@ -11,6 +11,7 @@ type SignInFormProps = {
 };
 
 export default function SignInForm({ onRegister }: SignInFormProps) {
+  const formId = useId();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,14 +53,24 @@ export default function SignInForm({ onRegister }: SignInFormProps) {
             {errorMessage}
           </p>
         )}
+        <label className="sr-only" htmlFor={`${formId}-email`}>
+          Email
+        </label>
         <Input
+          id={`${formId}-email`}
+          autoComplete="email"
           required
           variant="email"
           placeholder="john@doe.com"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
         />
+        <label className="sr-only" htmlFor={`${formId}-password`}>
+          Password
+        </label>
         <Input
+          id={`${formId}-password`}
+          autoComplete="current-password"
           required
           variant="password"
           placeholder="Password"

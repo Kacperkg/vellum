@@ -2,6 +2,7 @@ import axios from "axios";
 import type { InternalAxiosRequestConfig } from "axios";
 import { api } from "./client";
 import { refresh } from "./endpoints/auth";
+import { getAccessToken } from "./tokenStorage";
 
 type RetryableRequestConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;
@@ -31,6 +32,16 @@ api.interceptors.response.use(
     }
 
     originalRequest._retry = true;
+
+    // A slow response can report 401 after another request already rotated the
+    // token. Retry it with the current token instead of rotating a second time.
+    const currentToken = getAccessToken();
+    if (
+      currentToken &&
+      originalRequest.headers.get("Authorization") !== `Bearer ${currentToken}`
+    ) {
+      return api(originalRequest);
+    }
 
     if (!refreshPromise) {
       refreshPromise = refresh().finally(() => {

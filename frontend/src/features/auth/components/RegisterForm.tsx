@@ -1,6 +1,6 @@
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
-import { useState, type SubmitEvent } from "react";
+import { useId, useState, type SubmitEvent } from "react";
 import { register } from "@/api/endpoints/auth";
 import axios from "axios";
 import type { ApiErrorResponse } from "@/api/types";
@@ -11,6 +11,7 @@ type RegisterFormProps = {
 };
 
 export default function RegisterForm({ onSignIn }: RegisterFormProps) {
+  const formId = useId();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -58,7 +59,12 @@ export default function RegisterForm({ onSignIn }: RegisterFormProps) {
             {errorMessage}
           </p>
         )}
+        <label className="sr-only" htmlFor={`${formId}-first-name`}>
+          First name
+        </label>
         <Input
+          id={`${formId}-first-name`}
+          autoComplete="given-name"
           required
           variant="string"
           placeholder="First Name"
@@ -66,7 +72,12 @@ export default function RegisterForm({ onSignIn }: RegisterFormProps) {
           value={firstName}
           onChange={(event) => setFirstName(event.target.value)}
         />
+        <label className="sr-only" htmlFor={`${formId}-last-name`}>
+          Last name
+        </label>
         <Input
+          id={`${formId}-last-name`}
+          autoComplete="family-name"
           required
           variant="string"
           placeholder="Last Name"
@@ -74,14 +85,25 @@ export default function RegisterForm({ onSignIn }: RegisterFormProps) {
           value={lastName}
           onChange={(event) => setLastName(event.target.value)}
         />
+        <label className="sr-only" htmlFor={`${formId}-email`}>
+          Email
+        </label>
         <Input
+          id={`${formId}-email`}
+          autoComplete="email"
           required
           variant="email"
           placeholder="Email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
         />
+        <label className="sr-only" htmlFor={`${formId}-password`}>
+          Password
+        </label>
         <Input
+          id={`${formId}-password`}
+          autoComplete="new-password"
+          minLength={8}
           required
           variant="password"
           placeholder="Password"

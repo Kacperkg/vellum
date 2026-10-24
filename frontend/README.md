@@ -13,6 +13,8 @@ pnpm dev              # start the Vite development server
 pnpm build            # type-check and create the production bundle
 pnpm lint             # run ESLint
 pnpm test             # finance regressions and architecture boundaries
+pnpm test:e2e:check    # type-check browser tests and configuration
+pnpm test:e2e          # complete browser workflows in an isolated stack
 pnpm format           # format source with Prettier
 pnpm format:check     # verify formatting without changing files
 pnpm preview          # serve the production bundle locally
@@ -246,3 +248,39 @@ pnpm build
 Vite writes the static production bundle to `dist/`. The deployment must serve
 those assets and make the Go API reachable at the base URL configured in
 `src/api/client.ts`.
+
+## Browser tests and screenshots
+
+Install frontend dependencies, Go, Docker, and Chromium before the first run:
+
+```sh
+pnpm exec playwright install chromium
+pnpm test:e2e
+```
+
+`scripts/run-e2e.mjs` creates a throwaway PostgreSQL container, compiles a Go
+binary into a temporary directory, and starts dedicated API/frontend processes
+on ports 18080/15173. It rejects occupied ports instead of reusing existing
+servers. The API runs outside the backend directory with explicit synthetic
+configuration, so it does not load the development `.env`. Processes, temporary
+files, and the database container are removed after the run.
+
+The desktop Chromium suite covers browser authentication, transfer balances,
+linked goal availability, duplicate budgets, activity editing/filter/sort/export,
+settings persistence, and successful/rejected session refresh. A mobile project
+checks navigation, sorting, account creation, and page overflow. Tests use fresh
+synthetic users in separate browser contexts. Browser tests are separately
+type-checked by `tsconfig.e2e.json`; the production build still checks application
+source. The normal `pnpm test` suite remains fast and does not require Docker.
+
+Failures retain traces, screenshots, and video under ignored `test-results/` and
+`playwright-report/` directories. CI uploads failure diagnostics for review.
+
+`pnpm screenshots` explicitly opts into the screenshot fixture, seeds synthetic
+records through the real API, and updates `docs/screenshots/`. It does not
+photograph the developer's database. The fixture is excluded from normal tests.
+
+Playwright setup follows its official [fixtures](https://playwright.dev/docs/test-fixtures)
+and [CI](https://playwright.dev/docs/ci-intro) documentation. The custom runner
+owns the database and process lifecycle so tests cannot silently reuse a local
+application server.

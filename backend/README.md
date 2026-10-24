@@ -26,6 +26,12 @@ go fmt ./...                                # format Go source
 The server listens on the configured `PORT` and runs GORM migrations during
 startup.
 
+Copy `.env.example` to `.env` for local development and replace its placeholder
+JWT secret. Compose supplies that file through `env_file` at runtime; it is
+excluded from backend image builds. Go still loads local dotenv configuration
+when run directly from this directory. Neither image should contain real
+environment files, private keys, or credentials.
+
 ## Architecture
 
 ```text
@@ -61,6 +67,9 @@ refresh token, and the authenticated user.
   replacement.
 - `POST /logout` revokes the submitted refresh token.
 - Reused, expired, or revoked refresh tokens are rejected.
+- Registration creates its user, default settings, and initial refresh-token
+  hash in one repository transaction. A persistence failure rolls everything
+  back and returns no credentials; concurrent duplicate emails return 409.
 
 ```http
 Authorization: Bearer <access-token>
@@ -85,6 +94,27 @@ Every variable is required. Expiry values use Go duration syntax.
 
 Local values may be placed in `backend/.env`; do not commit that file.
 
+Optional `CORS_ALLOWED_ORIGINS` accepts a comma-separated list of frontend
+origins. It defaults to `http://localhost:5173`. Configure this explicitly for
+other origins, including isolated browser tests.
+Optional `BIND_HOST` selects a listen interface; leaving it unset preserves the
+existing all-interface development/Compose behavior. Isolated browser tests bind
+their API to `127.0.0.1`.
+
+## Budget uniqueness and existing records
+
+PostgreSQL enforces one budget for each `(user_id, category_id)` through
+`idx_budgets_user_category`. Create/update constraint conflicts map to the same
+409 response as the friendly service pre-check. Concurrent requests cannot
+persist duplicate allocations.
+
+Before AutoMigrate, a read-only preflight checks existing budgets for duplicate
+groups. If any exist, startup stops with count-only resolution guidance. It does
+not delete, merge, or choose an allocation automatically. Review those records
+before retrying migration. Atomic registration likewise does not rewrite older
+partial registrations; any existing missing-settings accounts require deliberate
+recovery.
+
 ## API overview
 
 Public routes:
@@ -99,15 +129,15 @@ Public routes:
 
 Protected resource groups:
 
-| Prefix              | Operations                                                      |
-| ------------------- | --------------------------------------------------------------- |
-| `/api/accounts`     | Create, list, read, update, and delete accounts.                |
-| `/api/categories`   | List and read categories.                                       |
-| `/api/transactions` | CRUD plus account, category, date-range, and frequency filters. |
+| Prefix              | Operations                                                         |
+| ------------------- | ------------------------------------------------------------------ |
+| `/api/accounts`     | Create, list, read, update, and delete accounts.                   |
+| `/api/categories`   | List and read categories.                                          |
+| `/api/transactions` | CRUD plus account, category, date-range, and frequency filters.    |
 | `/api/transfers`    | Create, list, read, update, and delete internal account transfers. |
-| `/api/budgets`      | Create, list, read, update, and delete budgets.                 |
-| `/api/goals`        | Create, list, read, update, and delete goals.                   |
-| `/api/settings`     | Read and update the authenticated user's settings.              |
+| `/api/budgets`      | Create, list, read, update, and delete budgets.                    |
+| `/api/goals`        | Create, list, read, update, and delete goals.                      |
+| `/api/settings`     | Read and update the authenticated user's settings.                 |
 
 All protected resources are scoped or ownership-checked against the user ID from
 the validated access token.
@@ -200,8 +230,20 @@ when `TEST_DATABASE_DSN` is absent:
 
 ```bash
 TEST_DATABASE_DSN='host=localhost port=5432 user=vellum password=password dbname=vellum_test sslmode=disable' \
-  go test ./internal/repository -count=1
+  go test -count=1 -p 1 ./...
 ```
+
+Use a disposable test database, never a personal or deployed database: these
+tests migrate tables and create/drop isolated test schemas. Serial package
+execution prevents competing migration setup. The suite includes actual
+registration rollback/retry, concurrent email registration, concurrent budget
+creation, update conflicts, legacy duplicate preservation, tenant ownership,
+transfers, and goal allocation. CI provides PostgreSQL and rejects skipped tests.
+
+`bash scripts/check-docker-context.sh` from the repository root verifies the real
+ignore rules using harmless synthetic files. It does not read local `.env`
+contents. The frontend's `pnpm test:e2e` owns a separate disposable database and
+servers for complete browser workflows.
 
 ## Data model
 

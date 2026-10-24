@@ -10,6 +10,9 @@
     "test": "node --test src/features/transactions/utils/activity.test.mjs tests/architecture.test.mjs",
     "test:finance": "node --test src/features/transactions/utils/activity.test.mjs",
     "test:architecture": "node --test tests/architecture.test.mjs",
+    "test:e2e": "node scripts/run-e2e.mjs",
+    "test:e2e:check": "tsc -p tsconfig.e2e.json",
+    "screenshots": "node scripts/run-e2e.mjs --capture-screenshots",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "preview": "vite preview"
@@ -24,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "1.64.1",
     "@tanstack/router-cli": "^1.167.17",
     "@tanstack/router-plugin": "^1.168.18",
     "@types/node": "^24.13.2",

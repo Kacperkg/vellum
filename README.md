@@ -1,241 +1,230 @@
 # Vellum
 
-Vellum is a personal-finance application for managing accounts, transactions,
-budgets, savings goals, categories, and user preferences. The repository pairs
-a Go/PostgreSQL API with a feature-oriented React client.
+A personal-finance application for understanding your money across accounts,
+category budgets, and savings goals. Built with **React, TypeScript, Tailwind CSS,
+Go, and PostgreSQL**.
 
-The backend uses explicit handler, service, and repository boundaries; enforces
-ownership in the service and data layers; and supports short-lived JWT access
-tokens with rotating, revocable refresh tokens. The React client consumes those
-APIs through typed resource modules and derives dashboard and analytics views
-from live account, transaction, budget, goal, category, and settings data.
+![Vellum overview with synthetic demo data](docs/screenshots/overview.png)
 
-## Project status
+## What you can do
 
-### Implemented
+- Record income and expenses, search/filter/sort activity, edit records, and export
+  the visible transactions as CSV.
+- Move money between accounts without inflating income or spending. Transfers
+  support the same frequency choices as other entries.
+- Set category budgets and compare them with the current month's spending.
+- Link goals to an account and see how much remains unallocated—or the shortfall
+  if goal targets exceed the recorded balance.
+- Review six-month income/expense charts and a labeled category breakdown.
+- Manage accounts and display preferences across desktop, tablet, and mobile.
 
-- Registration and login with bcrypt password hashing.
-- JWT access tokens plus high-entropy, hashed, single-use refresh tokens.
-- Refresh-token rotation and logout revocation.
-- Authenticated CRUD APIs for accounts, budgets, goals, and transactions.
-- Account-to-account transfers with authenticated CRUD, ownership checks on both
-  accounts, a single atomic record for both sides of the movement, and the same
-  frequency options as income and expenses.
-- Transaction filtering by date range, recurrence, account, and category.
-- Shared category reads and per-user settings reads/updates.
-- Idempotent canonical category initialization for fresh databases.
-- Per-user ownership checks that avoid revealing foreign resources.
-- PostgreSQL persistence through GORM and automatic schema migration.
-- React registration/login forms, route guards, logout, and automatic retry
-  after one coordinated token refresh.
-- Live overview, transaction, budget, goal, analytics, account, and settings
-  screens backed by the REST API.
-- Persisted account, transaction, budget, goal, and settings forms.
-- Dedicated Accounts tab with server-calculated recorded balances, linked goal
-  target allocations, unallocated money, and shortfall warnings. Goals can be
-  linked to an owned account or left unlinked; associations persist in PostgreSQL.
-- Subscriptions use recurring transactions: daily, weekly, monthly, and yearly
-  income, expense, and transfer entries appear in Subscriptions; one-off entries
-  do not. Each type uses its existing resource API for persistence.
-- Reusable buttons, cards, inputs, selects, navigation, and dialog prototypes.
-- Docker Compose development environment for the client, API, and database.
-- Backend unit, handler, routing, middleware, and repository integration tests.
-
-### Not yet modeled
-
-- Accounts show recorded balances derived from income, expenses, and transfers.
-  Opening bank balances and provider types are not currently modeled.
-- Goal allocation uses the full target of each linked goal, independently of
-  saved progress, and does not create transactions or move money.
-- Dashboard and analytics values are derived client-side because aggregate API
-  endpoints are not defined.
-
-## Technology stack
-
-| Area           | Technologies                                                        |
-| -------------- | ------------------------------------------------------------------- |
-| Web client     | React 19, TypeScript, Vite, TanStack Router, Tailwind CSS 4, Axios  |
-| API            | Go, Gin, GORM                                                       |
-| Authentication | bcrypt, HS256 JWT access tokens, opaque refresh tokens              |
-| Database       | PostgreSQL 17                                                       |
-| Development    | Docker, Docker Compose, Air, pnpm                                   |
-| Testing        | Go `testing`, Gin test utilities, GORM/PostgreSQL integration tests |
-
-## Architecture
-
-```text
-React client
-  ├─ file-based routes and route guards
-  ├─ local component/form state
-  └─ Axios client and auth interceptors
-                │ REST/JSON
-                ▼
-Gin routes → handlers → services → repository interfaces → GORM → PostgreSQL
-              auth middleware      ownership and validation
-```
-
-The API is assembled explicitly in `backend/cmd/server/main.go`. HTTP handlers
-translate requests and responses, services own validation and authorization,
-and repositories isolate persistence. User-scoped repositories include the user
-identifier in mutation and query conditions as an additional tenant boundary.
-
-Authentication uses short-lived JWTs for protected requests. Refresh tokens are
-generated from cryptographically secure random bytes, returned once to the
-client, stored as SHA-256 hashes in PostgreSQL, and replaced transactionally on
-refresh. The browser client serializes simultaneous refresh attempts through one
-shared promise before retrying a failed protected request.
-
-Current browser tokens are stored in `localStorage`. This is convenient during
-development but increases exposure to cross-site scripting; an HTTP-only cookie
-or another reviewed production session design should be considered before a
-public deployment.
-
-## Repository layout
-
-| Path                          | Purpose                                               |
-| ----------------------------- | ----------------------------------------------------- |
-| `backend/cmd/server`          | API composition and process entry point               |
-| `backend/internal/handlers`   | HTTP parsing and response mapping                     |
-| `backend/internal/services`   | validation, business rules, and ownership checks      |
-| `backend/internal/repository` | persistence interfaces and GORM implementations       |
-| `backend/internal/models`     | PostgreSQL/GORM entities and relationships            |
-| `frontend/src/api`            | typed API client, token storage, and refresh behavior |
-| `frontend/src/features`       | domain pages, forms, utilities, tests, and styles     |
-| `frontend/src/components`     | shared UI primitives and presentation components      |
-| `frontend/src/layout`         | application shell and navigation                      |
-| `frontend/src/contexts`       | shared finance resource state                         |
-| `frontend/src/routes`         | TanStack Router file-based routes and guards          |
-| `docs`                        | architecture notes and diagrams                       |
+Vellum uses persisted API data. It is a manual tracker: bank synchronization,
+opening balances, currency conversion, and automatically generated recurring
+occurrences are not implemented. A frequency marks a recorded entry as recurring;
+it does not schedule a payment or create future ledger entries.
 
 ## Screenshots
 
-No application screenshots are currently committed. Useful captures to add once
-the UI is stable are:
+All screenshots use synthetic records generated through the real API in a
+throwaway database. No personal financial information is included.
 
-1. Registration and sign-in at desktop and mobile widths.
-2. The reusable component/dialog catalogue at `/components`.
-3. The finance dashboard after it is connected to real API data.
-4. Account, transaction, budget, and goal workflows after implementation.
+| Account balances and goal reservations     | Income, expenses, and categories             |
+| ------------------------------------------ | -------------------------------------------- |
+| ![Accounts](docs/screenshots/accounts.png) | ![Analytics](docs/screenshots/analytics.png) |
 
-The existing architecture diagram is available at
-[`docs/architecture-spec.png`](docs/architecture-spec.png); it is a system
-diagram, not an application screenshot.
+<details>
+<summary>Transactions and mobile views</summary>
 
-## Getting started
+![Transaction activity](docs/screenshots/transactions.png)
+
+<img src="docs/screenshots/transactions-mobile.png" alt="Mobile transactions and sorting" width="300" />
+<img src="docs/screenshots/settings-mobile.png" alt="Mobile account management" width="300" />
+
+</details>
+
+## Engineering decisions
+
+**Transfers preserve financial totals.** One transfer row represents both account
+movements. Updating or deleting it changes both effects together, and transfers
+remain excluded from income, expense, and budget totals.
+
+**Account availability is calculated on the server.** Owner-scoped SQL aggregates
+combine recorded transactions, transfers, and linked goal targets without
+multiplying totals through multi-way joins. Two goals of 1,200 against a 3,000
+recorded balance leave 600 unallocated. Allocation reserves the full target,
+independently of saved progress, and does not move money.
+
+**Authentication handles failure and concurrency.** Passwords are hashed with
+bcrypt; refresh tokens are random, stored hashed, rotated transactionally, and
+revoked on logout. Registration commits its user, default settings, and initial
+refresh token together. The client coordinates simultaneous expired requests
+through one refresh promise. Browser tokens currently use localStorage.
+
+**Integrity is enforced beyond the UI.** Services check ownership and related
+accounts; repository mutations include the user ID; PostgreSQL enforces transfer
+constraints and one budget per user/category. Existing duplicate budgets stop
+migration with an actionable error instead of being silently removed.
+
+## Architecture and stack
+
+```text
+React feature modules → typed Axios APIs → Gin routes / JWT middleware
+                                              ↓
+                                    handlers → services
+                                              ↓
+                                    repository interfaces
+                                              ↓
+                                      GORM → PostgreSQL
+```
+
+| Layer          | Implementation                                                                                        |
+| -------------- | ----------------------------------------------------------------------------------------------------- |
+| Frontend       | React 19, TypeScript 6, Vite 8, TanStack Router, Tailwind CSS 4                                       |
+| State and HTTP | React Context, component state, Axios with refresh/retry handling                                     |
+| Backend        | Go 1.26.4, Gin, GORM, explicit dependency construction                                                |
+| Database       | PostgreSQL 17, UUID models, startup AutoMigrate and idempotent category seeding                       |
+| Verification   | Go tests/PostgreSQL integration, Node finance/architecture tests, Playwright desktop/mobile workflows |
+| Development    | pnpm 10.17.0, Docker Compose, Air                                                                     |
+
+The frontend keeps each feature's pages, forms, utilities, tests, and styles
+close together. Shared UI, layout, API contracts, and finance state remain
+separate. Automated import-graph checks protect feature boundaries.
+
+## Run locally
 
 ### Docker Compose
 
-Requirements:
+Requirements: Docker and Docker Compose v2.
 
-- Docker Engine or Docker Desktop
-- Docker Compose v2
-
-Create `backend/.env` (there is currently no committed example file):
-
-```dotenv
-PORT=8080
-DB_HOST=postgres
-DB_PORT=5432
-DB_USER=vellum
-DB_PASSWORD=password
-DB_NAME=vellum
-DB_SSLMODE=disable
-JWT_SECRET=replace-with-a-long-random-development-secret
-JWT_EXPIRY=15m
-JWT_REFRESH_EXPIRY=720h
+```sh
+cp backend/.env.example backend/.env
 ```
 
-Then start the development stack:
+Set `JWT_SECRET` in that local file to a long random value, then start:
 
-```bash
+```sh
 docker compose up --build
 ```
 
-| Service      | Local address                |
-| ------------ | ---------------------------- |
-| Web client   | `http://localhost:5173`      |
-| REST API     | `http://localhost:8080`      |
-| Health check | `http://localhost:8080/ping` |
-| PostgreSQL   | `localhost:5432`             |
+| Service      | Address                    |
+| ------------ | -------------------------- |
+| Web client   | http://localhost:5173      |
+| REST API     | http://localhost:8080      |
+| Health check | http://localhost:8080/ping |
+| PostgreSQL   | localhost:5432             |
 
-Stop the stack with `docker compose down`. Running
-`docker compose down -v` also deletes the local database volume.
+Compose injects backend configuration at runtime. Context-specific Docker ignore
+rules keep environment files and credentials out of image builds. The example
+contains local development defaults only. Register a new user in the browser;
+canonical categories are created automatically when the API starts.
+
+`docker compose down` stops the stack and retains data. Adding `-v` deletes its
+local database volume.
 
 ### Run from source
 
-Requirements: Go 1.26, Node.js, pnpm, and a reachable PostgreSQL database.
-Use `DB_HOST=localhost` when the API runs on the host.
+Use Go 1.26.4, Node 25.2.1, pnpm 10.17.0, and a reachable PostgreSQL instance.
+Create the same local environment file and use `DB_HOST=localhost` when Go runs
+on the host. Start the API and client in separate terminals:
 
-```bash
+```sh
 cd backend
 go run ./cmd/server
 ```
 
-In another terminal:
-
-```bash
+```sh
 cd frontend
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-The client API base URL defaults to `http://localhost:8080` and can be
-overridden with `VITE_API_BASE_URL` for local development.
+`VITE_API_BASE_URL` configures the browser API URL. The API accepts
+`CORS_ALLOWED_ORIGINS` as a comma-separated list, defaulting to
+`http://localhost:5173`.
 
-## Testing and quality checks
+## Try a complete workflow
 
-Backend:
+1. Register and add two accounts: Salary and Bills.
+2. Record 3,000 income in Salary, transfer 600 to Bills, then record a 100 expense
+   in Bills. Account balances become 2,400 and 500; the total is 2,900.
+3. Add a category budget and inspect its current-month spending.
+4. Create a goal linked to an account and inspect its remaining availability.
+5. Filter/sort activity, enter edit mode, export CSV, and review Analytics.
 
-```bash
+## Tests and CI
+
+[The CI workflow](.github/workflows/ci.yml) runs on pushes and pull requests with
+separate frontend, PostgreSQL/backend, Docker-context, and browser jobs. A green hosted run must be checked on GitHub rather than inferred from local
+results.
+
+Frontend checks:
+
+```sh
+cd frontend
+pnpm test
+pnpm test:e2e:check
+pnpm build
+pnpm lint
+pnpm format:check
+```
+
+Backend checks:
+
+```sh
 cd backend
+go build ./...
+go vet ./...
 go test ./...
 ```
 
-The suite covers token creation, authentication middleware, route protection,
-handler behavior, service validation and ownership rules, transaction/goal
-logic, tenant-scoped repositories, and single-use refresh-token rotation. The
-repository integration test can use PostgreSQL when configured by the test.
+Without `TEST_DATABASE_DSN`, PostgreSQL tests skip. For the complete backend suite,
+point that variable at a **disposable test database**, then run
+`go test -count=1 -p 1 ./...`. Tests create schemas and run migrations; never use
+a personal/deployed database. CI supplies its own PostgreSQL service and rejects
+unexpected skipped tests.
 
-Frontend:
+### Browser workflows
 
-```bash
+Requirements: Docker, Go, frontend dependencies, and Chromium:
+
+```sh
 cd frontend
-pnpm lint
-pnpm build
-pnpm test
+pnpm exec playwright install chromium
+pnpm test:e2e
 ```
 
-The frontend suite covers transfer accounting, activity sorting, CSV export,
-local import resolution, feature boundaries, and runtime import cycles. Finance
-tests are colocated under the transactions feature; repository-wide architecture
-checks and their compiler helper live in `frontend/tests/`. There is no committed
-CI workflow.
+The runner creates a disposable PostgreSQL container and temporary Go binary,
+starts dedicated API/frontend servers on ports **18080/15173**, and removes them
+afterward. It refuses occupied ports and never reuses the regular application
+servers. Test users and records are synthetic. PostgreSQL uses localhost-only
+trust authentication inside this throwaway environment; that is not deployment
+configuration.
 
-## Deployment
+The suite covers registration/login/logout, protected routes, transfer balances,
+goal allocation/unlinking, duplicate budgets, activity edit/sort/filter/export,
+settings persistence, refresh success/failure, and mobile navigation. Failure
+traces/screenshots/video are retained in ignored report directories and uploaded
+by CI when a browser job fails.
 
-The repository contains a development-oriented Docker Compose setup and a
-frontend development-server container. It does not contain a verified production
-deployment workflow or live application URL. Before deployment, add production
-container/runtime configuration, environment-specific API/CORS settings, HTTPS,
-secret management, migration strategy, and CI.
+Regenerate the README images with `pnpm screenshots`. This uses the same isolated
+stack and a separate opt-in screenshot fixture.
 
-## Technical decisions and trade-offs
+## Current limits and release work
 
-- **Layered backend:** repository interfaces make service logic testable without
-  HTTP or database concerns, at the cost of additional types and mapping code.
-- **Integer money values:** transaction, budget, and goal amounts use `int64`
-  minor currency units, avoiding binary floating-point errors while allowing
-  clients to represent cents precisely.
-- **Rotating refresh tokens:** server-side hashes enable revocation and replay
-  prevention, but token storage and cleanup require database operations.
-- **GORM AutoMigrate:** convenient while the schema is evolving, but explicit,
-  versioned migrations would provide safer production change control.
-- **Shared server state:** a lightweight React context hydrates resource lists,
-  refreshes them after mutations, and isolates resource-loading failures without
-  adding a separate caching dependency.
+This repository provides a working local application and automated verification,
+not a verified public production deployment. The Dockerfiles remain development
+images running Air and Vite. Remaining release work includes production serving,
+HTTPS, authentication throttling/request limits, backup/restore procedures,
+controlled schema migrations, and a reviewed browser session/CSP policy.
 
-## Further documentation
+Goal progress and contribution estimates are entered manually. Budgets represent
+current category limits rather than historical budget periods. Week-start is a
+stored preference with a preview; there is no weekly calendar consuming it yet.
+Password recovery/email verification and bank/provider integrations are outside
+the implemented scope.
 
-- [Backend API and development notes](backend/README.md)
-- [Frontend structure and authentication flow](frontend/README.md)
+## More detail
+
+- [Frontend structure and authentication](frontend/README.md)
+- [Backend contracts, environment, and testing](backend/README.md)
 - [Architecture specification](docs/architecture-specification.md)

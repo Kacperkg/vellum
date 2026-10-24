@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
+        with:
+          version: 10.17.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 25.2.1
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm test:e2e:check
+      - run: pnpm build
+      - run: pnpm lint
+      - run: pnpm format:check
+
+  backend:
+    name: Backend and PostgreSQL
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+        shell: bash
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: vellum
+          POSTGRES_PASSWORD: ci-test-password
+          POSTGRES_DB: vellum_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vellum -d vellum_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      TEST_DATABASE_DSN: host=127.0.0.1 port=5432 user=vellum password=ci-test-password dbname=vellum_test sslmode=disable
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - run: go mod download
+      - name: Check Go formatting
+        run: |
+          unformatted=$(gofmt -l cmd internal)
+          if [ -n "$unformatted" ]; then
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
+      - run: go build ./...
+      - run: go vet ./...
+      - name: Test all packages with real PostgreSQL
+        run: |
+          set -euo pipefail
+          go test -count=1 -p 1 -cover -json ./... | tee ../backend-test-results.jsonl
+      - name: Require successful database tests without skips
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          events = [json.loads(line) for line in Path('../backend-test-results.jsonl').read_text().splitlines()]
+          failures = [event.get('Test', event.get('Package', event.get('ImportPath', 'unknown'))) for event in events if event['Action'] in ('fail', 'build-fail')]
+          if failures:
+              raise SystemExit(f'Failed test/build events: {failures}')
+          skipped = [event['Test'] for event in events if event.get('Test') and event['Action'] == 'skip']
+          if skipped:
+              raise SystemExit(f'Unexpected skipped tests: {skipped}')
+          for package in ('internal/database', 'internal/repository'):
+              if not any(event['Action'] == 'pass' and event.get('Test') and event['Package'].endswith(package) for event in events):
+                  raise SystemExit(f'No passing database tests found in {package}')
+          PY
+
+  docker-context:
+    name: Docker secret exclusions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - run: bash scripts/check-docker-context.sh
+
+  browser:
+    name: Browser workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
+        with:
+          version: 10.17.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 25.2.1
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: docker pull postgres:17
+      - run: pnpm test:e2e
+      - name: Retain browser failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: playwright-failure-diagnostics
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
