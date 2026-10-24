@@ -17,19 +17,20 @@ pnpm format:check     # verify formatting without changing files
 pnpm preview          # serve the production bundle locally
 ```
 
-The development server runs at `http://localhost:5173`. API requests currently
-target `http://localhost:8080` through the Axios instance in
-`src/api/client.ts`.
+The development server runs at `http://localhost:5173`. API requests default to
+`http://localhost:8080` through the Axios instance in `src/api/client.ts`; set
+`VITE_API_BASE_URL` to override the local API address.
 
 ## Authentication flow
 
 1. Register or login returns an access token, rotating refresh token, and user.
-2. `tokenStorage.ts` stores both tokens in browser `localStorage`.
+2. `tokenStorage.ts` stores both tokens and the returned user in browser
+   `localStorage`.
 3. The request interceptor attaches the access token as a Bearer token.
 4. A `401` from a protected `/api/...` request starts one shared refresh request.
 5. Successful refresh stores the replacement pair and retries the original
    request once.
-6. Failed refresh clears local authentication.
+6. Failed refresh clears local authentication and returns to `/login`.
 7. Logout clears local tokens and asks the backend to revoke the refresh token.
 
 Refresh requests are shared because backend refresh tokens are single-use; this
@@ -41,6 +42,7 @@ The local storage keys are:
 ```text
 vellum:access_token
 vellum:refresh_token
+vellum:user
 ```
 
 ## Key pieces
@@ -69,7 +71,12 @@ src/api/
 ├── tokenStorage.ts
 ├── endpoints/
 │   ├── accounts.ts
-│   └── auth.ts
+│   ├── auth.ts
+│   ├── budgets.ts
+│   ├── categories.ts
+│   ├── goals.ts
+│   ├── settings.ts
+│   └── transactions.ts
 └── types/
     ├── accounts.ts
     ├── auth.ts
@@ -90,6 +97,78 @@ src/api/
 
 As more authenticated pages are added, their guards should move under a shared
 authenticated parent route rather than being repeated on every page.
+
+## Live finance data
+
+`FinanceDataContext` loads accounts, categories, transactions, budgets, goals,
+and settings through the typed endpoint modules. Screens select only the
+resource errors relevant to them, and successful mutations refresh the shared
+state. Overview and analytics values are derived from those live resources.
+
+`/accounts` displays server-calculated `balance`, `allocated_amount`,
+`unallocated_amount`, and `goal_count` from the existing accounts API. Each
+linked goal reserves its full target; negative unallocated amounts display as
+shortfalls. Add/edit goal forms persist nullable `account_id`, allow unlinking,
+and preview the allocation after saving. Linking does not change saved progress
+or create a transaction. Account deletion is blocked while transactions,
+transfers, or goals still reference it. Accounts and Settings use server balance
+values; the activity utility remains responsible for transaction-history views.
+
+Subscription membership is determined by frequency. Every income, expense, or
+transfer whose frequency is not `one-off` appears on `/subscriptions`, labeled
+by its type. Editing or deleting it updates the same record in both views.
+
+Account, budget, goal, transaction, and subscription forms support persisted
+creation, editing, and deletion. The navbar New button opens the transaction
+form. Transaction search and filters operate on the loaded activity, and Export
+downloads the filtered records as CSV.
+
+Transactions normally show clean activity rows without frequency badges or row
+action buttons. Edit mode enables single-row selection with shared Edit/Delete
+controls; filtered-out selections cannot be edited or deleted. Frequency remains
+available in forms and filters. Analytics pairs the category donut with a visible
+color legend, amounts, and percentages of the displayed top-category subtotal;
+no recent expenses produces an empty state rather than a sample chart.
+
+The icon-only edit toggle keeps an accessible label and pressed state. Transaction
+headers sort merchant, category, account, date, and signed displayed amount in
+either direction; mobile exposes the same sort state through a selector. Export
+uses the visible sort order. A global transfer sorts by its neutral face amount;
+account-filtered transfers sort by the signed movement shown for that account.
+The income/expense plot flexes with its card and exposes exact monthly totals
+on hover, keyboard focus, or tap, with Escape dismissing the tooltip.
+
+Settings groups account management and display preferences into two sections.
+The four display options share a compact panel with labeled controls, previews,
+and a footer for autosave feedback and restoring defaults. The existing settings
+API remains authoritative; controls are disabled while saving and success is
+shown only after a completed update. Currency previews honor number formatting.
+
+API money amounts are integer minor units. Forms convert decimal major-unit
+input to minor units before requests, and formatting utilities convert values
+back for display.
+
+Transfers use `src/api/endpoints/transfers.ts` and the same server-state context.
+The transaction form offers Income, Expense, and Transfer types. Transfer mode
+shows source and destination accounts and the same frequency options as income
+and expenses: one-off, daily, weekly, monthly, and yearly. Dedicated Transfer
+buttons in Transactions and Settings reuse this form. Editing or deleting a
+transfer changes its effect on both accounts together. Transactions, account
+filters, overview activity, and CSV exports include the transfer record.
+
+`src/lib/activity.ts` combines the display history and computes recorded account
+balances. A transfer reduces its source and increases its destination by the
+same integer amount. It has zero global net impact and is excluded from income,
+spending, budgets, and analytics. Recurring transfers appear in the recurring
+list without adding subscription expenses. Recorded balances do
+not include an unmodeled bank opening balance.
+
+Frequency stores cadence, consistent with the existing recurring transactions.
+It does not generate future ledger occurrences automatically.
+
+Run `pnpm test:finance` for the accounting regression tests, including the
+salary → transfer → subscription scenario, edits, deletion, return transfers,
+account-filter signs, and CSV net impact.
 
 ## Production build
 
