@@ -1750,3 +1750,363 @@ select:focus-visible {
     min-height: 44px;
   }
 }
+
+.unavailable-card {
+  max-width: 640px;
+  padding: 48px;
+  text-align: center;
+}
+.unavailable-card > svg {
+  width: 32px;
+  height: 32px;
+  margin-inline: auto;
+  color: #e2416c;
+}
+.unavailable-card h2 {
+  margin: 22px 0 10px;
+  font-size: 20px;
+}
+.unavailable-card p {
+  margin: 0;
+  color: #8d8e95;
+  line-height: 1.65;
+}
+
+@media (max-width: 1199px) {
+  .page-shell {
+    width: calc(100% - 48px);
+  }
+  .topbar-inner {
+    width: calc(100% - 48px);
+  }
+  .balance-amount {
+    font-size: 58px;
+  }
+  .balance-summaries {
+    gap: 18px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .side-nav {
+    width: 212px;
+    flex-basis: 212px;
+    padding-inline: 16px;
+  }
+  .page-shell {
+    width: calc(100% - 40px);
+    padding-top: 36px;
+  }
+  .topbar-inner {
+    width: calc(100% - 40px);
+  }
+  .overview-hero-grid,
+  .analytics-grid {
+    grid-template-columns: 1fr;
+  }
+  .remaining-card {
+    min-height: 310px;
+  }
+  .remaining-progress {
+    margin-top: 38px;
+  }
+  .insight-grid {
+    gap: 14px;
+  }
+  .overview-lower-grid {
+    grid-template-columns: 1fr;
+  }
+  .income-chart-card,
+  .category-chart-card {
+    min-height: 400px;
+  }
+  .transaction-table-wrap {
+    min-width: 0;
+  }
+  .transaction-row {
+    grid-template-columns: minmax(150px, 1.8fr) 1fr 1fr 0.9fr 1fr;
+    padding-inline: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .app-frame {
+    display: block;
+    border: 0;
+  }
+  .app-topbar {
+    height: 64px;
+  }
+  .topbar-inner {
+    width: calc(100% - 32px);
+  }
+  .topbar-new {
+    padding-inline: 12px;
+  }
+  .topbar-new,
+  .avatar {
+    min-width: 44px;
+    height: 44px;
+  }
+  .side-nav {
+    position: fixed;
+    left: 0;
+    visibility: hidden;
+    pointer-events: none;
+    width: min(82vw, 300px);
+    transform: translateX(-105%);
+    transition: transform 0.2s ease;
+    padding: 24px 18px 0;
+    box-shadow: 18px 0 50px rgb(0 0 0 / 40%);
+  }
+  .side-nav.mobile-open {
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+  .mobile-menu-toggle {
+    position: fixed;
+    top: 10px;
+    left: 16px;
+    z-index: 35;
+    display: grid;
+    width: 44px;
+    height: 44px;
+    place-content: center;
+    gap: 4px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: #111216;
+  }
+  .mobile-menu-toggle span {
+    display: block;
+    width: 15px;
+    height: 1px;
+    background: #d5d5d8;
+  }
+  .mobile-nav-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 39;
+    display: block;
+    border: 0;
+    background: rgb(0 0 0 / 65%);
+  }
+  .page-shell {
+    width: calc(100% - 32px);
+    padding: 30px 0 56px;
+  }
+  .page-heading {
+    min-height: 140px;
+    flex-direction: column;
+  }
+  .page-heading h1 {
+    margin-top: 16px;
+    font-size: 34px;
+  }
+  .page-actions {
+    width: 100%;
+    align-self: flex-start;
+    padding: 0 0 22px;
+  }
+  .page-actions button {
+    min-height: 44px;
+  }
+  .overview-hero-grid {
+    gap: 16px;
+  }
+  .balance-card,
+  .remaining-card {
+    min-height: auto;
+    padding: 26px 20px 0;
+  }
+  .balance-head {
+    display: block;
+  }
+  .balance-amount {
+    font-size: clamp(45px, 14vw, 58px);
+  }
+  .balance-summaries {
+    justify-content: flex-start;
+    margin-top: 28px;
+  }
+  .balance-summaries > div {
+    text-align: left;
+  }
+  .balance-chart {
+    height: 125px;
+    margin-top: 28px;
+  }
+  .remaining-card {
+    padding-bottom: 22px;
+  }
+  .remaining-progress {
+    margin-top: 40px;
+  }
+  .insight-grid,
+  .budget-grid,
+  .goal-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .overview-lower-grid {
+    gap: 16px;
+    margin-top: 16px;
+  }
+  .budget-summary {
+    grid-template-columns: 1fr;
+    gap: 30px;
+    padding: 26px 22px;
+  }
+  .budget-empty-state {
+    margin-top: 16px;
+  }
+  .goal-card {
+    min-height: auto;
+    padding: 24px 20px;
+  }
+  .transactions-page .page-heading {
+    min-height: 185px;
+  }
+  .transactions-card {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+  .transaction-tools {
+    position: sticky;
+    top: 64px;
+    z-index: 10;
+    padding: 12px 0;
+    background: #0b0c0e;
+  }
+  .transaction-tools button {
+    min-width: 44px;
+    padding-inline: 12px;
+  }
+  .transaction-tools button:not(:focus) {
+    font-size: 0;
+  }
+  .transaction-tools button.transaction-edit-toggle {
+    width: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+  .transaction-sort-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 12px 0 0;
+    font-size: 12px;
+    color: var(--color-muted-foreground);
+  }
+  .transaction-sort-controls select {
+    min-height: 44px;
+    flex: 1;
+    min-width: 0;
+  }
+  .transaction-sort-controls button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .transaction-tools button svg {
+    width: 16px;
+  }
+  .category-tabs {
+    margin-inline: -16px;
+    padding-inline: 16px;
+  }
+  .category-tabs button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .transaction-table-wrap {
+    min-width: 0;
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .transaction-head {
+    display: none;
+  }
+  .transaction-row {
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    min-height: 0;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background: var(--color-card);
+    padding: 15px;
+  }
+  .transaction-row > span[data-label] {
+    display: block;
+    grid-column: 1 / -1;
+  }
+  .transaction-row > span[data-label]::before {
+    content: attr(data-label) ": ";
+    color: var(--color-muted-foreground);
+  }
+  .transaction-row > strong {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+  }
+  .chart-card {
+    min-height: auto;
+  }
+  .chart-header {
+    height: 76px;
+    padding: 21px 18px;
+  }
+  .bar-chart {
+    min-height: 300px;
+    padding-inline: 8px;
+  }
+  .donut-chart {
+    margin-block: 42px;
+  }
+  .settings-card {
+    min-height: auto;
+    padding: 21px;
+  }
+  .goal-icons {
+    gap: 4px;
+  }
+  .goal-icons button {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    place-items: center;
+  }
+}
+
+@media (max-width: 420px) {
+  .topbar-new {
+    font-size: 0;
+  }
+  .topbar-new svg {
+    width: 17px;
+    height: 17px;
+  }
+  .balance-note {
+    flex-wrap: wrap;
+  }
+  .balance-note i {
+    display: none;
+  }
+  .page-actions {
+    flex-wrap: wrap;
+  }
+  .page-actions button {
+    flex: 1;
+  }
+  .goal-amount {
+    font-size: 32px;
+  }
+  .goal-stats {
+    gap: 8px;
+  }
+  .goal-stats strong {
+    font-size: 13px;
+  }
+}
