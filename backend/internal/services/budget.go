@@ -112,6 +112,9 @@ func (s *BudgetService) Update(userID uuid.UUID, budgetID uuid.UUID, req UpdateB
 
 	err = s.budgetRepository.Update(userID, budget)
 	if err != nil {
+		if errors.Is(err, repository.ErrConflict) {
+			return nil, ErrBudgetCategoryExists
+		}
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrBudgetNotFound
 		}
@@ -192,6 +195,9 @@ func (s *BudgetService) Create(userID uuid.UUID, req CreateBudgetRequest) (*Budg
 
 	err = s.budgetRepository.Create(budget)
 	if err != nil {
+		if errors.Is(err, repository.ErrConflict) {
+			return nil, ErrBudgetCategoryExists
+		}
 		return nil, err
 	}
 

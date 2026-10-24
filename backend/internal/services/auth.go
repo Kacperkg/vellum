@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/auth"
 	"github.com/kacperkg/vellum/internal/models"
 	"github.com/kacperkg/vellum/internal/repository"
@@ -17,7 +18,6 @@ import (
 
 type UserService struct {
 	userRepository         repository.UserRepository
-	userSettingsRepository repository.UserSettingsRepository
 	refreshTokenRepository repository.RefreshTokenRepository
 
 	jwtSecret     string
@@ -27,7 +27,6 @@ type UserService struct {
 
 func NewUserService(
 	userRepository repository.UserRepository,
-	userSettingsRepository repository.UserSettingsRepository,
 	refreshTokenRepository repository.RefreshTokenRepository,
 	jwtSecret string,
 	jwtExpiry time.Duration,
@@ -35,7 +34,6 @@ func NewUserService(
 ) *UserService {
 	return &UserService{
 		userRepository:         userRepository,
-		userSettingsRepository: userSettingsRepository,
 		refreshTokenRepository: refreshTokenRepository,
 		jwtSecret:              jwtSecret,
 		jwtExpiry:              jwtExpiry,
@@ -68,15 +66,11 @@ func (s *UserService) Register(req RegisterRequest) (*AuthResponse, error) {
 	}
 
 	user = &models.User{
+		BaseModel:    models.BaseModel{ID: uuid.New()},
 		FirstName:    req.FirstName,
 		LastName:     req.LastName,
 		Email:        req.Email,
 		PasswordHash: string(hashedPassword),
-	}
-
-	err = s.userRepository.Create(user)
-	if err != nil {
-		return nil, err
 	}
 
 	// Create default user settings
@@ -88,12 +82,13 @@ func (s *UserService) Register(req RegisterRequest) (*AuthResponse, error) {
 		WeekStartsOn: models.Monday,
 	}
 
-	err = s.userSettingsRepository.Create(defaultSettings)
-	if err != nil {
-		return nil, err
+	response, err := s.issueTokenPair(user, func(token *models.RefreshToken) error {
+		return s.userRepository.CreateRegistration(user, defaultSettings, token)
+	})
+	if errors.Is(err, repository.ErrConflict) {
+		return nil, ErrUserEmailExists
 	}
-
-	return s.issueTokenPair(user, s.refreshTokenRepository.Create)
+	return response, err
 }
 
 func (s *UserService) Login(req LoginRequest) (*AuthResponse, error) {
@@ -166,7 +161,7 @@ func (s *UserService) issueTokenPair(
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrInvalidRefreshToken
 		}
-		return nil, fmt.Errorf("persist refresh token: %w", err)
+		return nil, fmt.Errorf("persist session: %w", err)
 	}
 
 	return &AuthResponse{

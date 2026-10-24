@@ -26,7 +26,7 @@ func testHandlerSet(userID uuid.UUID) routes.HandlerSet {
 	transfers := &fakeTransferRepository{}
 
 	return routes.HandlerSet{
-		Auth:         handlers.NewAuthHandler(services.NewUserService(users, settings, &fakeRefreshTokenRepository{}, "secret", time.Hour, 30*24*time.Hour)),
+		Auth:         handlers.NewAuthHandler(services.NewUserService(users, &fakeRefreshTokenRepository{}, "secret", time.Hour, 30*24*time.Hour)),
 		Accounts:     handlers.NewAccountHandler(services.NewAccountService(accounts)),
 		Categories:   handlers.NewCategoryHandler(services.NewCategoryService(categories)),
 		Budgets:      handlers.NewBudgetHandler(services.NewBudgetService(budgets, categories)),

@@ -164,9 +164,12 @@ func (r *fakeTransactionRepository) FindByAccountID(uuid.UUID, uuid.UUID) ([]*mo
 }
 
 type fakeUserRepository struct {
-	User    *models.User
-	Err     error
-	Created *models.User
+	User                *models.User
+	Err                 error
+	RegistrationErr     error
+	Created             *models.User
+	CreatedSettings     *models.UserSettings
+	CreatedRefreshToken *models.RefreshToken
 }
 
 func (r *fakeUserRepository) Create(value *models.User) error {
@@ -175,6 +178,18 @@ func (r *fakeUserRepository) Create(value *models.User) error {
 		r.Created = value
 	}
 	return r.Err
+}
+func (r *fakeUserRepository) CreateRegistration(user *models.User, settings *models.UserSettings, token *models.RefreshToken) error {
+	if r.RegistrationErr != nil {
+		return r.RegistrationErr
+	}
+	if r.Err != nil {
+		return r.Err
+	}
+	r.Created = user
+	r.CreatedSettings = settings
+	r.CreatedRefreshToken = token
+	return nil
 }
 func (r *fakeUserRepository) FindByID(uuid.UUID) (*models.User, error) { return r.User, r.Err }
 func (r *fakeUserRepository) FindByEmail(string) (*models.User, error) { return r.User, r.Err }

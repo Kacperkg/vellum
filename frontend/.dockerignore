@@ -1,4 +1,30 @@
-node_modules
-dist
-.vite
-.git
+# Configuration and credentials must be supplied at runtime, never copied into an image.
+**/.env
+**/.env.*
+**/*.env
+**/*.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/credentials.json
+**/secrets
+**/.aws
+**/.ssh
+
+# Source-control metadata, dependencies, caches, and generated output.
+**/.git
+**/.DS_Store
+**/node_modules
+**/.pnpm-store
+**/dist
+**/dist-ssr
+**/.vite
+**/.tanstack
+**/tmp
+**/coverage
+**/playwright-report
+**/test-results
+**/*.tsbuildinfo
+**/*.log

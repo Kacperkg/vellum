@@ -154,20 +154,18 @@ func TestUserService(t *testing.T) {
 
 	t.Run("register creates user settings and token", func(t *testing.T) {
 		users := &fakeUserRepository{}
-		settings := &fakeUserSettingsRepository{}
-		refreshTokens := &fakeRefreshTokenRepository{}
-		response, err := services.NewUserService(users, settings, refreshTokens, secret, time.Hour, 30*24*time.Hour).Register(request)
-		if err != nil || response.AccessToken == "" || response.RefreshToken == "" || response.User.Email != request.Email || users.Created == nil || settings.Created == nil || refreshTokens.Created == nil {
+		response, err := services.NewUserService(users, &fakeRefreshTokenRepository{}, secret, time.Hour, 30*24*time.Hour).Register(request)
+		if err != nil || response.AccessToken == "" || response.RefreshToken == "" || response.User.Email != request.Email || users.Created == nil || users.CreatedSettings == nil || users.CreatedRefreshToken == nil {
 			t.Fatalf("response=%#v err=%v", response, err)
 		}
-		if settings.Created.Currency != models.GBP || settings.Created.UserID != users.Created.ID {
-			t.Fatalf("settings=%#v", settings.Created)
+		if users.CreatedSettings.Currency != models.GBP || users.CreatedSettings.UserID != users.Created.ID {
+			t.Fatalf("settings=%#v", users.CreatedSettings)
 		}
 	})
 
 	t.Run("duplicate registration", func(t *testing.T) {
 		users := &fakeUserRepository{User: &models.User{}}
-		_, err := services.NewUserService(users, &fakeUserSettingsRepository{}, &fakeRefreshTokenRepository{}, secret, time.Hour, 30*24*time.Hour).Register(request)
+		_, err := services.NewUserService(users, &fakeRefreshTokenRepository{}, secret, time.Hour, 30*24*time.Hour).Register(request)
 		if !errors.Is(err, services.ErrUserEmailExists) {
 			t.Fatalf("error=%v", err)
 		}
@@ -180,7 +178,7 @@ func TestUserService(t *testing.T) {
 		}
 		users := &fakeUserRepository{User: &models.User{BaseModel: models.BaseModel{ID: uuid.New()}, Email: request.Email, PasswordHash: string(hash)}}
 		refreshTokens := &fakeRefreshTokenRepository{}
-		service := services.NewUserService(users, &fakeUserSettingsRepository{}, refreshTokens, secret, time.Hour, 30*24*time.Hour)
+		service := services.NewUserService(users, refreshTokens, secret, time.Hour, 30*24*time.Hour)
 		response, err := service.Login(services.LoginRequest{Email: request.Email, Password: request.Password})
 		if err != nil || response.AccessToken == "" || response.RefreshToken == "" || response.User.ID != users.User.ID || response.User.Email != request.Email {
 			t.Fatalf("response=%#v err=%v", response, err)
@@ -199,7 +197,7 @@ func TestUserService(t *testing.T) {
 		}
 		users := &fakeUserRepository{User: &models.User{BaseModel: models.BaseModel{ID: userID}, Email: "ada@example.com", PasswordHash: string(hash)}}
 		refreshTokens := &fakeRefreshTokenRepository{}
-		service := services.NewUserService(users, &fakeUserSettingsRepository{}, refreshTokens, secret, time.Hour, 30*24*time.Hour)
+		service := services.NewUserService(users, refreshTokens, secret, time.Hour, 30*24*time.Hour)
 
 		initial, err := service.Login(services.LoginRequest{Email: "ada@example.com", Password: "password123"})
 		if err != nil {

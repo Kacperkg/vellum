@@ -2,6 +2,8 @@ services:
   backend:
     build:
       context: ./backend
+    env_file:
+      - ./backend/.env
     ports:
       - "8080:8080"
     volumes:
@@ -30,7 +32,6 @@ services:
 
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
 
 volumes:
   frontend_node_modules:

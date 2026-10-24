@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -46,7 +47,7 @@ func main() {
 	transferRepo := repository.NewTransferRepository(db)
 
 	// Services
-	userSvc := services.NewUserService(userRepo, userSettingsRepo, refreshTokenRepo, cfg.JWTSecret, jwtExpiry, refreshExpiry)
+	userSvc := services.NewUserService(userRepo, refreshTokenRepo, cfg.JWTSecret, jwtExpiry, refreshExpiry)
 	userSettingsSvc := services.NewUserSettingsService(userSettingsRepo)
 	accountSvc := services.NewAccountService(accountRepo)
 	categorySvc := services.NewCategoryService(categoryRepo)
@@ -69,14 +70,14 @@ func main() {
 
 	router := gin.Default()
 	router.Use(cors.New(cors.Config{
-		AllowOrigins: []string{"http://localhost:5173"},
+		AllowOrigins: cfg.CORSAllowedOrigins,
 		AllowMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders: []string{"Origin", "Content-Type", "Authorization"},
 	}))
 	routes.Register(router, cfg.JWTSecret, handlerSet)
 
 	log.Printf("Vellum API listening on :%s", cfg.Port)
-	if err := router.Run(":" + cfg.Port); err != nil {
+	if err := router.Run(net.JoinHostPort(cfg.BindHost, cfg.Port)); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }

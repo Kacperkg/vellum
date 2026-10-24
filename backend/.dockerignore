@@ -1,0 +1,25 @@
+# Configuration and credentials must be supplied at runtime, never copied into an image.
+**/.env
+**/.env.*
+**/*.env
+**/*.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/credentials.json
+**/secrets
+**/.aws
+**/.ssh
+
+# Source-control metadata, local tooling, and generated output.
+**/.git
+**/.DS_Store
+**/node_modules
+**/.pnpm-store
+**/tmp
+**/coverage
+**/*.test
+**/*.out
+**/*.log

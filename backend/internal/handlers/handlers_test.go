@@ -158,9 +158,8 @@ func TestTransactionHandler(t *testing.T) {
 
 func TestAuthHandler(t *testing.T) {
 	const secret = "test-secret"
-	settings := &fakeUserSettingsRepository{}
 	t.Run("register", func(t *testing.T) {
-		handler := handlers.NewAuthHandler(services.NewUserService(&fakeUserRepository{}, settings, &fakeRefreshTokenRepository{}, secret, time.Hour, 30*24*time.Hour))
+		handler := handlers.NewAuthHandler(services.NewUserService(&fakeUserRepository{}, &fakeRefreshTokenRepository{}, secret, time.Hour, 30*24*time.Hour))
 		router := gin.New()
 		router.POST("/register", handler.Register)
 		body := `{"first_name":"Ada","last_name":"Lovelace","email":"ada@example.com","password":"password123"}`
@@ -174,7 +173,7 @@ func TestAuthHandler(t *testing.T) {
 		}
 		repo := &fakeUserRepository{User: &models.User{BaseModel: models.BaseModel{ID: uuid.New()}, Email: "ada@example.com", PasswordHash: string(hash)}}
 		refreshTokens := &fakeRefreshTokenRepository{}
-		handler := handlers.NewAuthHandler(services.NewUserService(repo, settings, refreshTokens, secret, time.Hour, 30*24*time.Hour))
+		handler := handlers.NewAuthHandler(services.NewUserService(repo, refreshTokens, secret, time.Hour, 30*24*time.Hour))
 		router := gin.New()
 		router.POST("/login", handler.Login)
 		router.POST("/refresh", handler.Refresh)
