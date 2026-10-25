@@ -318,6 +318,63 @@ Do not dispatch on a feature branch or attempt to bypass missing evidence.
 
 ## Failure handling, rollback and manual fallback
 
+### Staging OPTIONS smoke failure
+
+In the pinned Gin v1.12.0 configuration, `HandleMethodNotAllowed` defaults to
+false and Vellum does not enable it. Auth routes register POST only. Gin CORS
+skips OPTIONS with no Origin or an Origin matching Host, so those requests
+return plain-text `404 page not found`. An allowed **cross-origin** preflight
+returns 204; a disallowed origin returns 403. Regression tests cover all four
+auth paths and these origin cases. See [Gin's pinned defaults](https://github.com/gin-gonic/gin/blob/v1.12.0/gin.go)
+and [the pinned CORS middleware](https://github.com/gin-contrib/cors/blob/v1.7.7/config.go).
+
+The reported live 405 is not explained by this Gin configuration. A disposable
+local Vellum frontend reproduced HTML 405 for OPTIONS /login: Nginx's SPA
+fallback does not serve that method. A stale Caddy matcher forwarding POST only
+would allow the earlier POST checks to pass while sending OPTIONS to Nginx.
+This is a supported failure hypothesis, not proof of the live configuration.
+The example already forwards **POST OPTIONS** for all four auth paths and leaves
+GET /login on the SPA; its routing behavior must not be weakened or broadened.
+
+The smoke continues to reject 405, HTML fallback responses, redirects and server
+errors. Its error now includes the status and the Caddy routing check. Accepted
+404 must match Gin's plain-text response; accepted 204 must carry a genuine
+preflight contract for the exact origin, POST and content-type. Browsers do not
+require CORS preflights for same-origin requests, but this diagnostic still
+verifies that the artificial OPTIONS request reaches the intended upstream.
+
+This failure occurs **after** both image pulls/inspection and successful
+`up --wait`, API/frontend checks and POST auth checks. Staging may therefore
+already be running the new images, and AutoMigrate/seeding may have run. Smoke
+failure prevents current/previous/per-release controller receipts from updating;
+the workflow does not mark the candidate verified or upload a verified artifact.
+Unchanged receipts do not identify the images currently running after failure.
+
+Safest operator recovery (none of these live actions is performed by this PR):
+
+1. Avoid further staging merges/deployments while investigating. Confirm the
+   failed SSM command has terminated and the host lock is free; cancellation or
+   disabling future starts does not stop an existing command. Do not rerun the
+   historical workflow/SSM command or manually mark it successful.
+2. Privately record actual staging container image IDs/digests and revision labels,
+   plus PostgreSQL/volume identities. Inspect the active Caddy auth matcher and
+   response content type/upstream. Compare direct backend OPTIONS with Caddy's
+   response to distinguish Nginx fallthrough from different deployed backend code.
+   Never dump environment values, full inspection or application data into CI.
+3. If the active matcher omits OPTIONS, have the Caddy operator review and correct
+   only the auth matcher, validate the full merged configuration and use the
+   normal authorized reload procedure. Preserve all unrelated sites, HTTPS,
+   fixed proxy IP and GET/SPA routing. This PR changes no live Caddy configuration.
+4. Before merging this fix with CD enabled, install the exact reviewed five-file
+   controller bundle and verify hashes: changing smoke.py changes the manifest's
+   bundle hash. Do not patch manifest hashes, replay old receipts or turn a failed
+   candidate into a verified release. This PR does not install files on EC2.
+5. Once routing and the matching bundle are verified, use a fresh reviewed staging
+   merge through normal CI for a new release/run. If CD is enabled, merging this
+   PR itself is such a trigger; coordinate prerequisites first. Observe the full
+   smoke, rate-limit checks and verified artifact. Preserve prior images/backups;
+   any image rollback requires schema compatibility and does not undo DB writes.
+
 The controller emits only service state/health and bounded error summaries.
 It does not dump `.env`, resolved Compose, raw Docker inspection, app/GORM logs
 or private HTTP responses. SSM command input contains public manifest data, not

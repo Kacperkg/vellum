@@ -2,6 +2,7 @@
 # Caddy must already be attached to the external Docker network "web".
 # Do not use handle_path: Go expects the /api prefix to be preserved.
 # Forward auth preflights too; GET /login must still reach the SPA.
+# Omitting OPTIONS can send it to Nginx's SPA fallback (HTML 405), not Gin.
 
 vellum.kacpergajdarski.com {
 	encode zstd gzip

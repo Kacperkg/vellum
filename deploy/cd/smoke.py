@@ -51,11 +51,36 @@ def smoke(origin, staging=False, login_requests=10):
         },
     )
     # Caddy preserves Host. Gin deliberately skips CORS for same-origin
-    # requests, so this artificial OPTIONS normally reaches its 404 handler.
+    # requests, so this artificial OPTIONS reaches Gin's plain-text 404 handler.
+    # Vellum leaves HandleMethodNotAllowed disabled. In particular, an HTML 405
+    # can be Nginx's SPA fallback when Caddy forwards POST but not OPTIONS.
     # Browsers do not preflight same-origin auth. Cross-origin CORS is covered
     # by router tests and requires a separately allowed origin to test live.
-    if status not in (204, 404):
-        raise ValueError("unexpected same-origin OPTIONS response")
+    gin_not_found = (
+        status == 404
+        and headers.get("Content-Type", "").split(";", 1)[0].strip().lower() == "text/plain"
+        and body == b"404 page not found"
+    )
+    # Preserve support for a genuine CORS preflight if upstream Host handling
+    # makes the origin cross-origin. A bare/HTML 204 is not routing evidence.
+    cors_preflight = (
+        status == 204
+        and body == b""
+        and headers.get("Access-Control-Allow-Origin") == origin
+        and "POST" in {
+            v.strip()
+            for v in headers.get("Access-Control-Allow-Methods", "").split(",")
+        }
+        and "content-type" in {
+            v.strip().lower()
+            for v in headers.get("Access-Control-Allow-Headers", "").split(",")
+        }
+    )
+    if not (gin_not_found or cors_preflight):
+        raise ValueError(
+            f"unexpected same-origin OPTIONS response (HTTP {status}); "
+            "verify Caddy forwards POST and OPTIONS auth paths to the backend, not the frontend"
+        )
     if staging:
         if not 1 <= login_requests <= 100:
             raise ValueError(
