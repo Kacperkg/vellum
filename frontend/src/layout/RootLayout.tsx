@@ -2,6 +2,7 @@ import { Outlet, useLocation } from "@tanstack/react-router";
 import SideNav from "./components/SideNav";
 import Nav from "./components/Nav";
 import { FinanceDataProvider } from "@/contexts/FinanceDataContext";
+import AccountSetupGate from "@/features/accounts/components/AccountSetupGate";
 
 export default function RootLayout() {
   const { pathname } = useLocation();
@@ -12,13 +13,15 @@ export default function RootLayout() {
 
   return (
     <FinanceDataProvider>
-      <div className="app-frame">
-        <SideNav />
-        <main className="app-main">
-          <Nav />
-          <Outlet />
-        </main>
-      </div>
+      <AccountSetupGate>
+        <div className="app-frame">
+          <SideNav />
+          <main className="app-main">
+            <Nav />
+            <Outlet />
+          </main>
+        </div>
+      </AccountSetupGate>
     </FinanceDataProvider>
   );
 }
