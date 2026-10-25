@@ -79,15 +79,21 @@ runs before every plan, including documentation changes.
 | --- | --- | --- | --- |
 | Frontend only | Frontend, cross-app browser, Docker exclusions, deployment safety | Frontend only | Fresh backend/frontend pair, then verified deployment (phase 1 limitation) |
 | Backend only | Backend incl. PostgreSQL/race, cross-app browser, Docker exclusions, deployment safety | Backend only | Fresh pair, then verified deployment (phase 1 limitation) |
-| Known docs only | Explicit lightweight guard in all seven contexts | Neither | Neither; no credentials or SSM job |
+| Docs outside component source trees | Explicit lightweight guard in all seven contexts | Neither | Neither; no credentials or SSM job |
 | Shared/build/workflow/unknown | All checks | Both | Fresh pair and verified deployment |
 | Deployment/IAM/SSM/controller/manifests | Docker exclusions, deployment safety | No application preflight unless its context changed | Fresh pair and verified deployment; installed bundle checks may require operator coordination |
 | Component tests/dependency files | Component checks plus browser and safety | That component | Fresh pair; conservative because Docker COPY includes component context |
 | CI/test tooling in scripts or unknown test paths | All checks | Both | Fresh pair |
 
-Documentation is an explicit allowlist: root/component README.md, docs/,
-backend/doc/, and immediate deploy/*.md. Markdown in .github/ or an arbitrary
-application directory is not automatically documentation. Deployment examples,
+The no-release documentation allowlist is root README.md, docs/, and immediate
+deploy/*.md. Component-local README.md and backend/doc/ are categorized as
+documentation but conservatively select component validation and a fresh paired
+release: schema 1 promotion compares entire backend/frontend trees. Skipping
+these releases would otherwise block main's provenance comparison. Narrowing
+that comparison needs the coordinated phase-2 controller migration. This is a
+phase-1 limitation: not every documentation-only change can avoid publication.
+Markdown in .github/ or an arbitrary application directory is not automatically
+eligible for bypass. Deployment examples,
 policies, SSM documents and test files remain safety-relevant.
 
 Build contexts are independently `backend/` and `frontend/`. Neither Dockerfile
@@ -263,7 +269,7 @@ References: [required/skipped checks](https://docs.github.com/en/pull-requests/h
 ## Validation and independent review
 
 Passed locally: actionlint v1.7.7 (active workflows and inactive production
-workflow), 15 CI selection/required-check/cache regressions, 35 deployment
+workflow), 16 CI selection/required-check/cache regressions, 35 deployment
 security/provenance/rollback tests, Go module verification/build/vet, 191 named
 Go tests across 10 tested packages with real isolated PostgreSQL 17 and no
 skipped tests, all-package race tests, 15 frontend tests, E2E typecheck, build,
@@ -273,8 +279,9 @@ production Docker builds without publishing. Application sources were unchanged.
 
 An independent security/reliability subagent reviewed the completed diff and ran
 13 original CI regression tests plus all 35 deployment tests. No blocking
-findings. Its suggestion to explicitly categorize browser test files was fixed;
-the expanded 15-test suite passed afterward. git diff --check passed.
+findings. Its browser-test categorization suggestion was fixed. A final review
+identified the component-documentation promotion constraint; bypass was removed
+for those paths and a regression added. The expanded 16-test suite passed. git diff --check passed.
 
 No AWS calls, image publication, settings changes or live OIDC/SSM validation
 were performed. Hosted cache gains and exact check reporting require the draft

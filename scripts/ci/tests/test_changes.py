@@ -28,9 +28,18 @@ class ChangeTests(unittest.TestCase):
                     self.assertTrue(plan[check])
 
     def test_documentation_does_not_publish_or_deploy(self):
-        plan, categories = changes.classify(["README.md", "docs/screenshots/login.png", "backend/README.md", "backend/doc/ERD.png", "deploy/CI-CD.md"])
+        plan, categories = changes.classify(["README.md", "docs/screenshots/login.png", "deploy/CI-CD.md"])
         self.assertEqual(categories, ["documentation"])
         self.assertFalse(any(plan.values()))
+
+    def test_component_docs_preserve_whole_tree_promotion_contract(self):
+        for path in ("backend/README.md", "frontend/README.md", "backend/doc/ERD.png"):
+            plan, categories = changes.classify([path])
+            component = path.split("/")[0]
+            self.assertIn("documentation", categories)
+            self.assertTrue(plan[component])
+            self.assertTrue(plan["image_" + component])
+            self.assertTrue(plan["deploy"])
 
     def test_shared_workflow_and_ambiguous_paths_select_everything(self):
         for path in (".github/workflows/ci.yml", ".github/CODEOWNERS", ".dockerignore", "scripts/ci/changes.py", "new-config", "../escape", "/absolute", "package.json", "README.MD"):

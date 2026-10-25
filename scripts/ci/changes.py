@@ -9,7 +9,7 @@ import sys
 
 CHECKS = ("frontend", "backend", "browser", "docker", "deployment", "image_backend", "image_frontend")
 KEYS = (*CHECKS, "deploy")
-DOC_FILES = {"README.md", "frontend/README.md", "backend/README.md"}
+DOC_FILES = {"README.md"}
 
 
 def classify(paths):
@@ -21,11 +21,15 @@ def classify(paths):
         parts = PurePosixPath(path).parts
         if not parts or path.startswith("/") or ".." in parts:
             return dict.fromkeys(KEYS, True), ["ambiguous"]
-        if path in DOC_FILES or path.startswith(("docs/", "backend/doc/")) or (
+        if path in DOC_FILES or path.startswith("docs/") or (
             path.startswith("deploy/") and len(parts) == 2 and path.endswith(".md")
         ):
             categories.add("documentation")
             continue
+        # Component documentation participates in schema 1's whole-tree
+        # promotion comparison, so it still needs a tested release today.
+        if path in {"frontend/README.md", "backend/README.md"} or path.startswith("backend/doc/"):
+            categories.add("documentation")
         if path.startswith("frontend/"):
             categories.add("frontend")
             plan.update(frontend=True, browser=True, image_frontend=True)
