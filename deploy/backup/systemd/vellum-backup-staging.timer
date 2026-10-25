@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Vellum staging backup at 03:15 UTC
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=vellum-backup@staging.service
+
+[Install]
+WantedBy=timers.target
