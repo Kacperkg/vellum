@@ -56,6 +56,12 @@ values: database password and JWT secret for each. Existing environments retain
 their exact values. Never source dotenv files as shell scripts, commit them,
 pass secrets as build arguments or print resolved Compose output.
 
+On a host using the backup/CD controller, mutating manual Compose, SQL, restore
+and config-edit operations require the [shared maintenance gate](HOST-COORDINATION.md)
+for their entire execution and verification. The shell helper below only cleans
+the environment; it does not acquire coordination locks. Prefer the installed
+controller for deployments/rollback and never wrap it in a second gate.
+
 All manual Compose examples below use this shell helper. It removes exported
 application/Compose overrides, runs as root to read the managed file, and retains
 the explicit project name. Use only reviewed checkout code for local source

@@ -83,11 +83,14 @@ The staging workflow has no manual, PR, tag, main or workflow-call trigger.
    identity privately; retain all rollback images. Verify adequate EC2 disk,
    memory and CPU headroom, with no conflicting maintenance/deployments.
 2. **Update the installed controller bundle to this exact reviewed revision.**
-   This PR changes `deploy/cd/controller.py`. An already-installed older bundle
+   The shared [host-coordination gate](HOST-COORDINATION.md) also requires
+   installing `cd/coordination.py` and matching backup scripts in a drained
+   host-wide maintenance freeze. This PR changes `deploy/cd/controller.py`.
+   An already-installed older bundle
    fails closed against the new candidate hashes. The operator must install the
-   reviewed five files using the root-owned installation procedure in CI-CD.md;
+   reviewed six files using the root-owned installation procedure in CI-CD.md;
    compare SHA-256 of `compose.yml`, `compose.registry.yml`, `cd/controller.py`,
-   `cd/release.py` and `cd/smoke.py` between `deploy/` at the reviewed revision and
+   `cd/coordination.py`, `cd/release.py` and `cd/smoke.py` between `deploy/` at the reviewed revision and
    `/usr/local/lib/vellum-cd/`. Keep directories root-owned 755, files 644 and
    state directory root-owned 700. Retain the previous reviewed bundle revision
    with rollback evidence. Older controllers expecting checkout env paths cannot
@@ -153,7 +156,8 @@ The staging workflow has no manual, PR, tag, main or workflow-call trigger.
    identities and Caddy were retained, and production remains healthy. Do not
    print secrets, resolved Compose configuration or application data into CI.
 5. If anything fails, set the flag false to prevent future starts and inspect the
-   exact SSM command and host lock before retrying. Disabling the flag/cancelling
+   exact SSM command, host locks and [pending operation recovery](HOST-COORDINATION.md)
+   before retrying. Disabling the flag/cancelling
    Actions does not stop an already-running remote command. Do not prune images,
    replace databases or automatically roll back migrations. Recover deliberately
    using the previous digests and the schema/backup procedure in CI-CD.md.
