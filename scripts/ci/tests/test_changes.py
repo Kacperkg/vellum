@@ -102,6 +102,23 @@ class ChangeTests(unittest.TestCase):
                 self.assertTrue(all(json.loads(output["plan"]).values()))
                 self.assertEqual(output["deploy"], "true")
 
+    def test_manual_verification_explicitly_selects_full_validation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            env = {
+                **os.environ, "GITHUB_EVENT_NAME": "workflow_dispatch",
+                # No diff or event file: full selection is intentional.
+                "GITHUB_EVENT_PATH": str(root / "missing-event"),
+                "GITHUB_OUTPUT": str(root / "output"),
+                "GITHUB_STEP_SUMMARY": str(root / "summary"),
+            }
+            subprocess.run(["python3", str(ROOT / "scripts/ci/changes.py"), "detect"], env=env, check=True)
+            output = dict(line.split("=", 1) for line in (root / "output").read_text().splitlines())
+            self.assertTrue(all(json.loads(output["plan"]).values()))
+            self.assertEqual(output["deploy"], "true")
+            self.assertIn("manual staging deployment verification: explicit full validation", (root / "summary").read_text())
+            self.assertNotIn("fallback", (root / "summary").read_text())
+
     def test_multicommit_push_deletions_renames_and_pr_merge_base(self):
         with tempfile.TemporaryDirectory() as temp:
             def git(*args):

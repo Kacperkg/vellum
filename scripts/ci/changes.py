@@ -89,8 +89,14 @@ def guard(result, raw, key):
 def main():
     if sys.argv[1:] == ["detect"]:
         try:
-            event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
-            plan, categories = classify(changed_paths(event, os.environ["GITHUB_EVENT_NAME"]))
+            if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch":
+                # release-staging's manual guard must succeed before this call.
+                # This is an explicit deployment verification, not a diff failure.
+                plan = dict.fromkeys(KEYS, True)
+                categories = ["manual staging deployment verification: explicit full validation"]
+            else:
+                event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+                plan, categories = classify(changed_paths(event, os.environ["GITHUB_EVENT_NAME"]))
         except (KeyError, ValueError, OSError, subprocess.SubprocessError):
             # A missing parent/initial push/unsupported path selects everything.
             plan, categories = dict.fromkeys(KEYS, True), ["fallback: full validation"]
