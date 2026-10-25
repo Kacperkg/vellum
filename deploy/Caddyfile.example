@@ -1,0 +1,46 @@
+# Merge these site blocks into the EXISTING Caddy configuration manually.
+# Caddy must already be attached to the external Docker network "web".
+# Do not use handle_path: Go expects the /api prefix to be preserved.
+
+vellum.kacpergajdarski.com {
+	encode zstd gzip
+
+	@api path /api /api/* /ping
+	handle @api {
+		reverse_proxy vellum-production-backend:8080
+	}
+
+	@auth {
+		method POST
+		path /register /login /refresh /logout
+	}
+	handle @auth {
+		reverse_proxy vellum-production-backend:8080
+	}
+
+	# GET /login and all other browser routes go to the SPA.
+	handle {
+		reverse_proxy vellum-production-frontend:8080
+	}
+}
+
+staging.vellum.kacpergajdarski.com {
+	encode zstd gzip
+
+	@api path /api /api/* /ping
+	handle @api {
+		reverse_proxy vellum-staging-backend:8080
+	}
+
+	@auth {
+		method POST
+		path /register /login /refresh /logout
+	}
+	handle @auth {
+		reverse_proxy vellum-staging-backend:8080
+	}
+
+	handle {
+		reverse_proxy vellum-staging-frontend:8080
+	}
+}
