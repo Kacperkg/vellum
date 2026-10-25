@@ -1,0 +1,26 @@
+{
+  "Rules": [
+    {
+      "ID": "ExpireProductionAfterTwoDays",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "production/"},
+      "Expiration": {"Days": 2},
+      "NoncurrentVersionExpiration": {"NoncurrentDays": 1},
+      "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1}
+    },
+    {
+      "ID": "ExpireStagingAfterTwoDays",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "staging/"},
+      "Expiration": {"Days": 2},
+      "NoncurrentVersionExpiration": {"NoncurrentDays": 1},
+      "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 1}
+    },
+    {
+      "ID": "RemoveExpiredDeleteMarkers",
+      "Status": "Enabled",
+      "Filter": {"Prefix": ""},
+      "Expiration": {"ExpiredObjectDeleteMarker": true}
+    }
+  ]
+}

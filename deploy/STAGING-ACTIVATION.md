@@ -1,5 +1,9 @@
 # First automated staging deployment
 
+Historical activation handoff: the first staging deployment has since succeeded.
+The current change-selection rules are in [CI-OPTIMISATION.md](CI-OPTIMISATION.md).
+Documentation-only pushes no longer trigger publication or deployment.
+
 This PR removes GHCR bootstrap and enables the staging workflow in source only.
 It does not set `VELLUM_CD_ENABLED`, dispatch a deployment, change GitHub settings
 or touch AWS. Production stays `.github/workflows/release-production.yml.disabled`.
@@ -7,12 +11,12 @@ or touch AWS. Production stays `.github/workflows/release-production.yml.disable
 ## Effect of merging
 
 Merge only after review and all seven required CI checks pass. With the current
-`VELLUM_CD_ENABLED=false`, the merge push runs ordinary CI; both jobs in Release
-staging skip. No release images are published, AWS role assumed or SSM command
+`VELLUM_CD_ENABLED=false`, the merge push runs reusable CI inside Release
+staging; publication/deployment skip. No release images are published, AWS role assumed or SSM command
 sent. The bootstrap disappears. Changing a repository variable alone does not
 emit a push or start a deployment.
 
-Once CD is enabled, every eligible push to protected `staging` in
+Once CD is enabled, every eligible non-documentation push to protected `staging` in
 `Kacperkg/vellum` runs reusable CI, then builds both production images from that
 push's immutable checkout SHA for `linux/amd64`. It publishes unique
 `sha-<source-sha>-run-<run-id>-<attempt>` tags, creates a candidate with the build
@@ -23,8 +27,9 @@ The staging workflow has no manual, PR, tag, main or workflow-call trigger.
 
 ## Review findings and safety boundaries
 
-- The workflow now requires the CD flag, push event, canonical repository,
-  exact staging ref and `github.ref_protected` on both jobs. Checkout explicitly
+- Both jobs require the push event, canonical repository, exact staging ref
+  and `github.ref_protected`. Publication additionally requires the CD flag,
+  successful reusable CI and a release-needed plan. Checkout explicitly
   uses the event SHA. The reusable checks have only `contents: read`; only the
   publish/deploy job gets `packages: write` and `id-token: write` and uses the
   staging GitHub Environment.
@@ -78,11 +83,14 @@ The staging workflow has no manual, PR, tag, main or workflow-call trigger.
    identity privately; retain all rollback images. Verify adequate EC2 disk,
    memory and CPU headroom, with no conflicting maintenance/deployments.
 2. **Update the installed controller bundle to this exact reviewed revision.**
-   This PR changes `deploy/cd/controller.py`. An already-installed older bundle
+   The shared [host-coordination gate](HOST-COORDINATION.md) also requires
+   installing `cd/coordination.py` and matching backup scripts in a drained
+   host-wide maintenance freeze. This PR changes `deploy/cd/controller.py`.
+   An already-installed older bundle
    fails closed against the new candidate hashes. The operator must install the
-   reviewed five files using the root-owned installation procedure in CI-CD.md;
+   reviewed six files using the root-owned installation procedure in CI-CD.md;
    compare SHA-256 of `compose.yml`, `compose.registry.yml`, `cd/controller.py`,
-   `cd/release.py` and `cd/smoke.py` between `deploy/` at the reviewed revision and
+   `cd/coordination.py`, `cd/release.py` and `cd/smoke.py` between `deploy/` at the reviewed revision and
    `/usr/local/lib/vellum-cd/`. Keep directories root-owned 755, files 644 and
    state directory root-owned 700. Retain the previous reviewed bundle revision
    with rollback evidence. Older controllers expecting checkout env paths cannot
@@ -136,7 +144,8 @@ The staging workflow has no manual, PR, tag, main or workflow-call trigger.
 2. Have the operator set repository variable `VELLUM_CD_ENABLED=true` only when
    ready to observe the whole rollout. Do not rerun a historical release job.
 3. Create a fresh `feature/first-staging-release` branch from current staging,
-   make a harmless documentation change, push it and open a PR into staging.
+   make a reviewed application change, push it and open a PR into staging.
+   A documentation-only change will validate CI but will not trigger a release.
    Review it, require all seven checks and merge via normal branch protections.
    Do not direct-push to protected staging, add a manual trigger, or weaken checks.
 4. Observe **Release staging** for that merge SHA: reusable CI must succeed
@@ -147,7 +156,8 @@ The staging workflow has no manual, PR, tag, main or workflow-call trigger.
    identities and Caddy were retained, and production remains healthy. Do not
    print secrets, resolved Compose configuration or application data into CI.
 5. If anything fails, set the flag false to prevent future starts and inspect the
-   exact SSM command and host lock before retrying. Disabling the flag/cancelling
+   exact SSM command, host locks and [pending operation recovery](HOST-COORDINATION.md)
+   before retrying. Disabling the flag/cancelling
    Actions does not stop an already-running remote command. Do not prune images,
    replace databases or automatically roll back migrations. Recover deliberately
    using the previous digests and the schema/backup procedure in CI-CD.md.

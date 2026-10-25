@@ -1,13 +1,13 @@
 # CI/CD implementation and activation handoff
 
-Status: **staging workflow enabled in source, runtime CD gate remains off**.
-`.github/workflows/release-staging.yml` listens only to protected staging pushes
-and requires `VELLUM_CD_ENABLED=true`. The production workflow remains
-`.yml.disabled`. The temporary GHCR bootstrap has been removed after the
-operator reported successful publication and anonymous EC2 pulls. No flag,
-GitHub settings or AWS resources were changed by this activation-preparation PR.
-See [the first staging deployment runbook](STAGING-ACTIVATION.md) before enabling
-CD; it includes the required installed-controller update for this revision.
+Status: **first end-to-end staging deployment succeeded; production remains disabled**.
+`.github/workflows/release-staging.yml` validates protected staging pushes and
+requires `VELLUM_CD_ENABLED=true` plus a release-needed change plan before
+publication/deployment. The production workflow remains `.yml.disabled`.
+See [CI-OPTIMISATION.md](CI-OPTIMISATION.md) for current execution rules and the
+[historical activation runbook](STAGING-ACTIVATION.md) for operator prerequisites.
+This optimisation changes no flags, GitHub settings, AWS resources or installed
+controller files.
 
 ## Release and branch model
 
@@ -19,11 +19,12 @@ CD; it includes the required installed-controller update for this revision.
   E2E typechecking, build/typecheck, lint, formatting and browser workflows;
   Go build/vet/tests/race tests with PostgreSQL 17; production amd64 Docker
   builds; Docker secret exclusions; Compose/Caddy and deployment safety tests.
-- CI runs on pushes for diagnostics, PRs to `staging`/`main`, and via
-  `workflow_call`. PR jobs have only `contents: read`, no AWS identity or secrets,
+- CI runs on PRs to `staging`/`main` and via `workflow_call`; Release staging
+  owns staging push validation, even with CD disabled. Steps are selected by a
+  conservative dependency plan while all seven required contexts execute. PR jobs have only `contents: read`, no AWS identity or secrets,
   and no write access to release caches. `pull_request_target` is not used.
-- Once activated, a push to `staging` first runs the same reusable CI, then
-  builds/publishes both release images, deploys their digests to staging and
+- A push to `staging` first runs the same reusable CI. With CD enabled and a
+  release-needed plan, it builds/publishes both release images, deploys their digests to staging and
   verifies them through the existing Caddy. Each release image is built once
   for publication. CI validation builds are not promoted artifacts.
 - Staging versions are `sha-<full-sha>-run-<run-id>-<attempt>` in
@@ -207,7 +208,7 @@ missing or expired. Public-package activation does not require this helper.
   ```sh
   sudo install -d -m 755 /usr/local/lib/vellum-cd /usr/local/lib/vellum-cd/cd
   sudo install -m 644 deploy/compose.yml deploy/compose.registry.yml /usr/local/lib/vellum-cd/
-  sudo install -m 644 deploy/cd/controller.py deploy/cd/release.py deploy/cd/smoke.py /usr/local/lib/vellum-cd/cd/
+  sudo install -m 644 deploy/cd/controller.py deploy/cd/coordination.py deploy/cd/release.py deploy/cd/smoke.py /usr/local/lib/vellum-cd/cd/
   sudo install -d -m 700 /var/lib/vellum-cd /etc/vellum-cd /etc/vellum-cd/docker
   ```
 
@@ -242,9 +243,11 @@ missing or expired. Public-package activation does not require this helper.
   pass before any update. `up -d --no-deps --no-build --pull never --wait
   --wait-timeout 180 backend frontend` preserves PostgreSQL and all volumes.
   This is not an atomic two-service transaction; a partial update is possible.
-- GitHub concurrency and a nonblocking host file lock serialize each environment,
-  including controller invocations by manual operators. Staging and production
-  are separate projects, though they still share the t3.small's CPU/memory/disk.
+- GitHub concurrency and the [shared host gate](HOST-COORDINATION.md) serialize
+  backups, staging/production controller updates and guarded schema work across
+  the EC2 host, retaining both environment locks. Incomplete operations leave a
+  durable recovery gate. Install the matching six-file bundle and backup scripts
+  together before resuming; no live upgrade is performed by this repository change.
 
 ### 5. Provision GitHub variables, names and scopes
 
@@ -353,7 +356,8 @@ Unchanged receipts do not identify the images currently running after failure.
 Safest operator recovery (none of these live actions is performed by this PR):
 
 1. Avoid further staging merges/deployments while investigating. Confirm the
-   failed SSM command has terminated and the host lock is free; cancellation or
+   failed SSM command has terminated. Review the [pending operation recovery](HOST-COORDINATION.md)
+   before clearing its gate; free locks alone do not prove quiescence. Cancellation or
    disabling future starts does not stop an existing command. Do not rerun the
    historical workflow/SSM command or manually mark it successful.
 2. Privately record actual staging container image IDs/digests and revision labels,
@@ -365,7 +369,7 @@ Safest operator recovery (none of these live actions is performed by this PR):
    only the auth matcher, validate the full merged configuration and use the
    normal authorized reload procedure. Preserve all unrelated sites, HTTPS,
    fixed proxy IP and GET/SPA routing. This PR changes no live Caddy configuration.
-4. Before merging this fix with CD enabled, install the exact reviewed five-file
+4. Before merging this fix with CD enabled, install the exact reviewed six-file
    controller bundle and verify hashes: changing smoke.py changes the manifest's
    bundle hash. Do not patch manifest hashes, replay old receipts or turn a failed
    candidate into a verified release. This PR does not install files on EC2.
@@ -385,12 +389,14 @@ Both images pull before mutation. Current/previous/per-release receipts in
 leaves the prior successful pointer but may leave mixed application containers;
 stop and inspect. It never automatically rolls images back across AutoMigrate.
 If a GitHub wait times out, SSM may still be executing. Inspect the exact command
-status and host lock before retrying; canceling a workflow does not stop SSM.
+status, host locks and [pending operation recovery](HOST-COORDINATION.md) before
+retrying; canceling a workflow does not stop SSM or establish database quiescence.
 
 For rollback, select `production-previous.json` (or a retained tested release),
 review schema compatibility and create fresh release-specific backup approval.
-If the tested deployment bundle differs, review/install that trusted version
-before invoking it. An authorized operator on EC2 can invoke the same controller
+If the tested deployment bundle differs, use an explicitly reviewed recovery
+release compatible with the current coordinated six-file bundle. Do not downgrade
+to an older controller or rewrite receipt hashes; see [host coordination](HOST-COORDINATION.md). An authorized operator on EC2 can invoke the same controller
 with the receipt as data; the host lock and production gate remain enforced:
 
 ```sh
@@ -420,3 +426,10 @@ not deploy, activate production, modify infrastructure or configure S3 backups.
 Relevant references: [GitHub OIDC with AWS](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws),
 [SSM safe parameter interpolation](https://docs.aws.amazon.com/systems-manager/latest/userguide/documents-syntax-data-elements-parameters.html),
 [SSM agent compatibility](https://docs.aws.amazon.com/systems-manager/latest/userguide/documents-schemas-features.html).
+
+## CI execution and performance
+
+See [CI-OPTIMISATION.md](CI-OPTIMISATION.md) for the measured baseline,
+required-check contracts, dependency selection, cache trust and phased image
+reuse design. Application releases still build fresh digest pairs under schema 1;
+documentation-only changes do not publish or deploy.

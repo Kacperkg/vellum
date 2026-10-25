@@ -9,55 +9,20 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TransactionsRouteImport } from './routes/transactions'
-import { Route as SubscriptionsRouteImport } from './routes/subscriptions'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as GoalsRouteImport } from './routes/goals'
-import { Route as ComponentsRouteImport } from './routes/components'
-import { Route as BudgetsRouteImport } from './routes/budgets'
-import { Route as AnalyticsRouteImport } from './routes/analytics'
-import { Route as AccountsRouteImport } from './routes/accounts'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AccountsRouteImport } from './routes/accounts'
+import { Route as AnalyticsRouteImport } from './routes/analytics'
+import { Route as BudgetsRouteImport } from './routes/budgets'
+import { Route as ComponentsRouteImport } from './routes/components'
+import { Route as GoalsRouteImport } from './routes/goals'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SubscriptionsRouteImport } from './routes/subscriptions'
+import { Route as TransactionsRouteImport } from './routes/transactions'
 
-const TransactionsRoute = TransactionsRouteImport.update({
-  id: '/transactions',
-  path: '/transactions',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SubscriptionsRoute = SubscriptionsRouteImport.update({
-  id: '/subscriptions',
-  path: '/subscriptions',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GoalsRoute = GoalsRouteImport.update({
-  id: '/goals',
-  path: '/goals',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ComponentsRoute = ComponentsRouteImport.update({
-  id: '/components',
-  path: '/components',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BudgetsRoute = BudgetsRouteImport.update({
-  id: '/budgets',
-  path: '/budgets',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AnalyticsRoute = AnalyticsRouteImport.update({
-  id: '/analytics',
-  path: '/analytics',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccountsRoute = AccountsRouteImport.update({
@@ -65,9 +30,44 @@ const AccountsRoute = AccountsRouteImport.update({
   path: '/accounts',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AnalyticsRoute = AnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BudgetsRoute = BudgetsRouteImport.update({
+  id: '/budgets',
+  path: '/budgets',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ComponentsRoute = ComponentsRouteImport.update({
+  id: '/components',
+  path: '/components',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GoalsRoute = GoalsRouteImport.update({
+  id: '/goals',
+  path: '/goals',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SubscriptionsRoute = SubscriptionsRouteImport.update({
+  id: '/subscriptions',
+  path: '/subscriptions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TransactionsRoute = TransactionsRouteImport.update({
+  id: '/transactions',
+  path: '/transactions',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -162,60 +162,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/transactions': {
-      id: '/transactions'
-      path: '/transactions'
-      fullPath: '/transactions'
-      preLoaderRoute: typeof TransactionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/subscriptions': {
-      id: '/subscriptions'
-      path: '/subscriptions'
-      fullPath: '/subscriptions'
-      preLoaderRoute: typeof SubscriptionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/goals': {
-      id: '/goals'
-      path: '/goals'
-      fullPath: '/goals'
-      preLoaderRoute: typeof GoalsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/components': {
-      id: '/components'
-      path: '/components'
-      fullPath: '/components'
-      preLoaderRoute: typeof ComponentsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/budgets': {
-      id: '/budgets'
-      path: '/budgets'
-      fullPath: '/budgets'
-      preLoaderRoute: typeof BudgetsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/analytics': {
-      id: '/analytics'
-      path: '/analytics'
-      fullPath: '/analytics'
-      preLoaderRoute: typeof AnalyticsRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/accounts': {
@@ -225,11 +176,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/analytics': {
+      id: '/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AnalyticsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/budgets': {
+      id: '/budgets'
+      path: '/budgets'
+      fullPath: '/budgets'
+      preLoaderRoute: typeof BudgetsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/components': {
+      id: '/components'
+      path: '/components'
+      fullPath: '/components'
+      preLoaderRoute: typeof ComponentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/goals': {
+      id: '/goals'
+      path: '/goals'
+      fullPath: '/goals'
+      preLoaderRoute: typeof GoalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/subscriptions': {
+      id: '/subscriptions'
+      path: '/subscriptions'
+      fullPath: '/subscriptions'
+      preLoaderRoute: typeof SubscriptionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/transactions': {
+      id: '/transactions'
+      path: '/transactions'
+      fullPath: '/transactions'
+      preLoaderRoute: typeof TransactionsRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

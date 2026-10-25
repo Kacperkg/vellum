@@ -1,79 +1,142 @@
 name: CI
 
 on:
-  push:
   pull_request:
     branches: [staging, main]
   workflow_call:
+    outputs:
+      deploy:
+        description: Whether this change needs an application release
+        value: ${{ jobs.changes.outputs.deploy }}
 
 permissions:
   contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: Change plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      plan: ${{ steps.detect.outputs.plan }}
+      deploy: ${{ steps.detect.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 -m unittest discover -s scripts/ci/tests -v
+      - id: detect
+        run: python3 scripts/ci/changes.py detect
+
   frontend:
     name: Frontend quality
+    needs: changes
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
     steps:
+      # Run the context even if detection fails; skipped jobs can satisfy rulesets.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Validate required-check selection
+        id: scope
+        working-directory: .
+        env:
+          DETECTION_RESULT: ${{ needs.changes.result }}
+          CHANGE_PLAN: ${{ needs.changes.outputs.plan }}
+          CHECK_KEY: frontend
+        run: python3 scripts/ci/changes.py guard
       - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
+        if: steps.scope.outputs.run == 'true'
         with:
-          version: 10.17.0
+          version: 10.34.8
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: steps.scope.outputs.run == 'true'
         with:
-          node-version: 25.2.1
+          node-version: 24.22.1
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+        if: steps.scope.outputs.run == 'true'
       - run: pnpm test
+        if: steps.scope.outputs.run == 'true'
       - run: pnpm test:e2e:check
+        if: steps.scope.outputs.run == 'true'
       - run: pnpm build
+        if: steps.scope.outputs.run == 'true'
       - run: pnpm lint
+        if: steps.scope.outputs.run == 'true'
       - run: pnpm format:check
+        if: steps.scope.outputs.run == 'true'
 
   backend:
     name: Backend and PostgreSQL
+    needs: changes
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
         shell: bash
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: vellum
-          POSTGRES_PASSWORD: ci-test-password
-          POSTGRES_DB: vellum_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U vellum -d vellum_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     env:
       TEST_DATABASE_DSN: host=127.0.0.1 port=5432 user=vellum password=ci-test-password dbname=vellum_test sslmode=disable
     steps:
+      # Run the context even if detection fails; skipped jobs can satisfy rulesets.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Validate required-check selection
+        id: scope
+        working-directory: .
+        env:
+          DETECTION_RESULT: ${{ needs.changes.result }}
+          CHANGE_PLAN: ${{ needs.changes.outputs.plan }}
+          CHECK_KEY: backend
+        run: python3 scripts/ci/changes.py guard
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: steps.scope.outputs.run == 'true'
         with:
           go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
+          cache: false
+      # setup-go's shared first-writer key let the short safety/browser jobs
+      # save before the backend race build. Keep independent build caches.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: steps.scope.outputs.run == 'true'
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('backend/go.mod', 'backend/go.sum') }}-${{ github.sha }}
+          restore-keys: go-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('backend/go.mod', 'backend/go.sum') }}-
+      - name: Start isolated PostgreSQL only when selected
+        if: steps.scope.outputs.run == 'true'
+        working-directory: .
+        run: |
+          docker run -d --name ci-postgres -p 127.0.0.1:5432:5432 \
+            -e POSTGRES_USER=vellum -e POSTGRES_PASSWORD=ci-test-password \
+            -e POSTGRES_DB=vellum_test --health-cmd 'pg_isready -U vellum -d vellum_test' \
+            --health-interval 5s --health-timeout 5s --health-retries 12 postgres:17
+          for attempt in {1..60}; do
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' ci-postgres)" = healthy ]; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
       - run: go mod download
+        if: steps.scope.outputs.run == 'true'
       - name: Check Go formatting
+        if: steps.scope.outputs.run == 'true'
         run: |
           unformatted=$(gofmt -l cmd internal)
           if [ -n "$unformatted" ]; then
@@ -81,12 +144,16 @@ jobs:
             exit 1
           fi
       - run: go build ./...
+        if: steps.scope.outputs.run == 'true'
       - run: go vet ./...
+        if: steps.scope.outputs.run == 'true'
       - name: Test all packages with real PostgreSQL
+        if: steps.scope.outputs.run == 'true'
         run: |
           set -euo pipefail
           go test -count=1 -p 1 -cover -json ./... | tee ../backend-test-results.jsonl
       - name: Require successful database tests without skips
+        if: steps.scope.outputs.run == 'true'
         run: |
           python3 - <<'PY'
           import json
@@ -104,47 +171,95 @@ jobs:
                   raise SystemExit(f'No passing database tests found in {package}')
           PY
       - name: Race detector with PostgreSQL integration tests
+        if: steps.scope.outputs.run == 'true'
         run: go test -race -count=1 -p 1 ./...
 
   docker-context:
     name: Docker secret exclusions
+    needs: changes
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      # Run the context even if detection fails; skipped jobs can satisfy rulesets.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Validate required-check selection
+        id: scope
+        working-directory: .
+        env:
+          DETECTION_RESULT: ${{ needs.changes.result }}
+          CHANGE_PLAN: ${{ needs.changes.outputs.plan }}
+          CHECK_KEY: docker
+        run: python3 scripts/ci/changes.py guard
       - run: bash scripts/check-docker-context.sh
+        if: steps.scope.outputs.run == 'true'
 
   browser:
     name: Browser workflows
+    needs: changes
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
         working-directory: frontend
     steps:
+      # Run the context even if detection fails; skipped jobs can satisfy rulesets.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Validate required-check selection
+        id: scope
+        working-directory: .
+        env:
+          DETECTION_RESULT: ${{ needs.changes.result }}
+          CHANGE_PLAN: ${{ needs.changes.outputs.plan }}
+          CHECK_KEY: browser
+        run: python3 scripts/ci/changes.py guard
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: steps.scope.outputs.run == 'true'
         with:
           go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
+          cache: false
+      # setup-go's shared first-writer key let the short safety/browser jobs
+      # save before the backend race build. Keep independent build caches.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: steps.scope.outputs.run == 'true'
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('backend/go.mod', 'backend/go.sum') }}-${{ github.sha }}
+          restore-keys: go-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('backend/go.mod', 'backend/go.sum') }}-
       - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
+        if: steps.scope.outputs.run == 'true'
         with:
-          version: 10.17.0
+          version: 10.34.8
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: steps.scope.outputs.run == 'true'
         with:
-          node-version: 25.2.1
+          node-version: 24.22.1
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+        if: steps.scope.outputs.run == 'true'
+      # A sampled Chromium CDN failure cost 6m18s. Cache only version-bound
+      # browser binaries; always run the installer for OS dependencies.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: steps.scope.outputs.run == 'true'
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
       - run: pnpm exec playwright install --with-deps chromium
+        if: steps.scope.outputs.run == 'true'
       - run: docker pull postgres:17
+        if: steps.scope.outputs.run == 'true'
       - run: pnpm test:e2e
+        if: steps.scope.outputs.run == 'true'
       - name: Retain browser failure diagnostics
-        if: failure()
+        if: failure() && steps.scope.outputs.run == 'true'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: playwright-failure-diagnostics
@@ -156,21 +271,47 @@ jobs:
 
   deployment-config:
     name: Deployment configuration and safety tests
+    needs: changes
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      # Run the context even if detection fails; skipped jobs can satisfy rulesets.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Validate required-check selection
+        id: scope
+        working-directory: .
+        env:
+          DETECTION_RESULT: ${{ needs.changes.result }}
+          CHANGE_PLAN: ${{ needs.changes.outputs.plan }}
+          CHECK_KEY: deployment
+        run: python3 scripts/ci/changes.py guard
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        if: steps.scope.outputs.run == 'true'
         with:
           go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
+          cache: false
+      # setup-go's shared first-writer key let the short safety/browser jobs
+      # save before the backend race build. Keep independent build caches.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: steps.scope.outputs.run == 'true'
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('backend/go.mod', 'backend/go.sum') }}-${{ github.sha }}
+          restore-keys: go-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('backend/go.mod', 'backend/go.sum') }}-
       - run: python3 -m unittest discover -s deploy/tests -v
+        if: steps.scope.outputs.run == 'true'
       - name: Validate SSM patterns with the Go regex engine
+        if: steps.scope.outputs.run == 'true'
         run: go test -count=1 ./deploy/tests/ssm_regex_test.go
       - run: bash scripts/check-deployment-config.sh
+        if: steps.scope.outputs.run == 'true'
       - name: Lint active workflow and inactive deployment templates
+        if: steps.scope.outputs.run == 'true'
         run: |
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
           shopt -s nullglob
@@ -179,6 +320,8 @@ jobs:
 
   production-images:
     name: Production image (${{ matrix.component }}, linux/amd64)
+    needs: changes
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -186,17 +329,30 @@ jobs:
       matrix:
         component: [backend, frontend]
     steps:
+      # Run the context even if detection fails; skipped jobs can satisfy rulesets.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Validate required-check selection
+        id: scope
+        working-directory: .
+        env:
+          DETECTION_RESULT: ${{ needs.changes.result }}
+          CHANGE_PLAN: ${{ needs.changes.outputs.plan }}
+          CHECK_KEY: image_${{ matrix.component }}
+        run: python3 scripts/ci/changes.py guard
       - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        if: steps.scope.outputs.run == 'true'
       - uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        if: steps.scope.outputs.run == 'true'
         with:
           context: ${{ matrix.component }}
           file: ${{ matrix.component }}/Dockerfile.prod
           platforms: linux/amd64
           push: false
           build-args: VCS_REF=${{ github.sha }}
-          cache-from: type=gha,scope=production-${{ matrix.component }}
+          cache-from: |
+            type=gha,scope=release-${{ matrix.component }}
+            type=gha,scope=production-${{ matrix.component }}
           # PR jobs may read caches but never write caches trusted by releases.
           cache-to: ${{ github.event_name == 'push' && github.ref == 'refs/heads/staging' && format('type=gha,mode=max,scope=production-{0}', matrix.component) || '' }}

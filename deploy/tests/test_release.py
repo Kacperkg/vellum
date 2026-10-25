@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from datetime import datetime, timezone, timedelta
 import hashlib
 import base64
@@ -204,6 +205,7 @@ class ManifestTests(unittest.TestCase):
             lambda m: m["staging"].update(verified=False, command_id=None),
             lambda m: m["staging"].update(verified="true"),
             lambda m: m["deployment_files"].update({"../script": "a" * 64}),
+            lambda m: m["deployment_files"].pop("cd/coordination.py"),
             lambda m: m.update(shell="touch /tmp/evil"),
         ]
         for mutate in mutations:
@@ -329,6 +331,7 @@ class ControllerTests(unittest.TestCase):
             previous.write_text('{"previous":"retained"}\n')
             with (
                 patch.object(controller, "STATE", state),
+                patch.object(controller, "operation", return_value=nullcontext()),
                 patch.object(
                     controller, "bundle_hashes", return_value=value["deployment_files"]
                 ),
@@ -351,15 +354,15 @@ class ControllerTests(unittest.TestCase):
         with patch.object(Path, "lstat", autospec=True, side_effect=metadata):
             controller.validate_installation()
 
-        def writable_library(path):
-            info = metadata(path)
-            if path.name == "release.py":
-                info.st_mode |= 0o020
-            return info
-
-        with patch.object(Path, "lstat", autospec=True, side_effect=writable_library):
-            with self.assertRaisesRegex(ValueError, "installation file"):
-                controller.validate_installation()
+        for library in ("release.py", "coordination.py"):
+            def writable_library(path):
+                info = metadata(path)
+                if path.name == library:
+                    info.st_mode |= 0o020
+                return info
+            with patch.object(Path, "lstat", autospec=True, side_effect=writable_library):
+                with self.assertRaisesRegex(ValueError, "installation file"):
+                    controller.validate_installation()
 
     def test_production_requires_fresh_release_specific_backup(self):
         now = datetime.now(timezone.utc)
@@ -510,33 +513,13 @@ class ControllerTests(unittest.TestCase):
 
     def test_busy_host_lock_blocks_deployment(self):
         with (
-            tempfile.TemporaryDirectory() as tmp,
-            patch.object(
-                controller, "BASE", Path(controller.__file__).resolve().parents[1]
-            ),
-            patch.object(controller, "STATE") as state,
-            patch.object(controller.os, "geteuid", return_value=0),
-            patch.object(controller.sys, "argv", ["controller.py", "staging"]),
-            patch.dict(os.environ, {"SSM_Manifest": "e30="}),
-            patch.object(controller, "protected"),
-            patch.object(
-                controller, "decode_manifest_parameter", return_value=manifest()
-            ),
-            patch.object(
-                controller.fcntl, "flock", side_effect=BlockingIOError
-            ) as lock,
-            patch.object(controller, "deploy") as deploy,
+            patch.object(controller, "bundle_hashes", return_value=manifest()["deployment_files"]),
+            patch.object(controller, "operation", side_effect=ValueError("host operation lock busy")),
+            patch.object(controller.Commands, "apply") as apply,
         ):
-            state.is_dir.return_value = True
-            state.stat.return_value = types.SimpleNamespace(st_uid=0, st_mode=0o700)
-            state.__truediv__.return_value = Path(tmp) / "staging.lock"
-            with self.assertRaisesRegex(ValueError, "deployment already running"):
-                controller.main()
-            self.assertEqual(
-                lock.call_args.args[1],
-                controller.fcntl.LOCK_EX | controller.fcntl.LOCK_NB,
-            )
-            deploy.assert_not_called()
+            with self.assertRaisesRegex(ValueError, "host operation lock busy"):
+                controller.deploy("staging", manifest())
+            apply.assert_not_called()
 
     def test_incompatible_installed_bundle_blocks_service_updates(self):
         with (
@@ -557,6 +540,7 @@ class ControllerTests(unittest.TestCase):
                 controller, "bundle_hashes", return_value=manifest()["deployment_files"]
             ),
             patch.object(controller, "atomic_json") as write,
+            patch.object(controller, "operation", return_value=nullcontext()),
         ):
             with self.assertRaises(ValueError):
                 controller.deploy("staging", manifest(), commands)

@@ -3,7 +3,6 @@
 
 import base64
 from datetime import datetime, timezone, timedelta
-import fcntl
 import hashlib
 import json
 import os
@@ -35,6 +34,7 @@ def validate_installation():
         "compose.yml",
         "compose.registry.yml",
         "cd/controller.py",
+        "cd/coordination.py",
         "cd/release.py",
         "cd/smoke.py",
     ):
@@ -63,6 +63,7 @@ from release import (  # noqa: E402 - import only after validating the installed
     validate_manifest,
 )
 from smoke import smoke  # noqa: E402
+from coordination import operation  # noqa: E402
 
 MAX_ENCODED_MANIFEST_CHARS = 45000
 
@@ -373,27 +374,28 @@ def deploy(environment, manifest, commands=None):
         protected(approval_path, private=True)
         validate_approval(read_json(approval_path), manifest)
     commands = commands or Commands(environment, manifest)
-    try:
-        commands.apply(manifest)
-    except Exception:
-        commands.diagnostics()
-        raise
-    current = STATE / (environment + "-current.json")
-    previous = STATE / (environment + "-previous.json")
-    if current.exists():
-        last_successful = read_json(current)
-        if canonical(last_successful) != canonical(manifest):
-            atomic_json(previous, last_successful)
-    atomic_json(current, manifest)
-    # Retain per-release receipts for explicit rollback, including staging smoke
-    # evidence. A workflow artifact expiring does not delete locally tested data.
-    atomic_json(
-        STATE / f"{environment}-{manifest['run_id']}-{manifest['run_attempt']}.json",
-        manifest,
-    )
-    print(
-        f"{environment}: healthy deployment, release {manifest['run_id']}/{manifest['run_attempt']}"
-    )
+    with operation(STATE, "deployment", environment):
+        try:
+            commands.apply(manifest)
+        except Exception:
+            commands.diagnostics()
+            raise
+        current = STATE / (environment + "-current.json")
+        previous = STATE / (environment + "-previous.json")
+        if current.exists():
+            last_successful = read_json(current)
+            if canonical(last_successful) != canonical(manifest):
+                atomic_json(previous, last_successful)
+        atomic_json(current, manifest)
+        # Retain per-release receipts for explicit rollback, including staging smoke
+        # evidence. A workflow artifact expiring does not delete locally tested data.
+        atomic_json(
+            STATE / f"{environment}-{manifest['run_id']}-{manifest['run_attempt']}.json",
+            manifest,
+        )
+        print(
+            f"{environment}: healthy deployment, release {manifest['run_id']}/{manifest['run_attempt']}"
+        )
 
 
 def main():
@@ -415,14 +417,7 @@ def main():
         "unsafe deployment state directory",
     )
     manifest = decode_manifest_parameter(os.environ["SSM_Manifest"])
-    with open(STATE / (environment + ".lock"), "a", encoding="utf-8") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise ValueError(
-                "deployment already running; do not overlap manual and automated releases"
-            ) from None
-        deploy(environment, manifest)
+    deploy(environment, manifest)
 
 
 if __name__ == "__main__":
