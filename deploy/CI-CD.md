@@ -1,13 +1,13 @@
 # CI/CD implementation and activation handoff
 
-Status: **staging workflow enabled in source, runtime CD gate remains off**.
-`.github/workflows/release-staging.yml` listens only to protected staging pushes
-and requires `VELLUM_CD_ENABLED=true`. The production workflow remains
-`.yml.disabled`. The temporary GHCR bootstrap has been removed after the
-operator reported successful publication and anonymous EC2 pulls. No flag,
-GitHub settings or AWS resources were changed by this activation-preparation PR.
-See [the first staging deployment runbook](STAGING-ACTIVATION.md) before enabling
-CD; it includes the required installed-controller update for this revision.
+Status: **first end-to-end staging deployment succeeded; production remains disabled**.
+`.github/workflows/release-staging.yml` validates protected staging pushes and
+requires `VELLUM_CD_ENABLED=true` plus a release-needed change plan before
+publication/deployment. The production workflow remains `.yml.disabled`.
+See [CI-OPTIMISATION.md](CI-OPTIMISATION.md) for current execution rules and the
+[historical activation runbook](STAGING-ACTIVATION.md) for operator prerequisites.
+This optimisation changes no flags, GitHub settings, AWS resources or installed
+controller files.
 
 ## Release and branch model
 
@@ -19,11 +19,12 @@ CD; it includes the required installed-controller update for this revision.
   E2E typechecking, build/typecheck, lint, formatting and browser workflows;
   Go build/vet/tests/race tests with PostgreSQL 17; production amd64 Docker
   builds; Docker secret exclusions; Compose/Caddy and deployment safety tests.
-- CI runs on pushes for diagnostics, PRs to `staging`/`main`, and via
-  `workflow_call`. PR jobs have only `contents: read`, no AWS identity or secrets,
+- CI runs on PRs to `staging`/`main` and via `workflow_call`; Release staging
+  owns staging push validation, even with CD disabled. Steps are selected by a
+  conservative dependency plan while all seven required contexts execute. PR jobs have only `contents: read`, no AWS identity or secrets,
   and no write access to release caches. `pull_request_target` is not used.
-- Once activated, a push to `staging` first runs the same reusable CI, then
-  builds/publishes both release images, deploys their digests to staging and
+- A push to `staging` first runs the same reusable CI. With CD enabled and a
+  release-needed plan, it builds/publishes both release images, deploys their digests to staging and
   verifies them through the existing Caddy. Each release image is built once
   for publication. CI validation builds are not promoted artifacts.
 - Staging versions are `sha-<full-sha>-run-<run-id>-<attempt>` in
@@ -420,3 +421,10 @@ not deploy, activate production, modify infrastructure or configure S3 backups.
 Relevant references: [GitHub OIDC with AWS](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws),
 [SSM safe parameter interpolation](https://docs.aws.amazon.com/systems-manager/latest/userguide/documents-syntax-data-elements-parameters.html),
 [SSM agent compatibility](https://docs.aws.amazon.com/systems-manager/latest/userguide/documents-schemas-features.html).
+
+## CI execution and performance
+
+See [CI-OPTIMISATION.md](CI-OPTIMISATION.md) for the measured baseline,
+required-check contracts, dependency selection, cache trust and phased image
+reuse design. Application releases still build fresh digest pairs under schema 1;
+documentation-only changes do not publish or deploy.

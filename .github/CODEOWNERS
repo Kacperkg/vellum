@@ -4,3 +4,10 @@
 /scripts/check-deployment-config.sh @Kacperkg
 /backend/Dockerfile.prod @Kacperkg
 /frontend/Dockerfile.prod @Kacperkg
+
+# Change selection controls which required checks execute.
+/scripts/ci/ @Kacperkg
+/scripts/check-docker-context.sh @Kacperkg
+/backend/.dockerignore @Kacperkg
+/frontend/.dockerignore @Kacperkg
+/.dockerignore @Kacperkg

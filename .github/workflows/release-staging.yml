@@ -15,7 +15,7 @@ concurrency:
 jobs:
   checks:
     if: >-
-      vars.VELLUM_CD_ENABLED == 'true' && github.event_name == 'push' &&
+      github.event_name == 'push' &&
       github.repository == 'Kacperkg/vellum' &&
       github.ref == 'refs/heads/staging' && github.ref_protected
     uses: ./.github/workflows/ci.yml
@@ -25,6 +25,7 @@ jobs:
   publish-and-deploy:
     needs: checks
     if: >-
+      needs.checks.result == 'success' && needs.checks.outputs.deploy == 'true' &&
       vars.VELLUM_CD_ENABLED == 'true' && github.event_name == 'push' &&
       github.repository == 'Kacperkg/vellum' &&
       github.ref == 'refs/heads/staging' && github.ref_protected
@@ -64,7 +65,9 @@ jobs:
           push: true
           tags: ${{ steps.identity.outputs.prefix }}-backend:${{ steps.identity.outputs.version }}
           build-args: VCS_REF=${{ github.sha }}
-          cache-from: type=gha,scope=production-backend
+          cache-from: |
+            type=gha,scope=release-backend
+            type=gha,scope=production-backend
           cache-to: type=gha,mode=max,scope=release-backend
       - name: Build and publish frontend
         id: frontend
@@ -76,7 +79,9 @@ jobs:
           push: true
           tags: ${{ steps.identity.outputs.prefix }}-frontend:${{ steps.identity.outputs.version }}
           build-args: VCS_REF=${{ github.sha }}
-          cache-from: type=gha,scope=production-frontend
+          cache-from: |
+            type=gha,scope=release-frontend
+            type=gha,scope=production-frontend
           cache-to: type=gha,mode=max,scope=release-frontend
       - name: Write candidate manifest
         env:
