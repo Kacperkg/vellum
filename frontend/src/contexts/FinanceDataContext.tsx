@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -69,8 +70,10 @@ export function FinanceDataProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<FinanceData>(emptyData);
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState(emptyErrors);
+  const refreshState = useRef({ version: 0 });
 
   const refresh = useCallback(async () => {
+    const version = ++refreshState.current.version;
     const [
       accounts,
       budgets,
@@ -89,6 +92,7 @@ export function FinanceDataProvider({ children }: { children: ReactNode }) {
       listTransfers(),
     ] as const);
 
+    if (version !== refreshState.current.version) return;
     setData((current) => ({
       accounts:
         accounts.status === "fulfilled" ? accounts.value : current.accounts,
@@ -122,8 +126,15 @@ export function FinanceDataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Initial server-state hydration is intentionally triggered on mount.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    const state = refreshState.current;
     void refresh();
+    // Reconcile accounts created/deleted in another tab when returning here.
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      state.version++;
+    };
   }, [refresh]);
 
   const value = useMemo(
