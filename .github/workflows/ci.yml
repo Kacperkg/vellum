@@ -167,6 +167,8 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
       - run: python3 -m unittest discover -s deploy/tests -v
+      - name: Validate SSM patterns with the Go regex engine
+        run: go test -count=1 ./deploy/tests/ssm_regex_test.go
       - run: bash scripts/check-deployment-config.sh
       - name: Lint active workflow and inactive deployment templates
         run: |

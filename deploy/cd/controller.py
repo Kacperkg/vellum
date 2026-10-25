@@ -54,6 +54,7 @@ if __name__ == "__main__":
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from release import (  # noqa: E402 - import only after validating the installed directory
     BUNDLE,
+    MAX_MANIFEST,
     bundle_hashes,
     canonical,
     read_json,
@@ -61,6 +62,20 @@ from release import (  # noqa: E402 - import only after validating the installed
     validate_manifest,
 )
 from smoke import smoke  # noqa: E402
+
+MAX_ENCODED_MANIFEST_CHARS = 45000
+
+
+def decode_manifest_parameter(encoded):
+    # Keep independent bounds even if the document is invoked outside SSM or
+    # its native minChars/maxChars checks are absent on an older agent.
+    require(
+        isinstance(encoded, str) and 1 <= len(encoded) <= MAX_ENCODED_MANIFEST_CHARS,
+        "manifest parameter must contain 1..45000 characters",
+    )
+    decoded = base64.b64decode(encoded, validate=True)
+    require(len(decoded) <= MAX_MANIFEST, "decoded manifest exceeds size limit")
+    return json.loads(decoded)
 
 
 def protected(path, private=False):
@@ -360,9 +375,7 @@ def main():
         and STATE.stat().st_mode & 0o077 == 0,
         "unsafe deployment state directory",
     )
-    encoded = os.environ["SSM_Manifest"]
-    require(len(encoded) <= 45000, "manifest parameter too large")
-    manifest = json.loads(base64.b64decode(encoded, validate=True))
+    manifest = decode_manifest_parameter(os.environ["SSM_Manifest"])
     with open(STATE / (environment + ".lock"), "a", encoding="utf-8") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

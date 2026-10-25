@@ -5,7 +5,9 @@
     "Manifest": {
       "type": "String",
       "interpolationType": "ENV_VAR",
-      "allowedPattern": "^[A-Za-z0-9+/=]{1,45000}$"
+      "allowedPattern": "^[A-Za-z0-9+/=]+$",
+      "minChars": 1,
+      "maxChars": 45000
     }
   },
   "mainSteps": [

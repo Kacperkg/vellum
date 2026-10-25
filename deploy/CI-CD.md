@@ -135,6 +135,13 @@ missing or expired. Public-package activation does not require this helper.
   metadata. The workflow sends both, not `$LATEST`/`$DEFAULT`. Deployment roles
   cannot modify documents. The documents take only base64 JSON data and invoke
   a fixed environment/controller; no caller-provided shell is executed.
+  Manifest parameters use an alphabet-only regex, with supported `minChars: 1`
+  and `maxChars: 45000` fields for the encoded size bound. Do not put the large
+  bound in a counted regex repetition: the SSM Agent's Go regex engine rejects
+  repetition counts above 1000. The controller independently enforces that
+  encoded bound, strict base64/JSON decoding, and the 32-KiB decoded JSON limit.
+  When updating these templates, create reviewed document versions and refresh
+  the pinned version/hash variables; do not edit live documents automatically.
 - Review and install controller assets from the exact trusted revision outside
   the writable checkout. On EC2, an operator can use:
 
