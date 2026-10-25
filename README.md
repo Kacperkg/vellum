@@ -254,5 +254,8 @@ guide; production promotion is controlled separately.
 
 ## Licence
 
+Staging CI/CD deployment verification.
+Verify the updated deployment controller.
+
 No licence file is currently included. Public visibility does not grant an
 open-source licence; contact the maintainer about reuse or licensing.
