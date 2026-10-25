@@ -1,0 +1,29 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListCompletionMarkers",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::REPLACE_BUCKET",
+      "Condition": {"StringEquals": {"s3:prefix": ["production/completed/", "staging/completed/"]}}
+    },
+    {
+      "Sid": "VerifyCompletedBackups",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": [
+        "arn:aws:s3:::REPLACE_BUCKET/production/runs/*",
+        "arn:aws:s3:::REPLACE_BUCKET/production/completed/*",
+        "arn:aws:s3:::REPLACE_BUCKET/staging/runs/*",
+        "arn:aws:s3:::REPLACE_BUCKET/staging/completed/*"
+      ]
+    },
+    {
+      "Sid": "NotifyMissingBackup",
+      "Effect": "Allow",
+      "Action": "sns:Publish",
+      "Resource": "arn:aws:sns:eu-west-2:REPLACE_ACCOUNT_ID:REPLACE_TOPIC"
+    }
+  ]
+}
