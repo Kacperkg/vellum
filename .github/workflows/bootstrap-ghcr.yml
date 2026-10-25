@@ -1,0 +1,84 @@
+# TEMPORARY: remove after both public GHCR packages pass anonymous EC2 pulls.
+# Publish only. Keep release-staging/release-production templates disabled.
+name: Bootstrap GHCR (publish only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vellum-ghcr-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'Kacperkg/vellum' && github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify the dispatched source revision
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Registry identity and immutable version
+        id: identity
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          printf 'prefix=ghcr.io/%s\n' "${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          printf 'version=bootstrap-sha-%s-run-%s-%s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - name: GHCR login (job-scoped token)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GH_ACTOR" --password-stdin
+      - name: Build and publish backend
+        id: backend
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: backend
+          file: backend/Dockerfile.prod
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.identity.outputs.prefix }}-backend:${{ steps.identity.outputs.version }}
+          build-args: VCS_REF=${{ github.sha }}
+          cache-from: type=gha,scope=production-backend
+      - name: Build and publish frontend
+        id: frontend
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: frontend
+          file: frontend/Dockerfile.prod
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.identity.outputs.prefix }}-frontend:${{ steps.identity.outputs.version }}
+          build-args: VCS_REF=${{ github.sha }}
+          cache-from: type=gha,scope=production-frontend
+      - name: Record bootstrap image references (not a tested release)
+        env:
+          PREFIX: ${{ steps.identity.outputs.prefix }}
+          VERSION: ${{ steps.identity.outputs.version }}
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
+        run: |
+          {
+            printf '## GHCR bootstrap: publish only\n\n'
+            printf 'Source: `%s` | Run: `%s` | Attempt: `%s`\n\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+            printf 'Tag for both images: `%s`\n\n' "$VERSION"
+            printf 'Backend: `%s-backend@%s`\n\n' "$PREFIX" "$BACKEND_DIGEST"
+            printf 'Frontend: `%s-frontend@%s`\n\n' "$PREFIX" "$FRONTEND_DIGEST"
+            printf 'No deployment or staging verification was performed. Do not use this run for production promotion.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Logout of GHCR
+        if: always()
+        run: docker logout ghcr.io

@@ -1,4 +1,6 @@
 # INACTIVE: approval rules, exact document IAM scope and backup evidence are prerequisites.
+# When activated, keep this same .yml path on default staging and on main.
+# Dispatch with ref main; dispatch on default staging must skip the promote job.
 name: Promote production
 
 on:
