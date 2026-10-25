@@ -230,3 +230,4 @@ the implemented scope.
 - [Architecture specification](docs/architecture-specification.md)
 
 Staging CI/CD deployment verification.
+Verify the updated deployment controller.
