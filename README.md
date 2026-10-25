@@ -81,10 +81,10 @@ React feature modules → typed Axios APIs → Gin routes / JWT middleware
 | -------------- | ----------------------------------------------------------------------------------------------------- |
 | Frontend       | React 19, TypeScript 6, Vite 8, TanStack Router, Tailwind CSS 4                                       |
 | State and HTTP | React Context, component state, Axios with refresh/retry handling                                     |
-| Backend        | Go 1.26.4, Gin, GORM, explicit dependency construction                                                |
+| Backend        | Go 1.26.10, Gin, GORM, explicit dependency construction                                                |
 | Database       | PostgreSQL 17, UUID models, startup AutoMigrate and idempotent category seeding                       |
 | Verification   | Go tests/PostgreSQL integration, Node finance/architecture tests, Playwright desktop/mobile workflows |
-| Development    | pnpm 10.17.0, Docker Compose, Air                                                                     |
+| Development    | pnpm 10.34.8, Docker Compose, Air                                                                     |
 
 The frontend keeps each feature's pages, forms, utilities, tests, and styles
 close together. Shared UI, layout, API contracts, and finance state remain
@@ -123,7 +123,7 @@ local database volume.
 
 ### Run from source
 
-Use Go 1.26.4, Node 25.2.1, pnpm 10.17.0, and a reachable PostgreSQL instance.
+Use Go 1.26.10, Node 24.22.1, pnpm 10.34.8, and a reachable PostgreSQL instance.
 Create the same local environment file and use `DB_HOST=localhost` when Go runs
 on the host. Start the API and client in separate terminals:
 

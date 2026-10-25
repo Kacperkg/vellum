@@ -58,11 +58,11 @@ jobs:
       - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
         if: steps.scope.outputs.run == 'true'
         with:
-          version: 10.17.0
+          version: 10.34.8
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         if: steps.scope.outputs.run == 'true'
         with:
-          node-version: 25.2.1
+          node-version: 24.22.1
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -236,11 +236,11 @@ jobs:
       - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
         if: steps.scope.outputs.run == 'true'
         with:
-          version: 10.17.0
+          version: 10.34.8
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         if: steps.scope.outputs.run == 'true'
         with:
-          node-version: 25.2.1
+          node-version: 24.22.1
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
