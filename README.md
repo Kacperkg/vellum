@@ -228,3 +228,5 @@ the implemented scope.
 - [Frontend structure and authentication](frontend/README.md)
 - [Backend contracts, environment, and testing](backend/README.md)
 - [Architecture specification](docs/architecture-specification.md)
+
+Staging CI/CD deployment verification.
