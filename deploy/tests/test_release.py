@@ -587,7 +587,7 @@ class SmokeTests(unittest.TestCase):
             nonlocal attempts
             calls.append((path, method, headers))
             if method == "OPTIONS":
-                return 404, {}, b""
+                return 404, {"Content-Type": "text/plain; charset=utf-8"}, b"404 page not found"
             if path == "/ping":
                 return 200, {}, b'{"message":"pong"}'
             if body is None:
@@ -609,6 +609,54 @@ class SmokeTests(unittest.TestCase):
         with patch.object(smoke, "request", return_value=(200, {}, b"{}")):
             with self.assertRaises(ValueError):
                 smoke.smoke(controller.ORIGINS["staging"], staging=True)
+
+    def test_options_requires_backend_response_instead_of_spa_fallback(self):
+        origin = controller.ORIGINS["staging"]
+        preflight_headers = {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "Origin, Content-Type, Authorization",
+        }
+        cases = [
+            (404, {"Content-Type": "text/plain; charset=utf-8"}, b"404 page not found", True),
+            (204, preflight_headers, b"", True),
+            (204, preflight_headers, b"unexpected body", False),
+            (204, {}, b"", False),
+            (204, {**preflight_headers, "Access-Control-Allow-Origin": "*"}, b"", False),
+            (204, {**preflight_headers, "Access-Control-Allow-Methods": "GET"}, b"", False),
+            (204, {**preflight_headers, "Access-Control-Allow-Methods": "post"}, b"", False),
+            (204, {**preflight_headers, "Access-Control-Allow-Headers": "Authorization"}, b"", False),
+            (404, {"Content-Type": "text/html"}, b"<html>not found</html>", False),
+            (404, {"Content-Type": "text/plain"}, b"different upstream", False),
+            (405, {"Content-Type": "text/html"}, b"<html>405 Not Allowed</html>", False),
+            (405, {"Content-Type": "text/plain", "Allow": "POST"}, b"405 method not allowed", False),
+            (200, {"Content-Type": "text/html"}, b"<html>SPA</html>", False),
+            (301, {"Location": "/login/"}, b"", False),
+            (403, {}, b"", False),
+            (500, {}, b"", False),
+            (502, {}, b"", False),
+        ]
+        for status, response_headers, payload, accepted in cases:
+            def response(request_origin, path, body=None, method=None, headers=None):
+                if method == "OPTIONS":
+                    self.assertEqual(request_origin, origin)
+                    self.assertEqual(path, "/login")
+                    return status, response_headers, payload
+                if path == "/ping":
+                    return 200, {}, b'{"message":"pong"}'
+                if body is None:
+                    return 200, {"Content-Type": "text/html"}, b"<html>"
+                return 400, {}, b'{"error":"bad request"}'
+
+            with (
+                self.subTest(status=status, headers=response_headers),
+                patch.object(smoke, "request", side_effect=response),
+            ):
+                if accepted:
+                    smoke.smoke(origin)
+                else:
+                    with self.assertRaisesRegex(ValueError, f"HTTP {status}.*Caddy"):
+                        smoke.smoke(origin)
 
 
 if __name__ == "__main__":

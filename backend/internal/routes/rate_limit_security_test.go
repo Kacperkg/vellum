@@ -264,6 +264,44 @@ func TestCORSHealthProtectedRoutesAndRouteVariants(t *testing.T) {
 	}
 }
 
+func TestAuthOptionsOriginAndRoutingContract(t *testing.T) {
+	router := securityRouter(t, securityConfig())
+	for _, test := range []struct {
+		name, origin string
+		want         int
+	}{
+		{"no origin", "", http.StatusNotFound},
+		{"same origin", "http://example.com", http.StatusNotFound},
+		{"allowed cross origin", "http://localhost:5173", http.StatusNoContent},
+		{"untrusted cross origin", "https://untrusted.example.invalid", http.StatusForbidden},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, path := range []string{"/login", "/register", "/refresh", "/logout"} {
+				headers := http.Header{
+					"Access-Control-Request-Method":  {"POST"},
+					"Access-Control-Request-Headers": {"content-type"},
+				}
+				if test.origin != "" {
+					headers.Set("Origin", test.origin)
+				}
+				response := chainRequest(router, http.MethodOptions, "http://example.com"+path, "", "192.0.2.1:1", headers)
+				if response.Code != test.want {
+					t.Fatalf("%s OPTIONS status=%d want=%d", path, response.Code, test.want)
+				}
+				if test.want == http.StatusNotFound && (response.Body.String() != "404 page not found" || !strings.HasPrefix(response.Header().Get("Content-Type"), "text/plain")) {
+					t.Fatalf("%s unexpected Gin OPTIONS body/type", path)
+				}
+				if test.want == http.StatusNoContent && response.Header().Get("Access-Control-Allow-Origin") != test.origin {
+					t.Fatalf("%s missing allowed-origin response", path)
+				}
+				if test.want == http.StatusForbidden && response.Header().Get("Access-Control-Allow-Origin") != "" {
+					t.Fatalf("%s untrusted origin was allowed", path)
+				}
+			}
+		})
+	}
+}
+
 func TestProxyConfigurationRejectsInvalidOrUniversalTrust(t *testing.T) {
 	for _, proxy := range []string{"invalid", "0.0.0.0/0", "::/0", "::ffff:0.0.0.0/96"} {
 		t.Run(proxy, func(t *testing.T) {
