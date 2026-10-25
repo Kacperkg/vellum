@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "2.2",
+  "description": "Deploy only Vellum production after its release-specific backup approval",
+  "parameters": {
+    "Manifest": {
+      "type": "String",
+      "interpolationType": "ENV_VAR",
+      "allowedPattern": "^[A-Za-z0-9+/=]+$",
+      "minChars": 1,
+      "maxChars": 45000
+    }
+  },
+  "mainSteps": [
+    {
+      "action": "aws:runShellScript",
+      "name": "deployProduction",
+      "precondition": {"StringEquals": ["platformType", "Linux"]},
+      "inputs": {
+        "timeoutSeconds": "900",
+        "runCommand": [
+          "set -eu",
+          "test -n \"${SSM_Manifest:-}\" || { echo 'SSM Agent ENV_VAR support required' >&2; exit 1; }",
+          "exec /usr/bin/python3 -I /usr/local/lib/vellum-cd/cd/controller.py production"
+        ]
+      }
+    }
+  ]
+}

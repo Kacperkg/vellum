@@ -1,0 +1,110 @@
+# INACTIVE: rename only after the operator setup and human review in deploy/CI-CD.md.
+name: Release staging
+
+on:
+  push:
+    branches: [staging]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vellum-deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    if: vars.VELLUM_CD_ENABLED == 'true'
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  publish-and-deploy:
+    needs: checks
+    if: vars.VELLUM_CD_ENABLED == 'true' && github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    environment: staging
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Registry identity and immutable version
+        id: identity
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          printf 'prefix=ghcr.io/%s\n' "${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          printf 'version=sha-%s-run-%s-%s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - name: GHCR login (job-scoped token)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io --username "$GH_ACTOR" --password-stdin
+      - name: Build and publish backend
+        id: backend
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: backend
+          file: backend/Dockerfile.prod
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.identity.outputs.prefix }}-backend:${{ steps.identity.outputs.version }}
+          build-args: VCS_REF=${{ github.sha }}
+          cache-from: type=gha,scope=production-backend
+          cache-to: type=gha,mode=max,scope=release-backend
+      - name: Build and publish frontend
+        id: frontend
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: frontend
+          file: frontend/Dockerfile.prod
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.identity.outputs.prefix }}-frontend:${{ steps.identity.outputs.version }}
+          build-args: VCS_REF=${{ github.sha }}
+          cache-from: type=gha,scope=production-frontend
+          cache-to: type=gha,mode=max,scope=release-frontend
+      - name: Write candidate manifest
+        env:
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
+        run: python3 deploy/cd/release.py candidate --backend "$BACKEND_DIGEST" --frontend "$FRONTEND_DIGEST" --output candidate.json
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          role-duration-seconds: 1800
+          role-session-name: vellum-staging-${{ github.run_id }}
+      - name: Deploy through fixed SSM document and verify Caddy
+        id: deployment
+        env:
+          SSM_INSTANCE_ID: ${{ vars.SSM_INSTANCE_ID }}
+          SSM_DOCUMENT_ARN: ${{ vars.SSM_DOCUMENT_ARN }}
+          SSM_DOCUMENT_VERSION: ${{ vars.SSM_DOCUMENT_VERSION }}
+          SSM_DOCUMENT_SHA256: ${{ vars.SSM_DOCUMENT_SHA256 }}
+        run: python3 deploy/cd/release.py dispatch --environment staging --manifest candidate.json
+      - name: Record successful staging verification
+        env:
+          COMMAND_ID: ${{ steps.deployment.outputs.command_id }}
+        run: |
+          mkdir -p tested-release
+          python3 deploy/cd/release.py mark-verified --manifest candidate.json --command-id "$COMMAND_ID" --output tested-release/release.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Retain immutable tested release manifest
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: vellum-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tested-release/release.json
+          retention-days: 90
+          if-no-files-found: error
+          overwrite: false
+      - name: Logout of GHCR
+        if: always()
+        run: docker logout ghcr.io

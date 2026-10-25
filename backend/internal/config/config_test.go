@@ -3,6 +3,7 @@ package config
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestCORSOrigins(t *testing.T) {
@@ -19,5 +20,26 @@ func TestCORSOrigins(t *testing.T) {
 				t.Fatalf("origins=%v want=%v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestRateLimitDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("RATE_LIMIT_LOGIN_REQUESTS", "")
+	t.Setenv("RATE_LIMIT_LOGIN_WINDOW", "")
+	if got := rateLimit("LOGIN", 10, time.Minute); got != (RateLimit{Requests: 10, Window: time.Minute}) {
+		t.Fatalf("default rate limit = %+v", got)
+	}
+
+	t.Setenv("RATE_LIMIT_LOGIN_REQUESTS", "7")
+	t.Setenv("RATE_LIMIT_LOGIN_WINDOW", "30s")
+	if got := rateLimit("LOGIN", 10, time.Minute); got != (RateLimit{Requests: 7, Window: 30 * time.Second}) {
+		t.Fatalf("configured rate limit = %+v", got)
+	}
+}
+
+func TestCSVValues(t *testing.T) {
+	want := []string{"127.0.0.1/32", "172.20.0.0/16"}
+	if got := csvValues(" 127.0.0.1/32, ,172.20.0.0/16 "); !reflect.DeepEqual(got, want) {
+		t.Fatalf("values=%v want=%v", got, want)
 	}
 }

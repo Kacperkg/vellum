@@ -5,6 +5,10 @@ This stack runs on Ubuntu 24.04 with Docker Engine and Docker Compose v2
 It creates no Caddy service, changes no server configuration, and publishes no
 ports. Run all commands below on the EC2 server unless stated otherwise.
 
+The optional, initially inactive registry/OIDC/SSM pipeline and its manual
+activation prerequisites are documented in [CI-CD.md](CI-CD.md). This page
+retains the local SHA-tagged manual deployment and recovery procedure.
+
 ## 1. Prepare the checkout
 
 Use this layout:
@@ -54,6 +58,26 @@ required values. Never commit these files, pass secrets as build arguments, or
 paste resolved `docker compose config` output into logs; it contains secrets.
 Use `config --quiet` for validation.
 
+Set `TRUSTED_PROXY_CIDRS` in both environment files to Caddy's exact `/32` or
+`/128` address on `web` if stable. Otherwise use the exact subnet of the external
+`web` network and restrict its membership: every container on a trusted subnet
+can impersonate a proxy. Find that subnet with:
+
+```sh
+docker network inspect web --format '{{(index .IPAM.Config 0).Subnet}}'
+```
+
+Do not use an all-address CIDR or a broader private-network range. If Caddy's
+trusted address or subnet changes, update this value before restarting the
+backend. Local direct development trusts no proxies by default. The backend
+only accepts XFF from trusted peers and ignores X-Real-IP. Keep Caddy's default
+replacement of public incoming XFF; review its global trusted-proxy settings
+before adding a CDN/load balancer. See `backend/README.md` for limiter defaults,
+resource guards, and restart/saturation limitations. Before production rollout,
+verify on staging that forged XFF/X-Real-IP do not obtain fresh allowances and
+that distinct external clients are identified independently. No backend port
+should be reachable from outside Docker.
+
 Set `IMAGE_TAG` to the full output of `git rev-parse HEAD` for the revision being
 built. Build only a clean checkout with the deployment files committed; otherwise
 the tag would misrepresent its contents. Initially leave `IMAGE_PREFIX=vellum`.
@@ -74,8 +98,9 @@ between application containers. Caddy must use the unique aliases above, not
 the ambiguous automatic service names `backend` or `frontend`.
 
 Compose shell variables override values in `--env-file`. Use a deployment shell
-without exported `COMPOSE_PROJECT_NAME`, `DB_*`, `JWT_*`, `APP_ORIGIN`, `IMAGE_TAG`
-or `IMAGE_PREFIX` values. Always pass the matching explicit project and env file.
+without exported `COMPOSE_PROJECT_NAME`, `DB_*`, `JWT_*`, `APP_ORIGIN`, `IMAGE_TAG`,
+`IMAGE_PREFIX`, `TRUSTED_PROXY_CIDRS`, or `RATE_LIMIT_*` values. Always pass the
+matching explicit project and env file.
 
 ## 3. Build and start staging first
 
@@ -119,12 +144,13 @@ docker exec caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfi
 docker exec caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
 ```
 
-The example sends `/api`, `/api/*` and `/ping` unchanged to Go. Only **POST**
+The example sends `/api`, `/api/*` and `/ping` unchanged to Go. **POST** and **OPTIONS**
 requests to `/register`, `/login`, `/refresh` and `/logout` go to Go; **GET**
 `/login` goes to React. Do not use `handle_path`, which would strip `/api`.
 Nginx supplies SPA fallback for browser deep links and returns 404 for missing
-hashed assets. Auth calls are same-origin, so no cross-origin auth preflights
-are needed. `APP_ORIGIN` configures the backend's exact CORS origin.
+hashed assets. Normal production auth calls are same-origin; forwarding OPTIONS
+also preserves configured cross-origin preflights. `APP_ORIGIN` configures the
+backend's exact CORS origin.
 
 ```sh
 curl --fail https://staging.vellum.kacpergajdarski.com/ping
