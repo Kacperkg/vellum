@@ -1,6 +1,7 @@
 # Merge these site blocks into the EXISTING Caddy configuration manually.
 # Caddy must already be attached to the external Docker network "web".
 # Do not use handle_path: Go expects the /api prefix to be preserved.
+# Forward auth preflights too; GET /login must still reach the SPA.
 
 vellum.kacpergajdarski.com {
 	encode zstd gzip
@@ -11,7 +12,7 @@ vellum.kacpergajdarski.com {
 	}
 
 	@auth {
-		method POST
+		method POST OPTIONS
 		path /register /login /refresh /logout
 	}
 	handle @auth {
@@ -33,7 +34,7 @@ staging.vellum.kacpergajdarski.com {
 	}
 
 	@auth {
-		method POST
+		method POST OPTIONS
 		path /register /login /refresh /logout
 	}
 	handle @auth {

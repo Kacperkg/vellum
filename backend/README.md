@@ -101,6 +101,104 @@ Optional `BIND_HOST` selects a listen interface; leaving it unset preserves the
 existing all-interface development/Compose behavior. Isolated browser tests bind
 their API to `127.0.0.1`.
 
+### Authentication rate limiting
+
+The four public authentication POST endpoints use a bounded, in-memory fixed
+window limiter. A rejected request returns status `429`, JSON
+`{"error":"rate limit exceeded"}`, and a `Retry-After` header containing the
+number of seconds until the rejecting bucket expires, rounded up. Concurrency
+rejections use an advisory one-second backoff. Responses include `Cache-Control:
+no-store`, and CORS exposes `Retry-After` to frontend JavaScript.
+
+The initial per-identity limits are deliberately stricter than the per-IP
+safeguard:
+
+| Endpoint    | Default per network + identity | Aggregate network limit | Identity |
+| ----------- | ------------------------------ | ----------------------- | -------- |
+| `/login`    | 10 per minute                  | 200 per minute          | Normalized email |
+| `/register` | 5 per hour                     | 100 per hour            | Normalized email |
+| `/refresh`  | 30 per minute                  | 600 per minute          | Refresh token |
+| `/logout`   | 30 per minute                  | 600 per minute          | Refresh token |
+
+Every attempt first consumes a network bucket with 20 times the endpoint limit,
+including invalid bodies and identity-limit rejections. Different users behind
+one NAT have independent identity buckets within that shared safeguard. Identity
+limits are network-scoped: someone on another network cannot exhaust a known
+email's allowance. Missing/malformed identities share a smaller fallback bucket.
+Rate-counter keys are SHA-256 digests, not raw emails, tokens, or addresses.
+
+IPv4 addresses (including mapped IPv6 representations) are canonicalized. IPv6
+addresses share a bucket per `/64` to prevent privacy-address rotation from
+resetting limits. This can combine several users on the same subnet, like NAT.
+Successful refresh rotation creates a new token identity, but never resets the
+aggregate network quota. Successful and unsuccessful attempts both count;
+successful login does not reset counters. The limits allow normal retries and
+refreshes with the default 15-minute access-token lifetime.
+
+| Optional variable                         | Default | Purpose                                      |
+| ----------------------------------------- | ------- | -------------------------------------------- |
+| `RATE_LIMIT_LOGIN_REQUESTS`               | `10`    | Login requests per identity/window.          |
+| `RATE_LIMIT_LOGIN_WINDOW`                 | `1m`    | Login window.                                |
+| `RATE_LIMIT_REGISTER_REQUESTS`            | `5`     | Registration requests per identity/window.   |
+| `RATE_LIMIT_REGISTER_WINDOW`              | `1h`    | Registration window.                         |
+| `RATE_LIMIT_REFRESH_REQUESTS`             | `30`    | Refresh requests per identity/window.        |
+| `RATE_LIMIT_REFRESH_WINDOW`               | `1m`    | Refresh window.                              |
+| `RATE_LIMIT_LOGOUT_REQUESTS`              | `30`    | Logout requests per identity/window.         |
+| `RATE_LIMIT_LOGOUT_WINDOW`                | `1m`    | Logout window.                               |
+| `RATE_LIMIT_SHARED_IP_MULTIPLIER`          | `20`    | Multiplier for the secondary per-IP bucket.  |
+| `RATE_LIMIT_MAX_ENTRIES`                  | `10000` | Hard cap across all in-memory limiter keys.  |
+| `TRUSTED_PROXY_CIDRS`                     | empty (none) | Proxies allowed to supply client IP headers. |
+
+Durations use Go duration syntax and all numeric values must be positive. The
+store uses up to 32 independent locks and expiry min-heaps. Both counters and
+heap nodes are hard-capped by `RATE_LIMIT_MAX_ENTRIES`. Only expired entries are
+removed; a full shard rejects new keys until its earliest expiry, preserving
+existing active quotas under unique-client floods. Each auth attempt also sweeps
+one other shard; all shards are visited within 32 attempts. During complete
+inactivity, expired allocations remain bounded until traffic resumes. There are
+no background goroutines or per-key timers.
+
+Auth bodies are limited to 64 KiB (413 above this). At most eight auth requests
+may read bodies or run handlers concurrently, with at most two per network and
+immediate 429 when busy. A single network cannot monopolize all eight slots.
+The concurrency guard briefly retains at most eight canonical network keys and
+deletes each when its last active request finishes.
+The HTTP server has a 5-second header deadline, 15-second total read deadline,
+30-second write deadline, 60-second idle timeout, and a 16-KiB header budget
+(subject to Go's parser allowance). These guard resources rather than promise
+protection against volumetric denial of service.
+
+Gin accepts only `X-Forwarded-For` from explicitly trusted peers. `X-Real-IP`,
+`Forwarded` and platform headers are ignored. Repeated or overlong XFF fields
+fall back to the socket peer; malformed/missing IPs share an `unknown` bucket.
+No proxy is trusted in direct local development, including loopback. For a
+local reverse proxy, explicitly configure its loopback address if needed.
+
+For Docker, prefer Caddy's exact `/32` or `/128` address when stable. Otherwise
+use the exact external `web` subnet, obtained with
+`docker network inspect web --format '{{(index .IPAM.Config 0).Subnet}}'`.
+Trusting that subnet means trusting **every container on it** to assert client
+addresses. Keep network membership controlled and do not publish backend ports.
+Universal CIDRs are rejected; unnecessarily broad private ranges are unsafe.
+Caddy normally replaces public incoming XFF; retain that behavior. If adding a
+CDN or load balancer, reassess trust at both proxy layers before deploying.
+
+State is local to one process: container restart, recreation, application crash,
+or scaling to new replicas resets counters. Clients cannot directly request a
+reset; inducing crashes could nevertheless weaken protection. Fixed windows
+allow boundary bursts. Distributed networks can still guess passwords or create
+accounts, and a full store temporarily denies new clients. This lightweight
+single-instance limiter is not an account lockout, bot filter or durable abuse
+history. Persistent edge controls or a shared store would be warranted when
+scaling or responding to sustained distributed abuse; Redis is not required for
+the current single-instance deployment.
+
+The existing frontend clears local authentication on any failed refresh,
+including 429, and its interceptor redirects to login. A transient throttle can
+therefore require another sign-in; automatic `Retry-After` handling would be a
+separate client change. Authentication handler and token-rotation behavior are
+unchanged.
+
 ## Budget uniqueness and existing records
 
 PostgreSQL enforces one budget for each `(user_id, category_id)` through

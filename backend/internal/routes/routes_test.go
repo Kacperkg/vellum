@@ -3,6 +3,7 @@ package routes_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/auth"
 	"github.com/kacperkg/vellum/internal/handlers"
+	"github.com/kacperkg/vellum/internal/middleware"
 	"github.com/kacperkg/vellum/internal/models"
 	"github.com/kacperkg/vellum/internal/routes"
 	"github.com/kacperkg/vellum/internal/services"
@@ -37,11 +39,45 @@ func testHandlerSet(userID uuid.UUID) routes.HandlerSet {
 	}
 }
 
+func TestAuthenticationRoutesApplyRateLimiter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	limiter := middleware.NewAuthRateLimiter(map[middleware.AuthEndpoint]middleware.RateLimit{
+		middleware.LoginEndpoint:    {Requests: 1, Window: time.Minute},
+		middleware.RegisterEndpoint: {Requests: 1, Window: time.Minute},
+		middleware.RefreshEndpoint:  {Requests: 1, Window: time.Minute},
+		middleware.LogoutEndpoint:   {Requests: 1, Window: time.Minute},
+	}, 128, 20)
+	routes.Register(router, "secret", testHandlerSet(uuid.New()), limiter)
+
+	request := func() *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(`{"email":"missing@example.test","password":"password"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = "192.0.2.10:1234"
+		router.ServeHTTP(recorder, req)
+		return recorder
+	}
+
+	if recorder := request(); recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("first status = %d, want 401", recorder.Code)
+	}
+	if recorder := request(); recorder.Code != http.StatusTooManyRequests {
+		t.Fatalf("second status = %d, want 429", recorder.Code)
+	}
+}
+
 func TestRegisteredRoutesAndAuthentication(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	userID := uuid.New()
 	router := gin.New()
-	routes.Register(router, "secret", testHandlerSet(userID))
+	limiter := middleware.NewAuthRateLimiter(map[middleware.AuthEndpoint]middleware.RateLimit{
+		middleware.LoginEndpoint:    {Requests: 10, Window: time.Minute},
+		middleware.RegisterEndpoint: {Requests: 5, Window: time.Hour},
+		middleware.RefreshEndpoint:  {Requests: 30, Window: time.Minute},
+		middleware.LogoutEndpoint:   {Requests: 30, Window: time.Minute},
+	}, 10000, 20)
+	routes.Register(router, "secret", testHandlerSet(userID), limiter)
 
 	if got := len(router.Routes()); got != 38 {
 		t.Fatalf("registered route count = %d, want 38", got)
