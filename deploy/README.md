@@ -5,7 +5,7 @@ This stack runs on Ubuntu 24.04 with Docker Engine and Docker Compose v2
 It creates no Caddy service, changes no server configuration, and publishes no
 ports. Run all commands below on the EC2 server unless stated otherwise.
 
-The optional, initially inactive registry/OIDC/SSM pipeline and its manual
+The registry/OIDC/SSM pipeline and its manual
 activation prerequisites are documented in [CI-CD.md](CI-CD.md). This page
 retains the local SHA-tagged manual deployment and recovery procedure.
 
@@ -18,9 +18,10 @@ Use this layout:
   backend/
   frontend/
   deploy/
-    production.env                 ignored, mode 600
-    staging.env                    ignored, mode 600
-    backups/                       ignored, sensitive database dumps
+    backups/                       existing ignored, sensitive database dumps
+/etc/vellum-cd/                     root-owned 700, outside the checkout
+  production.env                   root-owned 600
+  staging.env                      root-owned 600
 ```
 
 Have the server administrator create `/opt/hosting/projects/vellum/`, owned by
@@ -42,23 +43,34 @@ for 5432, 8080 or 5173; restrict SSH or use SSM for administration.
 
 ## 2. Configure each environment
 
+For an existing installation, use [ENVIRONMENT-MIGRATION.md](ENVIRONMENT-MIGRATION.md)
+to copy the existing files byte-for-byte into `/etc/vellum-cd/`. Do not regenerate
+credentials, change project names or install templates over initialized settings.
+The checkout and its parent directories remain writable by ubuntu.
+
+For a brand-new environment only, have the administrator create root-owned
+mode-600 files from the corresponding `.env.example` under root-owned
+`/etc/vellum-cd/` (700), refusing existing destination files. Fill every required
+value privately with `sudoedit`. New environments need four independent random
+values: database password and JWT secret for each. Existing environments retain
+their exact values. Never source dotenv files as shell scripts, commit them,
+pass secrets as build arguments or print resolved Compose output.
+
+All manual Compose examples below use this shell helper. It removes exported
+application/Compose overrides, runs as root to read the managed file, and retains
+the explicit project name. Use only reviewed checkout code for local source
+builds; sudo-running an unreviewed writable-checkout script/Compose file is unsafe.
+
 ```sh
-cd /opt/hosting/projects/vellum
-umask 077
-cp -n deploy/production.env.example deploy/production.env
-cp -n deploy/staging.env.example deploy/staging.env
-chmod 600 deploy/production.env deploy/staging.env
-openssl rand -hex 32
+vellum_compose() {
+  sudo env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    HOME=/root DOCKER_CONFIG=/etc/vellum-cd/docker docker compose "$@"
+}
 ```
 
-Edit both files with an editor. Generate four independent random values: a
-database password and JWT secret for each environment. Hex values avoid the
-current backend DSN's whitespace/quote escaping limitations. Leave no blank
-required values. Never commit these files, pass secrets as build arguments, or
-paste resolved `docker compose config` output into logs; it contains secrets.
-Use `config --quiet` for validation.
-
-Set `TRUSTED_PROXY_CIDRS` in both environment files to Caddy's exact `/32` or
+For the installed CD controller, retain `TRUSTED_PROXY_CIDRS=172.18.255.254/32`
+in both managed files. The more general manual-network guidance below does not
+relax that controller preflight. Set Caddy's exact `/32` or
 `/128` address on `web` if stable. Otherwise use the exact subnet of the external
 `web` network and restrict its membership: every container on a trusted subnet
 can impersonate a proxy. Find that subnet with:
@@ -106,10 +118,10 @@ matching explicit project and env file.
 
 ```sh
 cd /opt/hosting/projects/vellum
-docker compose --project-name vellum-staging --env-file deploy/staging.env -f deploy/compose.yml config --quiet
-docker compose --project-name vellum-staging --env-file deploy/staging.env -f deploy/compose.yml build --pull
-docker compose --project-name vellum-staging --env-file deploy/staging.env -f deploy/compose.yml up -d --no-build --wait --wait-timeout 180
-docker compose --project-name vellum-staging --env-file deploy/staging.env -f deploy/compose.yml ps
+vellum_compose --project-name vellum-staging --env-file /etc/vellum-cd/staging.env -f deploy/compose.yml config --quiet
+vellum_compose --project-name vellum-staging --env-file /etc/vellum-cd/staging.env -f deploy/compose.yml build --pull
+vellum_compose --project-name vellum-staging --env-file /etc/vellum-cd/staging.env -f deploy/compose.yml up -d --no-build --wait --wait-timeout 180
+vellum_compose --project-name vellum-staging --env-file /etc/vellum-cd/staging.env -f deploy/compose.yml ps
 ```
 
 The API waits for PostgreSQL's `pg_isready` health check before its first start.
@@ -163,16 +175,16 @@ POST `/login` with invalid credentials returns an API error rather than HTML.
 
 ## 5. Start production
 
-After staging passes, put the tested SHA in `production.env`. The frontend uses
+After staging passes, put the tested SHA in `/etc/vellum-cd/production.env` using sudoedit. The frontend uses
 `VITE_API_BASE_URL=/` at build time, so the same images work in both environments.
 If that SHA was already built, skip rebuilding and use those exact local images.
 
 ```sh
-docker compose --project-name vellum-production --env-file deploy/production.env -f deploy/compose.yml config --quiet
+vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml config --quiet
 # Only necessary when these SHA-tagged images are not already present:
-docker compose --project-name vellum-production --env-file deploy/production.env -f deploy/compose.yml build --pull
-docker compose --project-name vellum-production --env-file deploy/production.env -f deploy/compose.yml up -d --no-build --wait --wait-timeout 180
-docker compose --project-name vellum-production --env-file deploy/production.env -f deploy/compose.yml ps
+vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml build --pull
+vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml up -d --no-build --wait --wait-timeout 180
+vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml ps
 curl --fail https://vellum.kacpergajdarski.com/ping
 ```
 
@@ -181,6 +193,10 @@ Both environments may run different SHA tags. No application or database `ports`
 are published; Dockerfile `EXPOSE` is metadata and does not open an EC2 port.
 
 ## 6. Updates, rollback and operations
+
+For controller receipts predating the `/etc` migration, read the rollback
+compatibility section in ENVIRONMENT-MIGRATION.md first; do not replay old
+controllers or rewrite manifest hashes to bypass the bundle check.
 
 Before upgrading, back up the target database and retain the previous image tag.
 Fetch/check out the intended committed revision, build and test staging, then
@@ -196,8 +212,8 @@ older binary supports the new schema; otherwise restore the pre-upgrade backup
 and run the matching old image. Do not run a second backend as a migration job.
 
 ```sh
-docker compose --project-name vellum-production --env-file deploy/production.env -f deploy/compose.yml logs --tail=100 backend
-docker compose --project-name vellum-production --env-file deploy/production.env -f deploy/compose.yml stop
+vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml logs --tail=100 backend
+vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml stop
 # Start it again with the up command above.
 ```
 
@@ -216,18 +232,30 @@ authentication behavior or add rate-limiting plugins to Caddy.
 
 ## 7. Backups and restore
 
+After the `/etc` migration, the legacy checkout `backup.sh` is not directly
+usable. Before using the commands below, adapt and install a reviewed root-owned
+backup copy with the paths and clean environment specified in
+[ENVIRONMENT-MIGRATION.md](ENVIRONMENT-MIGRATION.md). Do not sudo-execute the old
+checkout script or leave a checkout secret copy for it. Disable old backup jobs
+until this update is complete; no schedule is changed by this repository edit.
+
 Backups contain financial data and token hashes. The supplied Ubuntu script
 creates a consistent custom-format `pg_dump`, checks its archive table of
 contents, and atomically renames a mode-600 file. It prevents overlapping backups
 of the same environment. This quick archive check is not a restore test.
 
 ```sh
-cd /opt/hosting/projects/vellum
-bash deploy/backup.sh production
-bash deploy/backup.sh staging
+vellum_backup() {
+  sudo env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    HOME=/root DOCKER_CONFIG=/etc/vellum-cd/docker /usr/local/lib/vellum-cd/backup.sh "$@"
+}
+vellum_backup production
+vellum_backup staging
 ```
 
-Files are stored in `deploy/backups/<environment>/`. The script uses local Unix
+For the migrated procedure, files are stored in root-private
+`/var/lib/vellum-cd/backups/<environment>/`; existing checkout dumps stay intact.
+The script uses local Unix
 socket authentication inside the PostgreSQL container and never needs to expose
 its port or put a password on the command line. Dumps omit ownership and ACLs;
 restore creates objects owned by the destination database user. Cluster roles
@@ -247,13 +275,14 @@ The following commands **delete and recreate that production database**:
 ```sh
 cd /opt/hosting/projects/vellum
 # Set this to an existing, verified archive; do not use a wildcard.
-backup_file=/opt/hosting/projects/vellum/deploy/backups/production/REPLACE_WITH_VERIFIED_FILENAME.dump
-test -s "$backup_file"
-docker compose --project-name vellum-production --env-file deploy/production.env -f deploy/compose.yml stop backend
-docker compose --project-name vellum-production --env-file deploy/production.env -f deploy/compose.yml exec -T postgres sh -ec 'dropdb --if-exists --force -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" "$POSTGRES_DB"'
-docker compose --project-name vellum-production --env-file deploy/production.env -f deploy/compose.yml exec -T postgres sh -ec 'exec pg_restore --exit-on-error --single-transaction --no-owner --no-acl -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < "$backup_file"
+backup_file=/var/lib/vellum-cd/backups/production/REPLACE_WITH_VERIFIED_FILENAME.dump
+sudo test -s "$backup_file"
+set -o pipefail
+vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml stop backend
+vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml exec -T postgres sh -ec 'dropdb --if-exists --force -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" "$POSTGRES_DB"'
+sudo cat -- "$backup_file" | vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml exec -T postgres sh -ec 'exec pg_restore --exit-on-error --single-transaction --no-owner --no-acl -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 # Run only after successful restore; keep backend stopped if restore fails.
-docker compose --project-name vellum-production --env-file deploy/production.env -f deploy/compose.yml up -d --no-build --wait --wait-timeout 180
+vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml up -d --no-build --wait --wait-timeout 180
 ```
 
 Run recovery commands individually and stop on any error; do not blindly paste
@@ -268,15 +297,15 @@ default encryption (SSE-KMS if required), versioning and lifecycle retention.
 For example, after selecting the actual bucket:
 
 ```sh
-bash deploy/backup.sh production s3://YOUR-PRIVATE-BACKUP-BUCKET/vellum/production
+vellum_backup production s3://YOUR-PRIVATE-BACKUP-BUCKET/vellum/production
 ```
 
-Schedule this command with a systemd timer or cron under the deployment user
-(Docker access is root-equivalent). For example, with the correct bucket name,
-this user-crontab entry runs at 02:15 in the server's timezone:
+Schedule the reviewed installed copy with a root systemd timer or root cron
+and a clean environment (Docker access is root-equivalent). With the correct
+bucket name, this root-crontab entry runs at 02:15 in the server's timezone:
 
 ```cron
-15 2 * * * /bin/bash /opt/hosting/projects/vellum/deploy/backup.sh production s3://YOUR-PRIVATE-BACKUP-BUCKET/vellum/production
+15 2 * * * /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root DOCKER_CONFIG=/etc/vellum-cd/docker /usr/local/lib/vellum-cd/backup.sh production s3://YOUR-PRIVATE-BACKUP-BUCKET/vellum/production
 ```
 
 Schedule staging separately if needed. Capture failures and alert on a missing
@@ -288,7 +317,7 @@ day of writes; use WAL archiving/PITR or managed PostgreSQL if that is unaccepta
 
 ## 8. Future registry / GitHub Actions workflow
 
-No Actions workflow is included. Both services already use
+The staging Actions workflow and production promotion design are documented in CI-CD.md. Both services already use
 `${IMAGE_PREFIX}-backend:${IMAGE_TAG}` / `${IMAGE_PREFIX}-frontend:${IMAGE_TAG}`
 and carry an OCI revision label. A future pipeline should build once per full
 commit SHA, scan/test both images, push them, deploy staging, and promote those
@@ -303,8 +332,8 @@ to GHCR (or use an ECR repository prefix). Authenticate using the registry's
 normal mechanism, then:
 
 ```sh
-docker compose --project-name vellum-staging --env-file deploy/staging.env -f deploy/compose.yml pull
-docker compose --project-name vellum-staging --env-file deploy/staging.env -f deploy/compose.yml up -d --no-build --pull never --wait --wait-timeout 180
+vellum_compose --project-name vellum-staging --env-file /etc/vellum-cd/staging.env -f deploy/compose.yml pull
+vellum_compose --project-name vellum-staging --env-file /etc/vellum-cd/staging.env -f deploy/compose.yml up -d --no-build --pull never --wait --wait-timeout 180
 ```
 
 The explicit `--no-build` prevents rebuilding registry artifacts on EC2.

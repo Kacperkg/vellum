@@ -220,7 +220,9 @@ missing or expired. Public-package activation does not require this helper.
 ### 4. Migrate each environment without changing data or Caddy
 
 - Review the checked-out revision and preserve the protected
-  `/opt/hosting/projects/vellum/deploy/staging.env` and `production.env` (mode600).
+  `/etc/vellum-cd/staging.env` and `/etc/vellum-cd/production.env` (root-owned 600).
+  Migrate existing bytes with [ENVIRONMENT-MIGRATION.md](ENVIRONMENT-MIGRATION.md);
+  keep the checkout ubuntu-writable and never add a checkout fallback or symlink.
   Never source dotenv files as shell scripts or print resolved Compose config.
 - Initialize each environment's PostgreSQL/volumes once through the existing
   manual procedure. CD requires exactly one running PostgreSQL container for
@@ -228,7 +230,8 @@ missing or expired. Public-package activation does not require this helper.
 - Keep existing project names, database credentials, named volumes, `web`
   aliases, JWT secret and CORS origin. Digest override uses the same base Compose
   and only overrides backend/frontend images. Existing `IMAGE_PREFIX`/full-SHA
-  `IMAGE_TAG` manual build fallback remains available unchanged.
+  `IMAGE_TAG` manual build fallback remains available with root/sudo and the new env path;
+  see README.md and the migration guide for backups and old-receipt recovery.
 - Set `TRUSTED_PROXY_CIDRS` to stable Caddy `/32`/`/128` where possible. Exact
   subnet trust also trusts every container on that network. Review Caddy globals
   for CDN/load-balancer trust; don't publish backend ports. An operator must

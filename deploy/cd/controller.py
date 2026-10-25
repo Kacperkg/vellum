@@ -15,7 +15,7 @@ import tempfile
 
 BASE = Path("/usr/local/lib/vellum-cd")
 STATE = Path("/var/lib/vellum-cd")
-CHECKOUT = Path("/opt/hosting/projects/vellum")
+ENVIRONMENT_DIRECTORY = Path("/etc/vellum-cd")
 REPOSITORY = "kacperkg/vellum"
 ORIGINS = {
     "staging": "https://staging.vellum.kacpergajdarski.com",
@@ -91,6 +91,33 @@ def protected(path, private=False):
     )
 
 
+def validate_environment_file(environment):
+    require(environment in ORIGINS, "unknown deployment environment")
+    path = ENVIRONMENT_DIRECTORY / (environment + ".env")
+    require(path.is_absolute() and ".." not in path.parts, "invalid environment path")
+    # Do not resolve(): following a symlink would hide an unsafe path component.
+    # Root-owned, non-writable parents prevent unprivileged replacement between
+    # these checks and Compose reopening the path. Root operators must serialize
+    # edits with deployments; root/sudo/Docker access is outside this boundary.
+    for directory in reversed(path.parents):
+        info = directory.lstat()
+        require(
+            stat.S_ISDIR(info.st_mode)
+            and info.st_uid == 0
+            and info.st_mode & 0o022 == 0,
+            "environment parents must be root-owned directories without group/world write",
+        )
+    info = path.lstat()
+    require(
+        stat.S_ISREG(info.st_mode)
+        and info.st_uid == 0
+        and stat.S_IMODE(info.st_mode) in (0o400, 0o600)
+        and info.st_nlink == 1,
+        "environment file must be root-owned, private, regular and singly linked",
+    )
+    return path
+
+
 def validate_approval(approval, manifest, now=None):
     now = now or datetime.now(timezone.utc)
     require(
@@ -160,6 +187,7 @@ def atomic_json(path, value):
 
 class Commands:
     def __init__(self, environment, manifest):
+        require(environment in ORIGINS, "unknown deployment environment")
         self.environment = environment
         self.project = "vellum-" + environment
         self.env = {
@@ -179,7 +207,7 @@ class Commands:
             "--project-name",
             self.project,
             "--env-file",
-            str(CHECKOUT / "deploy" / (environment + ".env")),
+            str(ENVIRONMENT_DIRECTORY / (environment + ".env")),
             "-f",
             str(BASE / "compose.yml"),
             "-f",
@@ -187,6 +215,8 @@ class Commands:
         ]
 
     def run(self, label, args, timeout=240):
+        if args[: len(self.compose)] == self.compose:
+            validate_environment_file(self.environment)
         result = subprocess.run(
             args,
             env=self.env,
@@ -202,7 +232,7 @@ class Commands:
         return result.stdout
 
     def apply(self, manifest):
-        protected(CHECKOUT / "deploy" / (self.environment + ".env"), private=True)
+        validate_environment_file(self.environment)
         self.run("Compose validation", self.compose + ["config", "--quiet"])
         resolved = json.loads(
             self.run(

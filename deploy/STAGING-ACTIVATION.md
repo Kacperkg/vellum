@@ -85,16 +85,18 @@ The staging workflow has no manual, PR, tag, main or workflow-call trigger.
    `cd/release.py` and `cd/smoke.py` between `deploy/` at the reviewed revision and
    `/usr/local/lib/vellum-cd/`. Keep directories root-owned 755, files 644 and
    state directory root-owned 700. Retain the previous reviewed bundle revision
-   with rollback evidence: older receipts require their matching bundle hashes.
+   with rollback evidence. Older controllers expecting checkout env paths cannot
+   simply be replayed; use the migration guide's reviewed recovery procedure.
    This shared library also serves any manual production controller invocation;
    coordinate its update. Future manual production calls inherit the private
-   `production.env` and exact-proxy preflight checks too. No container restart
-   or production deployment is needed to install it. This task does not perform
+   `/etc/vellum-cd/production.env` and exact-proxy preflight checks too. No container
+   restart or production deployment is needed to install it. This task does not perform
    that EC2 update.
-3. Verify `deploy/staging.env` is a root-owned regular file, mode 600, readable by
-   the controller. Ensure its parent directories cannot be replaced or edited by
-   deployment-untrusted users; a final-file ownership check alone cannot secure
-   writable parents. Never source or print the env file. Preserve project name
+3. Migrate existing secrets using [ENVIRONMENT-MIGRATION.md](ENVIRONMENT-MIGRATION.md).
+   Verify `/etc/vellum-cd/staging.env` is root-owned, regular, singly linked and
+   mode 600, with root-owned, non-writable, non-symlink parents. The checkout
+   remains ubuntu-writable; the controller has no checkout fallback. Never source
+   or print the env file. Preserve project name
    `vellum-staging`, database credentials/volume, exact staging APP_ORIGIN and
    JWT secret. Set `TRUSTED_PROXY_CIDRS=172.18.255.254/32`, and review login limit
    (1..100) and window (normally 1m) for the smoke sequence.

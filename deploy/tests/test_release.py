@@ -437,14 +437,13 @@ class ControllerTests(unittest.TestCase):
             return subprocess.CompletedProcess(args, 0, stdout, "")
 
         with (
-            patch.object(controller, "protected") as protect,
+            patch.object(controller, "validate_environment_file") as protect,
             patch.object(controller.subprocess, "run", side_effect=run),
             patch.object(controller, "smoke") as verify,
         ):
             controller.Commands("staging", value).apply(value)
-        protect.assert_called_once_with(
-            controller.CHECKOUT / "deploy/staging.env", private=True
-        )
+        self.assertEqual(protect.call_count, 6)
+        self.assertTrue(all(call.args == ("staging",) for call in protect.call_args_list))
         pull = next(
             i for i, args in enumerate(calls) if "pull" in args and "up" not in args
         )
@@ -484,7 +483,7 @@ class ControllerTests(unittest.TestCase):
             }
             with (
                 self.subTest(proxy=proxy, count=count),
-                patch.object(controller, "protected"),
+                patch.object(controller, "validate_environment_file"),
                 patch.object(
                     controller.Commands, "run", side_effect=["", json.dumps(resolved)]
                 ) as run,
@@ -499,7 +498,9 @@ class ControllerTests(unittest.TestCase):
     def test_unprotected_env_file_blocks_all_docker_commands(self):
         with (
             patch.object(
-                controller, "protected", side_effect=ValueError("unsafe permissions")
+                controller,
+                "validate_environment_file",
+                side_effect=ValueError("unsafe permissions"),
             ),
             patch.object(controller.Commands, "run") as run,
         ):
