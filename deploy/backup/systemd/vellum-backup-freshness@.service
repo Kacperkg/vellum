@@ -1,0 +1,15 @@
+[Unit]
+Description=Independently check Vellum %i off-host backup freshness
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+WorkingDirectory=/usr/local/lib/vellum-cd
+ExecStart=/usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root /usr/local/lib/vellum-cd/backup.sh %i --check-freshness
+TimeoutStartSec=15min
+TimeoutStopSec=20min
+KillMode=control-group

@@ -232,88 +232,26 @@ authentication behavior or add rate-limiting plugins to Caddy.
 
 ## 7. Backups and restore
 
-After the `/etc` migration, the legacy checkout `backup.sh` is not directly
-usable. Before using the commands below, adapt and install a reviewed root-owned
-backup copy with the paths and clean environment specified in
-[ENVIRONMENT-MIGRATION.md](ENVIRONMENT-MIGRATION.md). Do not sudo-execute the old
-checkout script or leave a checkout secret copy for it. Disable old backup jobs
-until this update is complete; no schedule is changed by this repository edit.
+The proposed daily S3 workflow is documented in
+[backup/README.md](backup/README.md), with an
+[isolated restore runbook](backup/RESTORE.md). It uses root-installed
+`backup.sh`/`backup.py`, the existing `/etc/vellum-cd/` environment files and
+trusted installed Compose configuration. Never sudo-run checkout scripts.
 
-Backups contain financial data and token hashes. The supplied Ubuntu script
-creates a consistent custom-format `pg_dump`, checks its archive table of
-contents, and atomically renames a mode-600 file. It prevents overlapping backups
-of the same environment. This quick archive check is not a restore test.
+The policy is daily production/staging dumps, mandatory verified S3 upload,
+SSE-S3 in `eu-west-2`, and two-day lifecycle expiration. No AWS resources,
+root-installed files or schedules are configured by a repository change. Follow
+the operator inventory, approval, installation, S3 round-trip restore and timer
+enablement checklist before declaring backups operational. Existing dumps and
+PostgreSQL volumes remain untouched.
 
-```sh
-vellum_backup() {
-  sudo env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-    HOME=/root DOCKER_CONFIG=/etc/vellum-cd/docker /usr/local/lib/vellum-cd/backup.sh "$@"
-}
-vellum_backup production
-vellum_backup staging
-```
-
-For the migrated procedure, files are stored in root-private
-`/var/lib/vellum-cd/backups/<environment>/`; existing checkout dumps stay intact.
-The script uses local Unix
-socket authentication inside the PostgreSQL container and never needs to expose
-its port or put a password on the command line. Dumps omit ownership and ACLs;
-restore creates objects owned by the destination database user. Cluster roles
-are not included: retain the protected environment configuration separately.
-
-First practice restoring into a **new disposable database** in staging; never
-test a production dump in a publicly accessible staging app. A restore can be
-checked with `pg_restore --exit-on-error --single-transaction --no-owner --no-acl`
-against an empty test database, followed by application/schema/data checks. Use
-synthetic backups for public staging, and a private isolated drill for real data.
-
-To replace an existing production database during recovery, schedule downtime,
-select the matching application SHA and take an additional backup of the current
-database. Double-check the project, env file and archive before proceeding.
-The following commands **delete and recreate that production database**:
-
-```sh
-cd /opt/hosting/projects/vellum
-# Set this to an existing, verified archive; do not use a wildcard.
-backup_file=/var/lib/vellum-cd/backups/production/REPLACE_WITH_VERIFIED_FILENAME.dump
-sudo test -s "$backup_file"
-set -o pipefail
-vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml stop backend
-vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml exec -T postgres sh -ec 'dropdb --if-exists --force -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" "$POSTGRES_DB"'
-sudo cat -- "$backup_file" | vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml exec -T postgres sh -ec 'exec pg_restore --exit-on-error --single-transaction --no-owner --no-acl -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
-# Run only after successful restore; keep backend stopped if restore fails.
-vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml up -d --no-build --wait --wait-timeout 180
-```
-
-Run recovery commands individually and stop on any error; do not blindly paste
-the entire block into a shell that continues after failures. Restoring loses all
-writes after the snapshot. Verify account totals, login and resource ownership
-after recovery. Keep prior dumps until recovery has been verified.
-
-For off-server backups, install AWS CLI and attach an EC2 instance role with
-permission to upload only to the intended S3 prefixes; do not store AWS access
-keys in these env files. Configure a private bucket with public access blocked,
-default encryption (SSE-KMS if required), versioning and lifecycle retention.
-For example, after selecting the actual bucket:
-
-```sh
-vellum_backup production s3://YOUR-PRIVATE-BACKUP-BUCKET/vellum/production
-```
-
-Schedule the reviewed installed copy with a root systemd timer or root cron
-and a clean environment (Docker access is root-equivalent). With the correct
-bucket name, this root-crontab entry runs at 02:15 in the server's timezone:
-
-```cron
-15 2 * * * /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root DOCKER_CONFIG=/etc/vellum-cd/docker /usr/local/lib/vellum-cd/backup.sh production s3://YOUR-PRIVATE-BACKUP-BUCKET/vellum/production
-```
-
-Schedule staging separately if needed. Capture failures and alert on a missing
-fresh object, not just a successful timer invocation. Monitor local disk usage
-and configure local retention only after verifying uploads. Protect production
-backups from staging credentials, consider a separate account/Object Lock, and
-perform regular private restore drills from S3. Daily dumps can lose up to a
-day of writes; use WAL archiving/PITR or managed PostgreSQL if that is unacceptable.
+Daily snapshots can lose nearly 24 hours of writes plus backup/upload delay;
+failed jobs extend that exposure. Two-day retention cannot recover corruption
+discovered after retained copies expire. RTO must be measured in a drill.
+`pg_restore --list` is only an archive-list check. Never test a production dump
+in the live staging database or a publicly routed application. Live recovery,
+write loss and schema-incompatible rollback require separate operator approval;
+image rollback does not undo AutoMigrate or database writes.
 
 ## 8. Future registry / GitHub Actions workflow
 
