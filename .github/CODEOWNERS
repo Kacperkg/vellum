@@ -1,0 +1,6 @@
+# Effective only after branch/ruleset settings require code-owner review.
+/.github/ @Kacperkg
+/deploy/ @Kacperkg
+/scripts/check-deployment-config.sh @Kacperkg
+/backend/Dockerfile.prod @Kacperkg
+/frontend/Dockerfile.prod @Kacperkg

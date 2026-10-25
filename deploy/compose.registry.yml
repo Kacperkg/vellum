@@ -1,0 +1,7 @@
+# Data-only image override. Base Compose remains the manual SHA-tag build path.
+# The controller validates both references against its installed package allowlist.
+services:
+  backend:
+    image: ${VELLUM_BACKEND_IMAGE:?Set a verified backend digest reference}
+  frontend:
+    image: ${VELLUM_FRONTEND_IMAGE:?Set a verified frontend digest reference}

@@ -5,6 +5,10 @@ This stack runs on Ubuntu 24.04 with Docker Engine and Docker Compose v2
 It creates no Caddy service, changes no server configuration, and publishes no
 ports. Run all commands below on the EC2 server unless stated otherwise.
 
+The optional, initially inactive registry/OIDC/SSM pipeline and its manual
+activation prerequisites are documented in [CI-CD.md](CI-CD.md). This page
+retains the local SHA-tagged manual deployment and recovery procedure.
+
 ## 1. Prepare the checkout
 
 Use this layout:

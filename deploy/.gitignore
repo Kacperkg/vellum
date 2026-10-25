@@ -2,3 +2,5 @@
 backups/
 *.dump
 *.partial
+__pycache__/
+*.pyc
