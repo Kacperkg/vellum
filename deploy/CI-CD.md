@@ -4,6 +4,12 @@ Status: **first end-to-end staging deployment succeeded; production remains disa
 `.github/workflows/release-staging.yml` validates protected staging pushes and
 requires `VELLUM_CD_ENABLED=true` plus a release-needed change plan before
 publication/deployment. The production workflow remains `.yml.disabled`.
+An explicitly acknowledged manual staging deployment verification now reuses
+the same workflow with full CI and an exact SHA. See
+[MANUAL-STAGING-VERIFICATION.md](MANUAL-STAGING-VERIFICATION.md), including the
+requirement to disable CD before merging this workflow change if its first
+deployment must be the deliberate manual run. Manual evidence cannot promote
+to production; ordinary push artifacts retain the existing promotion contract.
 See [CI-OPTIMISATION.md](CI-OPTIMISATION.md) for current execution rules and the
 [historical activation runbook](STAGING-ACTIVATION.md) for operator prerequisites.
 This optimisation changes no flags, GitHub settings, AWS resources or installed

@@ -3,6 +3,9 @@
 Historical activation handoff: the first staging deployment has since succeeded.
 The current change-selection rules are in [CI-OPTIMISATION.md](CI-OPTIMISATION.md).
 Documentation-only pushes no longer trigger publication or deployment.
+For the current explicit manual entry point, use
+[MANUAL-STAGING-VERIFICATION.md](MANUAL-STAGING-VERIFICATION.md). Its merge and
+execution prerequisites supersede the historical first-trigger instructions here.
 
 This PR removes GHCR bootstrap and enables the staging workflow in source only.
 It does not set `VELLUM_CD_ENABLED`, dispatch a deployment, change GitHub settings
@@ -23,7 +26,9 @@ push's immutable checkout SHA for `linux/amd64`. It publishes unique
 action's two digest outputs, assumes the staging role and sends that data to
 the fixed staging SSM document. No tag lookup or `latest` resolution is used.
 Successful health/proxy smoke checks produce the verified release artifact.
-The staging workflow has no manual, PR, tag, main or workflow-call trigger.
+The current staging workflow also has an explicitly acknowledged manual
+verification trigger, described in the runbook above. It has no PR, tag, main
+or workflow-call trigger.
 
 ## Review findings and safety boundaries
 
@@ -147,7 +152,8 @@ The staging workflow has no manual, PR, tag, main or workflow-call trigger.
    make a reviewed application change, push it and open a PR into staging.
    A documentation-only change will validate CI but will not trigger a release.
    Review it, require all seven checks and merge via normal branch protections.
-   Do not direct-push to protected staging, add a manual trigger, or weaken checks.
+   Do not direct-push to protected staging or weaken checks. For verification
+   without an application change, use the reviewed manual verification runbook.
 4. Observe **Release staging** for that merge SHA: reusable CI must succeed
    before publication/deployment. Check role/account, pinned document references,
    successful SSM result and the verified artifact's source SHA and both digests.

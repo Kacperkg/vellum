@@ -64,6 +64,9 @@ checked; the inactive production workflow retains its existing provenance gates.
 
 PR updates cancel superseded PR CI. Staging releases remain serialized and
 non-cancelling. No `workflow_run` bridge or privileged PR execution is added.
+The explicit [manual staging verification](MANUAL-STAGING-VERIFICATION.md)
+entry point reuses this workflow and selects full CI intentionally. Ordinary
+push/PR diff selection and documentation-only deployment skipping remain intact.
 
 ## Change selection and expected behaviour
 
