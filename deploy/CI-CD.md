@@ -8,6 +8,10 @@ and fails closed. Activation is a separate, reviewed operator action.
 
 ## Release and branch model
 
+- `staging` is the intended default development/integration branch; `main` is
+  the protected production branch, independently of the repository default.
+  Use `feature/*` branches from `staging` and target their PRs at `staging`.
+  Changing the default branch does not itself enable any deployment.
 - Feature PRs target `staging`. CI checks frontend unit/architecture tests,
   E2E typechecking, build/typecheck, lint, formatting and browser workflows;
   Go build/vet/tests/race tests with PostgreSQL 17; production amd64 Docker
@@ -53,6 +57,26 @@ Set `PRODUCTION_APPROVAL_MODE` explicitly; unset means no production job runs.
    enforced two-person approval; if two-person approval is mandatory, upgrade
    the plan/use a supported external gate before activation.
 
+With default `staging`, the **active** production workflow must exist at the
+same `.github/workflows/release-production.yml` path on both `staging` (manual
+dispatch discovery) and `main` (the selected workflow and production source).
+The `.yml.disabled` templates intentionally cannot be dispatched. On later,
+separately approved activation, keep both copies reviewed and synchronized.
+In Actions, select **Promote production → Run workflow → Branch: main**; or use
+`gh workflow run release-production.yml --repo Kacperkg/vellum --ref main`.
+This command deploys when enabled and approved: it is not a validation command.
+Omitting `--ref` selects the default branch, where the production job skips.
+Never relax the explicit `refs/heads/main` guard to the default branch or add
+a forwarding deployment job on `staging` to work around dispatch discovery.
+
+Manual dispatch checks out the selected main event revision. The production
+resolver reads `deploy/production-release.json` there, queries the exact run ID
+and attempt, and downloads its exact artifact ID. No API request resolves a
+default-branch file or selects the latest run. Provenance still requires a
+successful push on `staging`, the staging workflow path, the selected attempt,
+the reviewed manifest hash, matching source trees/bundle and verified digests.
+Bootstrap/manual runs and unverified manifests remain ineligible for promotion.
+
 Environment protection features vary by plan and visibility. GitHub currently
 restricts required-reviewer rules on several plans to public repositories.
 See [GitHub environment availability](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments).
@@ -61,6 +85,74 @@ the staging environment, only `main` the production environment. If your plan
 cannot enforce those branch restrictions, **do not activate this OIDC design**.
 The environment OIDC subject replaces branch information; a workflow `if` is
 not a substitute for server-side branch protection.
+
+## Safely change the default branch to staging
+
+Read-only GitHub audit on 2026-10-25 found default `main`, CD disabled
+(`VELLUM_CD_ENABLED=false`) and `PRODUCTION_APPROVAL_MODE=manual`. Both release
+templates remain inactive. The two active rulesets target explicit
+`refs/heads/main` and `refs/heads/staging`, with no bypass actors, required PRs,
+the seven CI checks, deletion/force-push protection and linear history. Neither
+ruleset requires approving reviews or code-owner approval yet. Environment
+branch policies allow only branch `staging` for staging and branch `main` for
+production; neither environment currently has required reviewers and both
+report administrator bypass enabled. Legacy branch-protection endpoints return
+404; the separate ruleset endpoints confirm the protections above.
+
+These are observations, not configuration performed by this change. Before
+activation, enforce the human/code-owner reviews required below, and either
+retain explicit manual production mode with controlled dispatch access or
+configure effective environment reviewers/prevent-self-review/no-admin-bypass
+before choosing environment approval mode. Manual mode provides an operator
+gate, not independent two-person approval. Recheck live settings before use.
+
+Operator sequence (do not dispatch workflows during this settings change):
+
+1. Merge this feature PR into `staging` after CI and review. Confirm the desired
+   bootstrap source and workflow are there. Keep `VELLUM_CD_ENABLED=false`, both
+   release templates ending in `.yml.disabled`, and the production selection
+   unchanged. No bootstrap copy on `main` is needed when dispatching from default
+   `staging`; before the default switch, defer bootstrap dispatch.
+2. In **Settings → Rules → Rulesets**, inspect **Protect Production (main)** and
+   **Protect Staging (staging)**. Keep explicit branch targets, required PRs and
+   checks, no force pushes/deletion, and review bypass permissions. A ruleset
+   targeting “Default branch” moves to staging at the switch; it must not be
+   the only protection for main. Resolve missing review protections before CD
+   activation. Inspect any legacy rules too; do not weaken them to switch.
+3. In **Settings → Environments**, confirm **Selected branches and tags** allows
+   only branch `staging` for staging and only branch `main` for production, with
+   no wildcard or tag rules. Do not replace this with “Protected branches only”,
+   which could admit both branches. Preserve approval rules independently.
+4. Open **Settings → General → Default branch**, choose the change control,
+   select **staging**, click **Update**, then confirm **I understand, update the
+   default branch**. This changes repository metadata; do not rename/delete main
+   or change AWS trust/roles. See [GitHub's default branch instructions](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-branches-in-your-repository/changing-the-default-branch).
+5. Verify the repository landing page and a new PR comparison default to staging.
+   Recheck existing open PR base branches explicitly: feature PRs go to staging,
+   promotion PRs still go to main. Verify both rulesets and environment branch
+   policies still apply, and CD is still disabled. Update local clones with
+   `git fetch origin` followed by `git remote set-head origin -a`; create future
+   feature branches from `origin/staging`, not the previous default main.
+6. Bootstrap is now discoverable from default staging; when separately authorized,
+   run it explicitly on **staging** as described below. After GHCR verification,
+   remove it from staging (and any other branch where it was copied).
+7. Later CD activation is a separate reviewed change after all prerequisites:
+   activate staging's push workflow, and put the reviewed active production
+   workflow at the same path on default staging and main. Keep production mode
+   manual unless effective environment approval rules are verified. Publishing
+   the production workflow on staging does not permit staging to deploy
+   production: the job ref, resolver, dispatcher and environment all require main.
+   Never dispatch production as a test of default-branch discovery.
+
+The current default OIDC subject configuration reports `use_default=true`,
+`use_immutable_subject=false`, prefix `repo:Kacperkg/vellum`. The example trust
+policy's exact environment subjects therefore remain appropriate; a default
+branch change does not alter those subjects. Before activation, independently
+verify the actual AWS trust policies and audience `sts.amazonaws.com`; this audit
+did not access AWS. Do not substitute a staging branch subject for the production
+environment subject or introduce wildcards. Repository renames/transfers or
+opting into immutable/custom subjects require a separate trust review; see
+[GitHub OIDC subject formats](https://docs.github.com/en/actions/reference/security/oidc).
 
 ## Manual setup in execution order
 
@@ -85,7 +177,8 @@ Nothing in this section has been executed against AWS or GitHub by this task.
 ### 2. Configure GHCR access
 
 Publishing uses the short-lived job `GITHUB_TOKEN` with `packages: write` only in
-the trusted staging publish job. Other jobs do not get package write access.
+the trusted staging publish job or the temporary manual bootstrap job below.
+Other jobs do not get package write access.
 Grant this repository Actions access to both packages. Version tags are unique
 per run attempt; retain digests and do not delete active/rollback releases.
 Vite receives only public same-origin configuration; no secrets are build args.
@@ -94,6 +187,67 @@ The simplest pull setup is **public GHCR packages**, requiring an explicit
 visibility decision by the owner; newly created packages can be private. Inspect
 the disclosure implications if the source repository is private. EC2 needs no
 registry credential for public packages. Test pulls before activating deployment.
+
+#### Temporary publish-only bootstrap
+
+The inactive staging template has no publish-only switch: publication, AWS OIDC
+and SSM deployment share one job. Do not activate it just to create packages.
+Use `.github/workflows/bootstrap-ghcr.yml` for the initial publication instead.
+It accepts only `workflow_dispatch` on `staging` in `Kacperkg/vellum`, has no inputs
+or GitHub Environment, and grants only `contents: read` and `packages: write`.
+There is no AWS credential action, OIDC permission, SSM call, deployment command
+or release-manifest artifact. The existing production selection stays untouched.
+
+Operator procedure (not executed by this change):
+
+1. Merge the reviewed bootstrap workflow into the intended default branch (`staging`), with
+   the desired backend/frontend source present there and CI passing. GitHub
+   requires a manual workflow to exist on the default branch before dispatch.
+   Complete the default-branch change above before using this procedure.
+   Keep both deployment templates named `.yml.disabled` and keep
+   `VELLUM_CD_ENABLED` unset/false. No AWS variables or credentials are needed.
+2. In Actions, select **Bootstrap GHCR (publish only)** and manually run it on
+   **staging**. Checkout is pinned to the dispatch event's `github.sha` and the
+   job verifies `HEAD` matches it before registry login. Both local build contexts
+   use that same reviewed revision, even if staging advances during the run.
+   It builds both existing `Dockerfile.prod` files for `linux/amd64`,
+   using the release action pins, contexts and `VCS_REF` argument. It may read
+   CI production caches but writes no release caches. If packages already exist,
+   verify this repository has write access under each package's Manage Actions
+   access settings; do not substitute a broadly scoped PAT.
+3. Check that both publish steps succeeded. Save the summary's source SHA,
+   run/attempt, tag and both digest references. Tags are
+   `bootstrap-sha-<full-sha>-run-<run-id>-<attempt>`; reruns get a different tag.
+   No moving alias is written. GHCR tags themselves can be reassigned by a
+   writer, so the recorded `@sha256:...` references are the immutable identifiers.
+   A partial publish is possible; rerun both builds in a new attempt if needed.
+4. Open each package (`vellum-backend` and `vellum-frontend`) and use **Package
+   settings → Change visibility → Public**. Review that both images are intended
+   for public disclosure: GitHub documents that public visibility cannot be
+   changed back to private. First publication defaults to private; a public
+   repository alone does not make packages public.
+5. From an existing authorized EC2 shell, use a fresh Docker client config to
+   verify anonymous pulls of the exact two digests copied from the summary:
+
+   ```sh
+   # Replace the two placeholders with the corresponding summary digests.
+   pull_config=$(mktemp -d)
+   docker --config "$pull_config" pull --platform linux/amd64 'ghcr.io/kacperkg/vellum-backend@sha256:<backend-digest>'
+   docker --config "$pull_config" pull --platform linux/amd64 'ghcr.io/kacperkg/vellum-frontend@sha256:<frontend-digest>'
+   rm -rf -- "$pull_config"
+   ```
+
+   Both pulls must succeed without login. This downloads images only; do not
+   invoke Compose, run containers or change an environment file. Record the
+   pull results before considering deployment activation separately.
+6. Remove `.github/workflows/bootstrap-ghcr.yml` through a reviewed PR after
+   verification. Keep the package versions and recorded digests as evidence.
+   Bootstrap runs are not verified staging releases and cannot be selected for
+   production promotion by the release resolver.
+
+References: [manual workflow requirements](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#workflow_dispatch),
+[GHCR authentication and initial visibility](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry),
+[package visibility and Actions access](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
 
 For private packages, this repository does not provision a token broker. Keep CD
 disabled until an operator provides and tests a root-owned Docker credential

@@ -58,6 +58,77 @@ def successful_run():
 
 
 class ManifestTests(unittest.TestCase):
+    def test_default_staging_cannot_resolve_production_before_api_access(self):
+        # Default-branch dispatch must fail before reading a selection or token.
+        for ref in ("refs/heads/staging", "refs/heads/feature/test", "refs/tags/main"):
+            with (
+                self.subTest(ref=ref),
+                patch.dict(
+                    os.environ,
+                    {"GITHUB_REPOSITORY": REPOSITORY, "GITHUB_REF": ref},
+                    clear=True,
+                ),
+                patch.object(release, "api") as api,
+                patch.object(release, "read_json") as read,
+            ):
+                with self.assertRaisesRegex(ValueError, "protected main"):
+                    release.resolve(types.SimpleNamespace(selection="unused.json"))
+                api.assert_not_called()
+                read.assert_not_called()
+
+    def test_dispatch_rejects_cross_environment_refs_before_aws(self):
+        for environment, refs in (
+            (
+                "production",
+                ("refs/heads/staging", "refs/heads/feature/test", "refs/tags/main"),
+            ),
+            (
+                "staging",
+                ("refs/heads/main", "refs/heads/feature/test", "refs/tags/staging"),
+            ),
+        ):
+            for ref in refs:
+                with (
+                    self.subTest(environment=environment, ref=ref),
+                    patch.dict(
+                        os.environ,
+                        {"GITHUB_REPOSITORY": REPOSITORY, "GITHUB_REF": ref},
+                        clear=True,
+                    ),
+                    patch.object(release, "read_json", return_value=manifest()),
+                    patch.object(release.subprocess, "check_output") as aws,
+                ):
+                    with self.assertRaisesRegex(ValueError, "deployment ref mismatch"):
+                        release.dispatch(
+                            types.SimpleNamespace(
+                                manifest="unused.json", environment=environment
+                            )
+                        )
+                    aws.assert_not_called()
+
+    def test_candidate_rejects_manual_bootstrap_and_non_staging_push(self):
+        for ref, event in (
+            ("refs/heads/staging", "workflow_dispatch"),
+            ("refs/heads/main", "push"),
+            ("refs/heads/feature/test", "push"),
+        ):
+            with (
+                self.subTest(ref=ref, event=event),
+                patch.dict(
+                    os.environ,
+                    {
+                        "GITHUB_REPOSITORY": REPOSITORY,
+                        "GITHUB_REF": ref,
+                        "GITHUB_EVENT_NAME": event,
+                    },
+                    clear=True,
+                ),
+                patch.object(release, "bundle_hashes") as hashes,
+            ):
+                with self.assertRaisesRegex(ValueError, "trusted staging push"):
+                    release.candidate(types.SimpleNamespace())
+                hashes.assert_not_called()
+
     def test_dispatch_pins_document_and_passes_data_without_shell(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "release.json"
@@ -148,8 +219,11 @@ class ManifestTests(unittest.TestCase):
             ("id", 42),
             ("run_attempt", 1),
             ("event", "pull_request"),
+            ("event", "workflow_dispatch"),
             ("head_branch", "feature"),
+            ("head_branch", "main"),
             ("path", ".github/workflows/evil.yml"),
+            ("path", ".github/workflows/bootstrap-ghcr.yml"),
             ("conclusion", "failure"),
             ("status", "in_progress"),
             ("head_repository", {"full_name": "attacker/vellum"}),
@@ -180,7 +254,10 @@ class ManifestTests(unittest.TestCase):
         with zipfile.ZipFile(buffer, "w") as archive:
             archive.writestr("release.json", data)
 
+        api_paths = []
+
         def fake_api(path, raw=False):
+            api_paths.append(path)
             if "/attempts/" in path:
                 return successful_run()
             if path.endswith("/zip"):
@@ -204,7 +281,11 @@ class ManifestTests(unittest.TestCase):
             with (
                 patch.dict(
                     os.environ,
-                    {"GITHUB_REPOSITORY": REPOSITORY, "GITHUB_REF": "refs/heads/main"},
+                    {
+                        "GITHUB_REPOSITORY": REPOSITORY,
+                        "GITHUB_REF": "refs/heads/main",
+                        "GITHUB_EVENT_NAME": "workflow_dispatch",
+                    },
                 ),
                 patch.object(release, "api", side_effect=fake_api),
                 patch.object(
@@ -216,6 +297,14 @@ class ManifestTests(unittest.TestCase):
             ):
                 release.resolve(args)
                 self.assertEqual(output.read_bytes(), data)
+                self.assertEqual(
+                    api_paths,
+                    [
+                        f"/repos/{REPOSITORY}/actions/runs/12345/attempts/2",
+                        f"/repos/{REPOSITORY}/actions/runs/12345/artifacts?per_page=100&page=1",
+                        f"/repos/{REPOSITORY}/actions/artifacts/987/zip",
+                    ],
+                )
                 selection["manifest_sha256"] = "e" * 64
                 selected.write_bytes(release.canonical(selection))
                 with self.assertRaisesRegex(ValueError, "digest mismatch"):
