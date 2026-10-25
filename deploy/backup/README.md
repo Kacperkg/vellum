@@ -20,7 +20,7 @@ compromise discovered after the retained snapshots expire may be unrecoverable.
 | Compose | Checkout `deploy/compose.yml` | Existing trusted `/usr/local/lib/vellum-cd/compose.yml` |
 | Destination | Caller-supplied optional S3 URI | Required bucket/account in root-private `/etc/vellum-cd/backup.json` |
 | Local artifacts | Unbounded checkout backups | Private run directories under `/var/lib/vellum-cd/backups/` |
-| Locks | Checkout lock per environment | `/var/lib/vellum-cd/backup.lock`, then existing `<environment>.lock` |
+| Locks | Checkout lock per environment | `/var/lib/vellum-cd/backup.lock`, then `staging.lock`, then `production.lock` |
 | Success | Local dump, optionally uploaded | Archive, manifest and completion marker uploaded and verified |
 
 Only `backup.sh staging` and `backup.sh production` create backups. The optional
@@ -39,12 +39,16 @@ only after archive and manifest verification. This proves transfer integrity,
 not that the database can be restored. Do not set CD `restore_verified` based on
 `pg_restore --list` or an upload.
 
-The global lock serializes staging and production backups on the shared
-`t3.small`. The environment lock coordinates with the installed controller.
-Manual restore, migration, env edits and deployment procedures must honor that
-same environment lock. Do not invoke a controller recursively while holding its
-lock. A scheduled backup is not an automatically atomic pre-release backup gate;
-keep the existing release-specific backup/schema approval procedure.
+The shared host gate serializes backups, both environments' controller deployments
+and guarded operator schema work. It preserves both environment locks and retains
+a durable pending record after incomplete work, because Docker/database processes
+can outlive their client. See [host coordination](../HOST-COORDINATION.md) for
+lock order, interrupted-operation recovery, the required paired root-owned
+controller/backup installation and manual maintenance requirements. Never invoke
+a controller recursively while holding its locks. A scheduled backup is not an
+automatically atomic pre-release backup gate; keep release-specific backup/schema
+approval. Autonomous backend restarts and raw SQL/Docker require the operational
+controls described there.
 
 The archive limit is 512 MiB, aggregate spool cap is 1 GiB, and free-space reserve
 is the greater of 5 GiB or 20% of the containing filesystem. Failure to satisfy
@@ -56,7 +60,9 @@ and verifies them or explicitly approves removal. Never delete the last usable
 copy merely to clear an alarm. Crashes can leave partial files: inspect their
 specific run directories under the locks before approving cleanup.
 
-SIGTERM/SIGINT follow the handled cancellation path. A forced SIGKILL or host
+Any incomplete run retains the host pending record and blocks later managed work
+until operator recovery. SIGTERM/SIGINT follow the handled cancellation path.
+A forced SIGKILL or host
 failure cannot guarantee remote-process cleanup: before any deployment, verify
 that no orphaned dump remains or wait at least the in-container hard timeout
 (approximately 16 minutes from interruption). Do not bypass a held lock.
@@ -148,7 +154,11 @@ sudo install -o root -g root -m 755 /root/vellum-backup-install/backup.sh /usr/l
 sudo install -o root -g root -m 644 /root/vellum-backup-install/backup.py /usr/local/lib/vellum-cd/backup.py
 ```
 
-Do not overwrite the existing controller/Compose installation or env files.
+Before resuming either code path, install the matching six-file controller bundle
+including root-owned `/usr/local/lib/vellum-cd/cd/coordination.py` during the same
+drained maintenance freeze as these backup files; see [host coordination](../HOST-COORDINATION.md).
+Do not replace env files or bypass bundle provenance checks. Older installed
+controllers require the reviewed operator upgrade; active mixed versions are unsupported.
 Have root create `/etc/vellum-cd/backup.json` at mode `600` from
 [backup.example.json](backup.example.json), filling the exact bucket, 12-digit
 account and optional SNS topic ARN privately. The existing `/etc/vellum-cd/`

@@ -24,6 +24,7 @@ BUNDLE = (
     "compose.yml",
     "compose.registry.yml",
     "cd/controller.py",
+    "cd/coordination.py",
     "cd/release.py",
     "cd/smoke.py",
 )

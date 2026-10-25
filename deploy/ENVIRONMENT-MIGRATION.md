@@ -145,7 +145,7 @@ live database; confirm the previously running configuration was correct.
 ## Controller installation, manual operations and cleanup
 
 Install the reviewed controller bundle through the existing root-owned procedure
-in CI-CD.md, then compare all five bundle hashes against the exact reviewed
+in CI-CD.md, then compare all six bundle hashes against the exact reviewed
 release revision. This change affects the manifest bundle hash. Production stays
 disabled and the CD flag stays false until activation is separately approved.
 
@@ -167,16 +167,13 @@ file. Runtime credentials and project names must remain unchanged. The installed
 digest controller remains the preferred update/recovery path, with its host lock
 and production approvals; manual Compose must not overlap a controller run.
 
-**Backup compatibility:** the legacy `deploy/backup.sh` expects checkout-local
-env files and is not a post-migration backup entry point. Before resuming backup
-jobs, install a reviewed root-owned copy outside the checkout, change its env
-argument to `/etc/vellum-cd/<environment>.env`, its Compose file to the trusted
-installed file, and its output/lock directory to root-private
-`/var/lib/vellum-cd/backups/<environment>/`. Run its schedule as root with a clean
-environment; preserve/review any S3 permission configuration. Do not sudo-execute
-the old writable-checkout script or keep duplicate checkout secrets for it.
-Existing dumps remain untouched; update restore commands to use root/sudo and
-the new env path, preserving the exact project and verified archive selection.
+**Backup compatibility:** use the root-installed daily S3 implementation and
+[paired host-coordination installation](HOST-COORDINATION.md), including
+`cd/coordination.py`. Both environments' backups/deployments/guarded schema work
+share the host gate and keep the old environment locks. Do not resume older
+checkout jobs or active mixed code versions: old code ignores the pending record.
+Existing dumps, secrets and volumes remain untouched. Raw manual Compose/SQL
+also requires the maintenance gate, not just the clean environment shown above.
 
 **Rollback compatibility:** retain old images and reviewed bundle revisions.
 Old receipts require their original bundle hashes, and older controllers expect

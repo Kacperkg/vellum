@@ -183,7 +183,7 @@ SSM permission change is introduced.
 
 Schema 1 stores the backend/frontend digest pair and one source_sha. The installed
 controller pulls both immutable images, requires each image's OCI revision label
-to equal that one SHA, and compares all five controller/Compose bundle hashes.
+to equal that one SHA, and compares all six controller/Compose bundle hashes.
 An old component digest retains its old label. Reusing it with a new source_sha
 fails the controller, correctly. Simply relaxing label checks, editing manifests,
 or relabelling old images would remove provenance guarantees. Changing release.py

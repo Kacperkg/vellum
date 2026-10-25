@@ -3,7 +3,6 @@
 import base64
 from contextlib import contextmanager
 from datetime import datetime, timezone
-import fcntl
 import hashlib
 import json
 import os
@@ -136,19 +135,17 @@ def sync_directory(path):
 
 
 @contextmanager
-def lock(path):
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+def host_operation(environment):
+    trusted(BASE / 'cd', directory=True)
+    trusted(BASE / 'cd' / 'coordination.py')
+    # -I removed implicit local imports. Add only the explicitly trusted library.
+    sys.path.insert(0, str(BASE / 'cd'))
+    from coordination import CoordinationError, operation
     try:
-        info = os.fstat(fd)
-        require(stat.S_ISREG(info.st_mode) and info.st_uid == 0
-                and info.st_nlink == 1 and not info.st_mode & 0o022, 'unsafe lock file')
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise BackupError('backup or deployment lock busy') from None
-        yield
-    finally:
-        os.close(fd)
+        with operation(STATE, 'backup', environment):
+            yield
+    except CoordinationError as error:
+        raise BackupError(str(error)) from None
 
 
 def spool_bytes(root):
@@ -280,8 +277,8 @@ def backup(environment, config):
     spool = STATE / 'backups'
     spool.mkdir(mode=0o700, exist_ok=True)
     trusted(spool, directory=True, private=True)
-    # Global backup lock, then controller lock; all backups use this exact order.
-    with lock(STATE / 'backup.lock'), lock(STATE / (environment + '.lock')):
+    # Shared host gate also excludes opposite-environment and legacy controllers.
+    with host_operation(environment):
         check_space(spool)
         work = Path(tempfile.mkdtemp(prefix=environment + '-', dir=spool))
         archive = work / 'database.dump'

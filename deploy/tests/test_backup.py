@@ -17,6 +17,9 @@ from unittest.mock import Mock, patch
 SPEC = importlib.util.spec_from_file_location('vellum_backup', Path(__file__).resolve().parents[1] / 'backup.py')
 backup = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(backup)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'cd'))
+import coordination
+
 CONFIG = {'bucket': 'synthetic-vellum-test', 'account_id': '123456789012', 'alert_topic_arn': None}
 
 
@@ -180,11 +183,11 @@ class ResourceAndCommandTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary, patch.object(backup.os, 'fstat', side_effect=root_fstat):
             for name in ('production.lock', 'backup.lock'):
                 path = Path(temporary) / name
-                with backup.lock(path):
-                    with self.assertRaisesRegex(backup.BackupError, 'lock busy'):
-                        with backup.lock(path):
+                with coordination.lock(path):
+                    with self.assertRaisesRegex(ValueError, 'lock busy'):
+                        with coordination.lock(path):
                             self.fail('contended lock unexpectedly acquired')
-                with backup.lock(path):
+                with coordination.lock(path):
                     pass
 
     def test_existing_controller_lock_with_default_0644_mode_is_compatible(self):
@@ -196,11 +199,11 @@ class ResourceAndCommandTests(unittest.TestCase):
             path = Path(temporary) / 'production.lock'
             path.touch(mode=0o644)
             path.chmod(0o644)
-            with backup.lock(path):
+            with coordination.lock(path):
                 pass
             path.chmod(0o666)
-            with self.assertRaisesRegex(backup.BackupError, 'unsafe lock'):
-                with backup.lock(path):
+            with self.assertRaisesRegex(ValueError, 'unsafe operation lock'):
+                with coordination.lock(path):
                     self.fail('world-writable lock accepted')
 
     def test_lock_rejects_symlink_without_touching_target(self):
@@ -210,7 +213,7 @@ class ResourceAndCommandTests(unittest.TestCase):
             link = Path(temporary) / 'lock'
             link.symlink_to(target)
             with self.assertRaises(OSError):
-                with backup.lock(link):
+                with coordination.lock(link):
                     self.fail('symlink accepted')
             self.assertEqual(target.read_text(), 'untouched')
 
@@ -291,7 +294,7 @@ class BackupFlowTests(unittest.TestCase):
         def synthetic_run(args, label, timeout=60):
             return b'17.6\n' if label == 'PostgreSQL version' else b''
         with patch.object(backup, 'STATE', root), patch.object(backup, 'trusted'), \
-             patch.object(backup, 'lock', side_effect=lambda path: nullcontext()), \
+             patch.object(backup, 'host_operation', side_effect=lambda environment: nullcontext()), \
              patch.object(backup, 'check_space'), patch.object(backup, 'run', side_effect=synthetic_run), \
              patch.object(backup, 'dump', side_effect=synthetic_dump), \
              patch.object(backup, 'verify_archive', side_effect=backup.BackupError('corrupt') if archive_failure else None), \
