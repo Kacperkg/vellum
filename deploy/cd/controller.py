@@ -21,6 +21,7 @@ ORIGINS = {
     "staging": "https://staging.vellum.kacpergajdarski.com",
     "production": "https://vellum.kacpergajdarski.com",
 }
+TRUSTED_PROXY_CIDRS = "172.18.255.254/32"
 
 
 # Validate library files before importing them: a safe parent directory alone
@@ -201,6 +202,7 @@ class Commands:
         return result.stdout
 
     def apply(self, manifest):
+        protected(CHECKOUT / "deploy" / (self.environment + ".env"), private=True)
         self.run("Compose validation", self.compose + ["config", "--quiet"])
         resolved = json.loads(
             self.run(
@@ -221,6 +223,16 @@ class Commands:
             resolved["services"]["backend"]["environment"]["CORS_ALLOWED_ORIGINS"]
             == ORIGINS[self.environment],
             "unexpected application origin",
+        )
+        backend_env = resolved["services"]["backend"]["environment"]
+        require(
+            backend_env.get("TRUSTED_PROXY_CIDRS") == TRUSTED_PROXY_CIDRS,
+            "trusted proxy must match the reviewed fixed Caddy address",
+        )
+        count = int(backend_env["RATE_LIMIT_LOGIN_REQUESTS"])
+        require(
+            self.environment != "staging" or 1 <= count <= 100,
+            "automated staging smoke supports login limits 1..100",
         )
         existing = self.run(
             "PostgreSQL identity check",
@@ -290,9 +302,6 @@ class Commands:
                 "frontend",
             ],
             timeout=210,
-        )
-        count = int(
-            resolved["services"]["backend"]["environment"]["RATE_LIMIT_LOGIN_REQUESTS"]
         )
         smoke(
             ORIGINS[self.environment],

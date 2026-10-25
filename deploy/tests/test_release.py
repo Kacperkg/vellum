@@ -404,6 +404,7 @@ class ControllerTests(unittest.TestCase):
                     "environment": {
                         "CORS_ALLOWED_ORIGINS": controller.ORIGINS["staging"],
                         "RATE_LIMIT_LOGIN_REQUESTS": "10",
+                        "TRUSTED_PROXY_CIDRS": controller.TRUSTED_PROXY_CIDRS,
                     },
                 },
                 "frontend": {"image": value["images"]["frontend"]},
@@ -436,10 +437,14 @@ class ControllerTests(unittest.TestCase):
             return subprocess.CompletedProcess(args, 0, stdout, "")
 
         with (
+            patch.object(controller, "protected") as protect,
             patch.object(controller.subprocess, "run", side_effect=run),
             patch.object(controller, "smoke") as verify,
         ):
             controller.Commands("staging", value).apply(value)
+        protect.assert_called_once_with(
+            controller.CHECKOUT / "deploy/staging.env", private=True
+        )
         pull = next(
             i for i, args in enumerate(calls) if "pull" in args and "up" not in args
         )
@@ -454,6 +459,92 @@ class ControllerTests(unittest.TestCase):
         verify.assert_called_once_with(
             controller.ORIGINS["staging"], staging=True, login_requests=10
         )
+
+    def test_preflight_rejects_unsafe_proxy_and_smoke_limits_before_pull(self):
+        value = manifest()
+        for proxy, count, message in (
+            ("0.0.0.0/0", "10", "trusted proxy"),
+            ("172.18.0.0/16", "10", "trusted proxy"),
+            (controller.TRUSTED_PROXY_CIDRS, "0", "login limits"),
+            (controller.TRUSTED_PROXY_CIDRS, "101", "login limits"),
+        ):
+            resolved = {
+                "name": "vellum-staging",
+                "services": {
+                    "backend": {
+                        "image": value["images"]["backend"],
+                        "environment": {
+                            "CORS_ALLOWED_ORIGINS": controller.ORIGINS["staging"],
+                            "TRUSTED_PROXY_CIDRS": proxy,
+                            "RATE_LIMIT_LOGIN_REQUESTS": count,
+                        },
+                    },
+                    "frontend": {"image": value["images"]["frontend"]},
+                },
+            }
+            with (
+                self.subTest(proxy=proxy, count=count),
+                patch.object(controller, "protected"),
+                patch.object(
+                    controller.Commands, "run", side_effect=["", json.dumps(resolved)]
+                ) as run,
+            ):
+                with self.assertRaisesRegex(ValueError, message):
+                    controller.Commands("staging", value).apply(value)
+                self.assertEqual(run.call_count, 2)
+                for call in run.call_args_list:
+                    self.assertNotIn("pull", call.args[1])
+                    self.assertNotIn("up", call.args[1])
+
+    def test_unprotected_env_file_blocks_all_docker_commands(self):
+        with (
+            patch.object(
+                controller, "protected", side_effect=ValueError("unsafe permissions")
+            ),
+            patch.object(controller.Commands, "run") as run,
+        ):
+            with self.assertRaisesRegex(ValueError, "unsafe permissions"):
+                controller.Commands("staging", manifest()).apply(manifest())
+            run.assert_not_called()
+
+    def test_busy_host_lock_blocks_deployment(self):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.object(
+                controller, "BASE", Path(controller.__file__).resolve().parents[1]
+            ),
+            patch.object(controller, "STATE") as state,
+            patch.object(controller.os, "geteuid", return_value=0),
+            patch.object(controller.sys, "argv", ["controller.py", "staging"]),
+            patch.dict(os.environ, {"SSM_Manifest": "e30="}),
+            patch.object(controller, "protected"),
+            patch.object(
+                controller, "decode_manifest_parameter", return_value=manifest()
+            ),
+            patch.object(
+                controller.fcntl, "flock", side_effect=BlockingIOError
+            ) as lock,
+            patch.object(controller, "deploy") as deploy,
+        ):
+            state.is_dir.return_value = True
+            state.stat.return_value = types.SimpleNamespace(st_uid=0, st_mode=0o700)
+            state.__truediv__.return_value = Path(tmp) / "staging.lock"
+            with self.assertRaisesRegex(ValueError, "deployment already running"):
+                controller.main()
+            self.assertEqual(
+                lock.call_args.args[1],
+                controller.fcntl.LOCK_EX | controller.fcntl.LOCK_NB,
+            )
+            deploy.assert_not_called()
+
+    def test_incompatible_installed_bundle_blocks_service_updates(self):
+        with (
+            patch.object(controller, "bundle_hashes", return_value={}),
+            patch.object(controller.Commands, "apply") as apply,
+        ):
+            with self.assertRaisesRegex(ValueError, "operator update required"):
+                controller.deploy("staging", manifest())
+            apply.assert_not_called()
 
     def test_failed_update_never_marks_release_successful(self):
         commands = types.SimpleNamespace(

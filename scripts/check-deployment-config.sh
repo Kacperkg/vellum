@@ -5,7 +5,7 @@ set -euo pipefail
 export COMPOSE_PROJECT_NAME=vellum-config-check APP_ORIGIN=https://example.invalid
 export IMAGE_PREFIX=vellum IMAGE_TAG=0123456789012345678901234567890123456789
 export DB_NAME=vellum_test DB_USER=vellum_test DB_PASSWORD=synthetic-test-only
-export JWT_SECRET=synthetic-config-validation-only TRUSTED_PROXY_CIDRS=172.30.0.2/32
+export JWT_SECRET=synthetic-config-validation-only TRUSTED_PROXY_CIDRS=172.18.255.254/32
 export VELLUM_BACKEND_IMAGE=ghcr.io/kacperkg/vellum-backend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 export VELLUM_FRONTEND_IMAGE=ghcr.io/kacperkg/vellum-frontend@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
