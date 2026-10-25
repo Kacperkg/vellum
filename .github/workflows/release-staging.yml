@@ -1,4 +1,4 @@
-# INACTIVE: rename only after the operator setup and human review in deploy/CI-CD.md.
+# Staging only; remains inert until the operator sets VELLUM_CD_ENABLED=true.
 name: Release staging
 
 on:
@@ -14,14 +14,20 @@ concurrency:
 
 jobs:
   checks:
-    if: vars.VELLUM_CD_ENABLED == 'true'
+    if: >-
+      vars.VELLUM_CD_ENABLED == 'true' && github.event_name == 'push' &&
+      github.repository == 'Kacperkg/vellum' &&
+      github.ref == 'refs/heads/staging' && github.ref_protected
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
 
   publish-and-deploy:
     needs: checks
-    if: vars.VELLUM_CD_ENABLED == 'true' && github.ref == 'refs/heads/staging'
+    if: >-
+      vars.VELLUM_CD_ENABLED == 'true' && github.event_name == 'push' &&
+      github.repository == 'Kacperkg/vellum' &&
+      github.ref == 'refs/heads/staging' && github.ref_protected
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     environment: staging
@@ -32,6 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1

@@ -5,12 +5,59 @@ set -euo pipefail
 export COMPOSE_PROJECT_NAME=vellum-config-check APP_ORIGIN=https://example.invalid
 export IMAGE_PREFIX=vellum IMAGE_TAG=0123456789012345678901234567890123456789
 export DB_NAME=vellum_test DB_USER=vellum_test DB_PASSWORD=synthetic-test-only
-export JWT_SECRET=synthetic-config-validation-only TRUSTED_PROXY_CIDRS=172.30.0.2/32
+export JWT_SECRET=synthetic-config-validation-only TRUSTED_PROXY_CIDRS=172.18.255.254/32
 export VELLUM_BACKEND_IMAGE=ghcr.io/kacperkg/vellum-backend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 export VELLUM_FRONTEND_IMAGE=ghcr.io/kacperkg/vellum-frontend@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 docker compose -f deploy/compose.yml config --quiet
 docker compose -f deploy/compose.yml -f deploy/compose.registry.yml config --quiet
+python3 - <<'PY'
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+# Relocation must preserve the entire model. Only synthetic values are used;
+# remove exported Compose/application settings so --env-file is actually tested.
+base = Path("deploy/compose.yml").resolve()
+clean_env = {
+    key: os.environ[key]
+    for key in ("PATH", "HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG")
+    if key in os.environ
+}
+keys = (
+    "IMAGE_PREFIX", "IMAGE_TAG", "DB_NAME", "DB_USER", "DB_PASSWORD",
+    "JWT_SECRET", "TRUSTED_PROXY_CIDRS", "VELLUM_BACKEND_IMAGE",
+    "VELLUM_FRONTEND_IMAGE",
+)
+with tempfile.TemporaryDirectory() as temporary:
+    checkout = Path(temporary) / "checkout/deploy"
+    managed = Path(temporary) / "etc/vellum-cd"
+    for directory in (checkout, managed):
+        directory.mkdir(parents=True)
+    for environment in ("staging", "production"):
+        project = "vellum-" + environment
+        values = {key: os.environ[key] for key in keys}
+        values.update(COMPOSE_PROJECT_NAME=project, APP_ORIGIN="https://example.invalid")
+        data = "".join(f"{key}={value}\n" for key, value in values.items())
+        models = []
+        for directory in (checkout, managed):
+            path = directory / (environment + ".env")
+            path.write_text(data)
+            path.chmod(0o600)
+            result = subprocess.run(
+                ["docker", "compose", "--project-name", project, "--env-file", str(path),
+                 "-f", str(base), "-f", str(base.with_name("compose.registry.yml")),
+                 "config", "--format", "json"],
+                env=clean_env, capture_output=True, text=True, check=True,
+            )
+            models.append(json.loads(result.stdout))
+        assert models[0] == models[1], "env-file relocation changes Compose configuration"
+        assert models[1]["name"] == project
+        assert models[1]["volumes"]["postgres_data"]["name"] == project + "_postgres_data"
+print("Synthetic env-file relocation preserves both Compose projects and configurations.")
+PY
 docker run --rm --network none \
   --mount "type=bind,src=$PWD/deploy/Caddyfile.example,dst=/etc/caddy/Caddyfile,readonly" \
   caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
