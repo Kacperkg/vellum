@@ -27,6 +27,13 @@ explain where money goes and how much remains available.
 - **User access and preferences:** register, log in, refresh sessions, log out,
   and save display preferences across desktop and mobile layouts.
 
+Before entering the workspace, users must create at least one bank account in
+Vellum. Setup resumes after refreshing or signing in again until an account has
+been saved. Existing users with no accounts, including users who delete their
+last account, also return to setup. If the account check fails, the workspace
+stays hidden while the user retries. Accounts are manual tracking records and
+do not require bank credentials.
+
 Vellum is a manual tracker. Frequency labels do not schedule payments or generate
 future ledger entries. Bank synchronization, opening balances, and currency
 conversion are not implemented. Budgets are current category limits rather than
