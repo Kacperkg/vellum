@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"github.com/google/uuid"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -100,4 +102,8 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+func (h *AuthHandler) ValidateAuthVersion(ctx context.Context, id uuid.UUID, version int64) bool {
+	return h.userService.ValidateAuthVersion(ctx, id, version)
 }

@@ -32,6 +32,7 @@ func Migrate(db *gorm.DB) error {
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.RefreshToken{},
+		&models.PasswordResetToken{},
 		&models.UserSettings{},
 		&models.Account{},
 		&models.Category{},

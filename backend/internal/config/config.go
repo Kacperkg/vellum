@@ -16,9 +16,12 @@ type RateLimit struct {
 }
 
 type Config struct {
-	Port               string
-	BindHost           string
-	CORSAllowedOrigins []string
+	PasswordReset           PasswordReset
+	ForgotPasswordRateLimit RateLimit
+	ResetPasswordRateLimit  RateLimit
+	Port                    string
+	BindHost                string
+	CORSAllowedOrigins      []string
 
 	DBHost     string
 	DBPort     string
@@ -45,7 +48,14 @@ func Load() *Config {
 		log.Println("No .env file found")
 	}
 
+	reset, err := loadPasswordReset()
+	if err != nil {
+		log.Fatal(err)
+	}
 	return &Config{
+		PasswordReset:               reset,
+		ForgotPasswordRateLimit:     rateLimit("FORGOT_PASSWORD", 3, time.Hour),
+		ResetPasswordRateLimit:      rateLimit("RESET_PASSWORD", 10, time.Minute),
 		Port:                        required("PORT"),
 		BindHost:                    os.Getenv("BIND_HOST"),
 		CORSAllowedOrigins:          corsOrigins(os.Getenv("CORS_ALLOWED_ORIGINS")),

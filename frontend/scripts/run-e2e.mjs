@@ -172,6 +172,8 @@ try {
         JWT_REFRESH_EXPIRY: "1h",
         CORS_ALLOWED_ORIGINS: "http://localhost:15173",
         GIN_MODE: "release",
+        // Never inherit real SES delivery settings into browser tests.
+        PASSWORD_RESET_EMAIL_MODE: "disabled",
       },
     },
     "api",

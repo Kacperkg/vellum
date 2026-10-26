@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/kacperkg/vellum/internal/config"
 	"github.com/kacperkg/vellum/internal/database"
+	"github.com/kacperkg/vellum/internal/email"
 	"github.com/kacperkg/vellum/internal/handlers"
 	"github.com/kacperkg/vellum/internal/repository"
 	"github.com/kacperkg/vellum/internal/routes"
@@ -55,16 +57,32 @@ func main() {
 	transactionSvc := services.NewTransactionService(transactionRepo, accountRepo, categoryRepo)
 	transferSvc := services.NewTransferService(transferRepo, accountRepo)
 
+	var sender services.PasswordResetSender
+	if cfg.PasswordReset.Mode == "ses" {
+		ctx, cancel := context.WithTimeout(context.Background(), cfg.PasswordReset.SendTimeout)
+		sesSender, err := email.NewAWSSESSender(ctx, cfg.PasswordReset.Region, cfg.PasswordReset.FromAddress, cfg.PasswordReset.SendTimeout)
+		cancel()
+		if err != nil {
+			log.Fatal("failed to initialize password recovery sender")
+		}
+		sender = sesSender
+	}
+	resetSvc, err := services.NewPasswordResetService(repository.NewPasswordResetRepository(db), sender, cfg.PasswordReset)
+	if err != nil {
+		log.Fatalf("invalid password recovery configuration: %v", err)
+	}
+	defer resetSvc.Close()
 	// Handlers
 	handlerSet := routes.HandlerSet{
-		Auth:         handlers.NewAuthHandler(userSvc),
-		Accounts:     handlers.NewAccountHandler(accountSvc),
-		Categories:   handlers.NewCategoryHandler(categorySvc),
-		Budgets:      handlers.NewBudgetHandler(budgetSvc),
-		Goals:        handlers.NewGoalHandler(goalSvc),
-		Transactions: handlers.NewTransactionHandler(transactionSvc),
-		Transfers:    handlers.NewTransferHandler(transferSvc),
-		Settings:     handlers.NewUserSettingsHandler(userSettingsSvc),
+		PasswordReset: handlers.NewPasswordResetHandler(resetSvc),
+		Auth:          handlers.NewAuthHandler(userSvc),
+		Accounts:      handlers.NewAccountHandler(accountSvc),
+		Categories:    handlers.NewCategoryHandler(categorySvc),
+		Budgets:       handlers.NewBudgetHandler(budgetSvc),
+		Goals:         handlers.NewGoalHandler(goalSvc),
+		Transactions:  handlers.NewTransactionHandler(transactionSvc),
+		Transfers:     handlers.NewTransferHandler(transferSvc),
+		Settings:      handlers.NewUserSettingsHandler(userSettingsSvc),
 	}
 
 	router, err := routes.NewRouter(cfg, handlerSet)

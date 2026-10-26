@@ -282,6 +282,10 @@ vellum_compose --project-name vellum-staging --env-file /etc/vellum-cd/staging.e
 
 The explicit `--no-build` prevents rebuilding registry artifacts on EC2.
 
+## Password recovery
+
+See [AWS SES password recovery](PASSWORD-RESET.md) for the disabled-by-default configuration, migration/session transition, AWS and DNS setup, explicit rollout approvals, monitoring and rollback precautions. [Implementation and validation](PASSWORD-RESET-VALIDATION.md) records the checks and review findings.
+
 ## Reference behavior
 
 - [Compose readiness dependencies](https://docs.docker.com/reference/compose-file/services/#depends_on)
