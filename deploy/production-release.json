@@ -1,5 +1,5 @@
 {
-  "staging_run_id": null,
-  "staging_run_attempt": null,
-  "manifest_sha256": null
+  "staging_run_id": 40587847468,
+  "staging_run_attempt": 1,
+  "manifest_sha256": "5410415dbaaadc7dab0a3c6b011c661ac62974251a3d28662b2994d0053ee709"
 }
