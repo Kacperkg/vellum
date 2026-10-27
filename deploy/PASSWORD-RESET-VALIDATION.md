@@ -37,7 +37,7 @@ All checks below passed against the final implementation. No real SES sends or c
 | Backend/frontend production Dockerfiles, `--platform linux/amd64` | Both built successfully locally; no push/deploy |
 | `bash scripts/check-deployment-config.sh` | Both Compose variants, environment-file relocation, Caddy syntax and live local routing/header fixture passed |
 | `bash scripts/check-docker-context.sh` | Both synthetic secret-exclusion contexts passed |
-| `python3 -m unittest discover -s deploy/tests -v` | 79 passed: deployment safety, release/provenance, coordination, backup and environment controls |
+| `python3 -m unittest discover -s deploy/tests -v` | 97 passed after the controller follow-up: deployment safety, release/provenance, coordination, backup, environment controls and 18 staging replacement regressions |
 | `python3 -m unittest discover -s scripts/ci/tests -v` | 28 passed |
 | `go test -count=1 ./deploy/tests/ssm_regex_test.go` | Pass |
 | Pinned actionlint 1.7.7 over active workflows and inactive templates | Pass |
@@ -71,3 +71,13 @@ Normal/SQL log exposure was also corrected during review. No confirmed implement
 - Merge/install reviewed Caddy and runtime examples through the existing operator procedure; no live Caddy reload occurred. Coordinate shared-host locks without clearing recovery markers or altering backup timers.
 
 No live AWS resources, IAM, DNS, PostgreSQL data, GitHub repository settings, backup timers, staging/production deployment, or production workflow activation were changed. Only isolated test databases and local containers were used. The feature branch and draft PR are the authorized GitHub changes; merging remains a separate approval.
+
+## Staging controller compatibility follow-up — 27 October 2026
+
+The preceding controller relied on normal Compose stop/recreate and did not explicitly verify every old staging writer was terminated. PR #28 now includes a staging-only stop/inspect/non-forced-remove/empty-inventory/session-drain barrier after existing image verification and before starting the candidate. It then verifies exactly one healthy backend at the requested digest. PostgreSQL/volumes, production replacement, Caddy, provenance, host locks and recovery-marker rules are unchanged; there is no automatic old-image rollback.
+
+The follow-up executed all 97 deployment tests (18 new), 28 CI-selection tests, SSM regex tests, pinned actionlint, Compose/Caddy/routing validation, Docker secret exclusions and diff checks successfully. A separate disposable local Docker/Compose/PostgreSQL 17 experiment exercised real inspect/stop/removal, a stale one-off, singleton health and residual-session drain; the database container and separate-project sentinel remained running. Fixtures were removed afterward. Startup/migration/timeout/cancellation faults are covered deterministically by mocks plus real local coordination-marker tests; no live migration failure was induced. No application source changed, so previously recorded application builds/tests were not unnecessarily repeated.
+
+Three independent deployment reliability, database and application security reviewers examined the controller/failure tests and rollout documentation. They found no remaining confirmed blocker after correcting receipt-persistence wording: pre-receipt failures preserve old receipts, but a failure during sequential receipt writes may leave partial pointer updates while the recovery marker remains. Reconcile actual runtime and every receipt before approved recovery.
+
+The exact installation and controlled staging sequence is in [STAGING-AUTH-ROLLOUT.md](STAGING-AUTH-ROLLOUT.md). With CD active, install/verify the matching root-owned six-file bundle before merging; old installed tooling fails the unchanged hash gate against the new release. No live installation was inspected or performed. Merge/deployment remain separate approvals.
