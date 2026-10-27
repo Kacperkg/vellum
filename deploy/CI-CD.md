@@ -327,17 +327,20 @@ Do not dispatch on a feature branch or attempt to bypass missing evidence.
 
 ## Failure handling, rollback and manual fallback
 
-### Password recovery staging transition
+### Password recovery staging and production transition
 
 [STAGING-AUTH-ROLLOUT.md](STAGING-AUTH-ROLLOUT.md) is the controlled procedure for
 PR #28. After existing image/bundle/proxy/PostgreSQL validation and both digest
-pulls/inspections, staging explicitly stops every labelled backend instance,
+pulls/inspections, each environment explicitly stops every backend instance with
+its exact Compose project/service labels,
 verifies termination, removes only those stopped containers without volumes,
-requires an empty backend inventory and drained staging DB client sessions,
+requires an empty backend inventory and drained target DB client sessions,
 then starts exactly one backend with the existing immutable Compose/health flags.
 A final singleton/health/digest check precedes the unchanged Caddy smoke/receipts.
-This barrier applies with SES disabled. Production application replacement is
-unchanged; do not treat this staging fix as production-readiness approval.
+This barrier applies with SES disabled. Production uses the same barrier while
+retaining its verified-staging provenance and release-specific approval. Follow
+the runbook's production backup, installation and recovery prerequisites. This
+change does not enable the production workflow or authorize deployment.
 
 The six-file installed bundle changes. Approve and install its exact reviewed
 bytes under a drained host-wide maintenance freeze before the merge-triggered
