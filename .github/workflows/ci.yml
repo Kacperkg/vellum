@@ -251,15 +251,17 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+          key: playwright-csp-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+          # Reuse Chromium from the old cache; save the complete set under the new key.
+          restore-keys: playwright-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
       - name: Prefer HTTPS Ubuntu mirrors for Playwright dependencies
         if: steps.scope.outputs.run == 'true'
         working-directory: .
         run: bash scripts/ci/prepare-playwright-apt.sh
-      - name: Install Chromium and complete operating-system dependencies
+      - name: Install CSP browsers and complete operating-system dependencies
         if: steps.scope.outputs.run == 'true'
         run: |
-          pnpm exec playwright install --with-deps chromium
+          pnpm exec playwright install --with-deps chromium firefox webkit
           package_audit=$(dpkg --audit)
           if [ -n "$package_audit" ]; then
             printf '%s\n' "$package_audit" >&2
@@ -267,7 +269,7 @@ jobs:
           fi
       - run: docker pull postgres:17
         if: steps.scope.outputs.run == 'true'
-      - run: pnpm test:e2e
+      - run: pnpm test:e2e:csp
         if: steps.scope.outputs.run == 'true'
       - name: Retain browser failure diagnostics
         if: failure() && steps.scope.outputs.run == 'true'

@@ -9,6 +9,7 @@ import {
   openPage,
   addAccount,
   currentDate,
+  signOut,
 } from "./fixtures";
 
 test("registration, logout, login and protected-route redirects", async ({
@@ -48,7 +49,7 @@ test("registration, logout, login and protected-route redirects", async ({
     ).toBeVisible();
     await expect(page.locator(".app-frame")).toHaveCount(0);
   }
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -65,7 +66,7 @@ test("registration, logout, login and protected-route redirects", async ({
   await expect(
     page.getByRole("heading", { name: /Good .*Alex/ }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await expect(page).toHaveURL(/\/login$/);
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
