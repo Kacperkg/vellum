@@ -234,10 +234,9 @@ class Commands:
         )
         return result.stdout
 
-    def staging_backend_ids(self):
-        require(self.environment == "staging", "backend barrier is staging-only")
+    def backend_ids(self):
         output = self.run(
-            "Staging backend inventory",
+            f"{self.environment} backend inventory",
             ["docker", "ps", "--all", "--no-trunc", "--filter",
              f"label=com.docker.compose.project={self.project}", "--filter",
              "label=com.docker.compose.service=backend", "--format", "{{.ID}}"],
@@ -246,10 +245,10 @@ class Commands:
         ids = output.split()
         require(len(ids) <= 64 and len(ids) == len(set(ids))
                 and all(re.fullmatch(r"[0-9a-f]{64}", item) for item in ids),
-                "invalid staging backend inventory; operator recovery required")
+                f"invalid {self.environment} backend inventory; operator recovery required")
         return sorted(ids)
 
-    def inspect_staging_backend(self, container):
+    def inspect_backend(self, container):
         # Inspect only identity/state, never environment variables or app logs.
         template = ('{"id":{{json .Id}},"project":'
                     '{{json (index .Config.Labels "com.docker.compose.project")}},'
@@ -257,7 +256,7 @@ class Commands:
                     '"oneoff":{{json (index .Config.Labels "com.docker.compose.oneoff")}},'
                     '"image":{{json .Config.Image}},"state":{{json .State}}}')
         info = json.loads(self.run(
-            "Staging backend state",
+            f"{self.environment} backend state",
             ["docker", "container", "inspect", "--format", template, container],
             timeout=15,
         ))
@@ -265,41 +264,40 @@ class Commands:
                 and info.get("project") == self.project
                 and info.get("service") == "backend"
                 and isinstance(info.get("state"), dict),
-                "unexpected staging backend identity; operator recovery required")
+                f"unexpected {self.environment} backend identity; operator recovery required")
         return info
 
-    def stop_staging_backend(self):
+    def stop_backend(self):
         # All old instances, including one-offs and stopped/restarting replicas,
         # must lose their restart path before AutoMigrate/new auth code runs.
-        ids = self.staging_backend_ids()
+        ids = self.backend_ids()
         for container in ids:
-            info = self.inspect_staging_backend(container)
+            info = self.inspect_backend(container)
             state = info["state"]
             require(state.get("Status") in ("created", "running", "restarting", "exited")
                     and state.get("Paused") is False and state.get("Dead") is False,
-                    "ambiguous staging backend state; operator recovery required")
+                    f"ambiguous {self.environment} backend state; operator recovery required")
         if ids:
-            self.run("Staging backend stop",
+            self.run(f"{self.environment} backend stop",
                      ["docker", "container", "stop", "--time", "30", *ids], timeout=60)
             for container in ids:
-                state = self.inspect_staging_backend(container)["state"]
+                state = self.inspect_backend(container)["state"]
                 require(state.get("Status") in ("created", "exited")
                         and state.get("Running") is False
                         and state.get("Restarting") is False
                         and state.get("Paused") is False and state.get("Dead") is False
                         and state.get("Pid") == 0,
-                        "old staging backend has not terminated; operator recovery required")
+                        f"old {self.environment} backend has not terminated; operator recovery required")
             # No --force and no --volumes: Engine must refuse a running target.
             # Images, receipts, PostgreSQL and every volume remain intact.
-            self.run("Stopped staging backend removal",
+            self.run(f"Stopped {self.environment} backend removal",
                      ["docker", "container", "rm", *ids], timeout=30)
-        require(not self.staging_backend_ids(),
-                "staging backend inventory changed; operator recovery required")
+        require(not self.backend_ids(),
+                f"{self.environment} backend inventory changed; operator recovery required")
 
-    def wait_staging_database(self):
-        require(self.environment == "staging", "database barrier is staging-only")
+    def wait_database(self):
         # An already submitted PostgreSQL statement can outlive its client.
-        # Count only this staging database's client sessions; never kill sessions
+        # Count only the target database's client sessions; never kill sessions
         # or inspect query text. Maintenance clients must also have disconnected.
         query = ("SELECT count(*) FROM pg_stat_activity "
                  "WHERE datname = current_database() AND pid <> pg_backend_pid() "
@@ -309,22 +307,22 @@ class Commands:
         deadline = time.monotonic() + 15
         while True:
             result = self.run(
-                "Staging database session drain",
+                f"{self.environment} database session drain",
                 self.compose + ["exec", "-T", "postgres", "sh", "-ec", script,
-                                "staging-session-check", query], timeout=5,
+                                f"{self.environment}-session-check", query], timeout=5,
             ).strip()
             require(re.fullmatch(r"0|[1-9][0-9]*", result),
-                    "invalid staging database session state")
+                    f"invalid {self.environment} database session state")
             if result == "0":
                 return
             require(time.monotonic() < deadline,
-                    "staging database sessions remain; operator recovery required")
+                    f"{self.environment} database sessions remain; operator recovery required")
             time.sleep(0.25)
 
-    def verify_staging_backend(self, manifest):
-        ids = self.staging_backend_ids()
-        require(len(ids) == 1, "staging requires one backend; operator recovery required")
-        info = self.inspect_staging_backend(ids[0])
+    def verify_backend(self, manifest):
+        ids = self.backend_ids()
+        require(len(ids) == 1, f"{self.environment} requires one backend; operator recovery required")
+        info = self.inspect_backend(ids[0])
         state = info["state"]
         require(info.get("oneoff") == "False"
                 and info.get("image") == manifest["images"]["backend"]
@@ -332,7 +330,7 @@ class Commands:
                 and state.get("Restarting") is False and state.get("Paused") is False
                 and state.get("Dead") is False and type(state.get("Pid")) is int
                 and state["Pid"] > 0 and state.get("Health", {}).get("Status") == "healthy",
-                "unexpected staging backend after startup; operator recovery required")
+                f"unexpected {self.environment} backend after startup; operator recovery required")
 
     def apply(self, manifest):
         validate_environment_file(self.environment)
@@ -418,13 +416,12 @@ class Commands:
                 == manifest["source_sha"],
                 "image revision label mismatch",
             )
-        if self.environment == "staging":
-            self.stop_staging_backend()
-            self.wait_staging_database()
+        self.stop_backend()
+        self.wait_database()
         self.run(
             "Application update",
             self.compose
-            + (["up", "--scale", "backend=1"] if self.environment == "staging" else ["up"])
+            + ["up", "--scale", "backend=1"]
             + [
                 "-d",
                 "--no-deps",
@@ -439,8 +436,7 @@ class Commands:
             ],
             timeout=210,
         )
-        if self.environment == "staging":
-            self.verify_staging_backend(manifest)
+        self.verify_backend(manifest)
         smoke(
             ORIGINS[self.environment],
             staging=self.environment == "staging",
