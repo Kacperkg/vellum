@@ -14,8 +14,10 @@ import { Route as AccountsRouteImport } from './routes/accounts'
 import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as BudgetsRouteImport } from './routes/budgets'
 import { Route as ComponentsRouteImport } from './routes/components'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as GoalsRouteImport } from './routes/goals'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SubscriptionsRouteImport } from './routes/subscriptions'
 import { Route as TransactionsRouteImport } from './routes/transactions'
@@ -45,6 +47,11 @@ const ComponentsRoute = ComponentsRouteImport.update({
   path: '/components',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GoalsRoute = GoalsRouteImport.update({
   id: '/goals',
   path: '/goals',
@@ -53,6 +60,11 @@ const GoalsRoute = GoalsRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -77,8 +89,10 @@ export interface FileRoutesByFullPath {
   '/analytics': typeof AnalyticsRoute
   '/budgets': typeof BudgetsRoute
   '/components': typeof ComponentsRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/goals': typeof GoalsRoute
   '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/subscriptions': typeof SubscriptionsRoute
   '/transactions': typeof TransactionsRoute
@@ -89,8 +103,10 @@ export interface FileRoutesByTo {
   '/analytics': typeof AnalyticsRoute
   '/budgets': typeof BudgetsRoute
   '/components': typeof ComponentsRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/goals': typeof GoalsRoute
   '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/subscriptions': typeof SubscriptionsRoute
   '/transactions': typeof TransactionsRoute
@@ -102,8 +118,10 @@ export interface FileRoutesById {
   '/analytics': typeof AnalyticsRoute
   '/budgets': typeof BudgetsRoute
   '/components': typeof ComponentsRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/goals': typeof GoalsRoute
   '/login': typeof LoginRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/subscriptions': typeof SubscriptionsRoute
   '/transactions': typeof TransactionsRoute
@@ -116,8 +134,10 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/budgets'
     | '/components'
+    | '/forgot-password'
     | '/goals'
     | '/login'
+    | '/reset-password'
     | '/settings'
     | '/subscriptions'
     | '/transactions'
@@ -128,8 +148,10 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/budgets'
     | '/components'
+    | '/forgot-password'
     | '/goals'
     | '/login'
+    | '/reset-password'
     | '/settings'
     | '/subscriptions'
     | '/transactions'
@@ -140,8 +162,10 @@ export interface FileRouteTypes {
     | '/analytics'
     | '/budgets'
     | '/components'
+    | '/forgot-password'
     | '/goals'
     | '/login'
+    | '/reset-password'
     | '/settings'
     | '/subscriptions'
     | '/transactions'
@@ -153,8 +177,10 @@ export interface RootRouteChildren {
   AnalyticsRoute: typeof AnalyticsRoute
   BudgetsRoute: typeof BudgetsRoute
   ComponentsRoute: typeof ComponentsRoute
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
   GoalsRoute: typeof GoalsRoute
   LoginRoute: typeof LoginRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
   SubscriptionsRoute: typeof SubscriptionsRoute
   TransactionsRoute: typeof TransactionsRoute
@@ -197,6 +223,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ComponentsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/goals': {
       id: '/goals'
       path: '/goals'
@@ -209,6 +242,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -241,8 +281,10 @@ const rootRouteChildren: RootRouteChildren = {
   AnalyticsRoute: AnalyticsRoute,
   BudgetsRoute: BudgetsRoute,
   ComponentsRoute: ComponentsRoute,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   GoalsRoute: GoalsRoute,
   LoginRoute: LoginRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
   SubscriptionsRoute: SubscriptionsRoute,
   TransactionsRoute: TransactionsRoute,

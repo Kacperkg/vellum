@@ -1,6 +1,7 @@
 package routes_test
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -281,4 +282,8 @@ func (r *fakeRefreshTokenRepository) RevokeByHash(hash string, now time.Time) er
 		r.Token.RevokedAt = &now
 	}
 	return nil
+}
+
+func (r *fakeUserRepository) FindByIDContext(context.Context, uuid.UUID) (*models.User, error) {
+	return r.User, r.Err
 }

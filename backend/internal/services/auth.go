@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -8,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/auth"
@@ -42,6 +44,9 @@ func NewUserService(
 }
 
 func (s *UserService) Register(req RegisterRequest) (*AuthResponse, error) {
+	if utf8.RuneCountInString(req.Password) < 8 || len(req.Password) > 72 {
+		return nil, invalid("password must contain at least 8 characters and at most 72 UTF-8 bytes")
+	}
 	// Check if email already exists
 	user, err := s.userRepository.FindByEmail(req.Email)
 	if err != nil {
@@ -142,7 +147,7 @@ func (s *UserService) issueTokenPair(
 	user *models.User,
 	persist func(*models.RefreshToken) error,
 ) (*AuthResponse, error) {
-	accessToken, err := auth.GenerateToken(user.ID, s.jwtSecret, s.jwtExpiry)
+	accessToken, err := auth.GenerateToken(user.ID, s.jwtSecret, s.jwtExpiry, user.AuthVersion)
 	if err != nil {
 		return nil, fmt.Errorf("generate access token: %w", err)
 	}
@@ -153,9 +158,11 @@ func (s *UserService) issueTokenPair(
 	}
 
 	refreshToken := &models.RefreshToken{
-		UserID:    user.ID,
-		TokenHash: hashRefreshToken(rawRefreshToken),
-		ExpiresAt: time.Now().Add(s.refreshExpiry),
+		UserID:               user.ID,
+		AuthVersion:          user.AuthVersion,
+		PasswordHashSnapshot: user.PasswordHash,
+		TokenHash:            hashRefreshToken(rawRefreshToken),
+		ExpiresAt:            time.Now().Add(s.refreshExpiry),
 	}
 	if err := persist(refreshToken); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -190,4 +197,13 @@ func generateRefreshToken() (string, error) {
 func hashRefreshToken(rawToken string) string {
 	hash := sha256.Sum256([]byte(rawToken))
 	return hex.EncodeToString(hash[:])
+}
+
+// ValidateAuthVersion preserves legacy JWTs (missing version means zero) only
+// until the first reset. Database errors fail closed.
+func (s *UserService) ValidateAuthVersion(ctx context.Context, userID uuid.UUID, version int64) bool {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	user, err := s.userRepository.FindByIDContext(ctx, userID)
+	return err == nil && user != nil && version >= 0 && user.AuthVersion == version
 }

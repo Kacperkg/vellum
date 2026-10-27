@@ -200,6 +200,16 @@ are published; Dockerfile `EXPOSE` is metadata and does not open an EC2 port.
 
 ## 6. Updates, rollback and operations
 
+**Password-recovery authentication transition:** the generic Compose examples below
+are not a staging rollout/rollback procedure for PR #28. Follow
+[STAGING-AUTH-ROLLOUT.md](STAGING-AUTH-ROLLOUT.md) and install the matching controller
+bundle first. Staging must stop/verify/remove all old backend instances and drain
+its database client sessions before starting the new version, even with SES off.
+Schema compatibility alone does not make a version-unaware authentication image
+safe to restore: it can resurrect revoked sessions. Do not downgrade the controller,
+rewrite receipt hashes, or start old backend code to recover a failed migration.
+
+
 For controller receipts predating the `/etc` migration, read the rollback
 compatibility section in ENVIRONMENT-MIGRATION.md first; do not replay old
 controllers or rewrite manifest hashes to bypass the bundle check.
@@ -213,9 +223,10 @@ replaced; this is a single-instance deployment.
 The current server always runs GORM AutoMigrate, including on rollback. It has
 no migration-only command, migration lock, down migration or schema history.
 Run one backend replica per project. Review schema changes before release and
-prefer backward-compatible changes. Reverting `IMAGE_TAG` is safe only if the
-older binary supports the new schema; otherwise restore the pre-upgrade backup
-and run the matching old image. Do not run a second backend as a migration job.
+prefer backward-compatible changes. Reverting `IMAGE_TAG` requires both schema
+compatibility and preserved authentication/session-revocation semantics. For an
+older change unrelated to authentication, any required backup restore must follow
+the approved recovery procedure with explicit data-loss review. Do not run a second backend as a migration job.
 
 ```sh
 vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml logs --tail=100 backend
@@ -281,6 +292,10 @@ vellum_compose --project-name vellum-staging --env-file /etc/vellum-cd/staging.e
 ```
 
 The explicit `--no-build` prevents rebuilding registry artifacts on EC2.
+
+## Password recovery
+
+See [AWS SES password recovery](PASSWORD-RESET.md) for the disabled-by-default configuration, migration/session transition, AWS and DNS setup, explicit rollout approvals, monitoring and rollback precautions. [Implementation and validation](PASSWORD-RESET-VALIDATION.md) records the checks and review findings.
 
 ## Reference behavior
 

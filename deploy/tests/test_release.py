@@ -399,6 +399,8 @@ class ControllerTests(unittest.TestCase):
     def test_applies_only_targeted_app_services_after_both_pulls(self):
         value = manifest()
         calls = []
+        runtime = {"stopped": False, "removed": False, "started": False}
+        old_id, new_id = "1" * 64, "2" * 64
         resolved = {
             "name": "vellum-staging",
             "services": {
@@ -422,7 +424,31 @@ class ControllerTests(unittest.TestCase):
             if "config" in args and "json" in args:
                 stdout = json.dumps(resolved)
             elif args[:2] == ["docker", "ps"]:
-                stdout = "abc123\n"
+                if "label=com.docker.compose.service=backend" in args:
+                    stdout = new_id if runtime["started"] else ("" if runtime["removed"] else old_id)
+                else:
+                    stdout = "abc123\n"
+            elif args[:3] == ["docker", "container", "stop"]:
+                runtime["stopped"] = True
+                stdout = ""
+            elif args[:3] == ["docker", "container", "rm"]:
+                runtime["removed"] = True
+                stdout = ""
+            elif args[:3] == ["docker", "container", "inspect"]:
+                running = runtime["started"] or not runtime["stopped"]
+                stdout = json.dumps({
+                    "id": args[-1], "project": "vellum-staging", "service": "backend",
+                    "oneoff": "False", "image": value["images"]["backend"],
+                    "state": {"Status": "running" if running else "exited",
+                              "Running": running, "Restarting": False,
+                              "Paused": False, "Dead": False, "Pid": 123 if running else 0,
+                              "Health": {"Status": "healthy"}},
+                })
+            elif "staging-session-check" in args:
+                stdout = "0\n"
+            elif "up" in args:
+                runtime["started"] = True
+                stdout = ""
             elif "inspect" in args:
                 stdout = json.dumps(
                     {
@@ -445,13 +471,18 @@ class ControllerTests(unittest.TestCase):
             patch.object(controller, "smoke") as verify,
         ):
             controller.Commands("staging", value).apply(value)
-        self.assertEqual(protect.call_count, 6)
+        self.assertEqual(protect.call_count, 7)
         self.assertTrue(all(call.args == ("staging",) for call in protect.call_args_list))
         pull = next(
             i for i, args in enumerate(calls) if "pull" in args and "up" not in args
         )
         update = next(i for i, args in enumerate(calls) if "up" in args)
         self.assertLess(pull, update)
+        stop = next(i for i, args in enumerate(calls) if args[:3] == ["docker", "container", "stop"])
+        remove = next(i for i, args in enumerate(calls) if args[:3] == ["docker", "container", "rm"])
+        self.assertLess(pull, stop)
+        self.assertLess(stop, remove)
+        self.assertLess(remove, update)
         self.assertEqual(calls[pull][-2:], ["backend", "frontend"])
         self.assertEqual(calls[update][-2:], ["backend", "frontend"])
         self.assertIn("--no-deps", calls[update])

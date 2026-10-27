@@ -61,3 +61,6 @@ PY
 docker run --rm --network none \
   --mount "type=bind,src=$PWD/deploy/Caddyfile.example,dst=/etc/caddy/Caddyfile,readonly" \
   caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+# Exercise POST/OPTIONS versus SPA GET dispatch using loopback-only fixtures.
+python3 scripts/check-recovery-routing.py

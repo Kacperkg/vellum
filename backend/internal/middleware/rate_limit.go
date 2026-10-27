@@ -29,10 +29,12 @@ type RateLimit struct {
 type AuthEndpoint string
 
 const (
-	LoginEndpoint    AuthEndpoint = "login"
-	RegisterEndpoint AuthEndpoint = "register"
-	RefreshEndpoint  AuthEndpoint = "refresh"
-	LogoutEndpoint   AuthEndpoint = "logout"
+	LoginEndpoint          AuthEndpoint = "login"
+	ForgotPasswordEndpoint AuthEndpoint = "forgot-password"
+	ResetPasswordEndpoint  AuthEndpoint = "reset-password"
+	RegisterEndpoint       AuthEndpoint = "register"
+	RefreshEndpoint        AuthEndpoint = "refresh"
+	LogoutEndpoint         AuthEndpoint = "logout"
 )
 
 type rateEntry struct {
@@ -267,7 +269,7 @@ func requestIdentity(body []byte, endpoint AuthEndpoint) string {
 	var identity string
 	decoder := json.API.NewDecoder(bytes.NewReader(body))
 	switch endpoint {
-	case LoginEndpoint, RegisterEndpoint:
+	case LoginEndpoint, RegisterEndpoint, ForgotPasswordEndpoint:
 		var value struct {
 			Email string `json:"email"`
 		}
@@ -275,6 +277,14 @@ func requestIdentity(body []byte, endpoint AuthEndpoint) string {
 			return ""
 		}
 		identity = strings.ToLower(strings.TrimSpace(value.Email))
+	case ResetPasswordEndpoint:
+		var value struct {
+			Token string `json:"token"`
+		}
+		if decoder.Decode(&value) != nil {
+			return ""
+		}
+		identity = value.Token
 	case RefreshEndpoint, LogoutEndpoint:
 		var value struct {
 			RefreshToken string `json:"refresh_token"`

@@ -18,7 +18,7 @@ import (
 )
 
 func testHandlerSet(userID uuid.UUID) routes.HandlerSet {
-	users := &fakeUserRepository{}
+	users := &fakeUserRepository{User: &models.User{BaseModel: models.BaseModel{ID: userID}}}
 	settings := &fakeUserSettingsRepository{Settings: &models.UserSettings{UserID: userID}}
 	accounts := &fakeAccountRepository{Accounts: []*models.Account{}}
 	categories := &fakeCategoryRepository{Categories: []*models.Category{}}

@@ -327,6 +327,28 @@ Do not dispatch on a feature branch or attempt to bypass missing evidence.
 
 ## Failure handling, rollback and manual fallback
 
+### Password recovery staging transition
+
+[STAGING-AUTH-ROLLOUT.md](STAGING-AUTH-ROLLOUT.md) is the controlled procedure for
+PR #28. After existing image/bundle/proxy/PostgreSQL validation and both digest
+pulls/inspections, staging explicitly stops every labelled backend instance,
+verifies termination, removes only those stopped containers without volumes,
+requires an empty backend inventory and drained staging DB client sessions,
+then starts exactly one backend with the existing immutable Compose/health flags.
+A final singleton/health/digest check precedes the unchanged Caddy smoke/receipts.
+This barrier applies with SES disabled. Production application replacement is
+unchanged; do not treat this staging fix as production-readiness approval.
+
+The six-file installed bundle changes. Approve and install its exact reviewed
+bytes under a drained host-wide maintenance freeze before the merge-triggered
+staging release. Old receipts fail the existing bundle-hash gate. Keep that gate,
+old images/receipts and the host locks/pending marker; never rewrite hashes or
+downgrade the controller. Version-unaware backend rollback is unsafe even when
+its schema still works. Failed startup/migration or cancellation can leave the
+candidate running/restarting with partial DDL; the durable gate requires operator
+inspection and quiescence before any recovery, not automatic image rollback.
+
+
 ### Staging OPTIONS smoke failure
 
 In the pinned Gin v1.12.0 configuration, `HandleMethodNotAllowed` defaults to
@@ -409,7 +431,10 @@ with the receipt as data; the host lock and production gate remain enforced:
 sudo sh -c 'export SSM_Manifest="$(base64 -w0 /var/lib/vellum-cd/production-previous.json)"; exec /usr/bin/python3 -I /usr/local/lib/vellum-cd/cd/controller.py production'
 ```
 
-Image rollback does not undo migrations. If an old binary cannot use the current
+Image rollback does not undo migrations or preserve newer authentication semantics.
+After the password recovery transition, use a reviewed version-aware recovery
+release; the generic legacy-image procedure below is not authorization to bypass
+authentication revocation or the current bundle hash gate. If an old binary cannot use the current
 schema, follow the private database restore procedure, with downtime and explicit
 data-loss review, before starting the matching image. No `down -v`, volume prune
 or automatic database replacement is part of CD.

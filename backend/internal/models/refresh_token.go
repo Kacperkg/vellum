@@ -11,7 +11,10 @@ import (
 type RefreshToken struct {
 	BaseModel
 
-	UserID uuid.UUID `gorm:"type:uuid;not null;index"`
+	UserID      uuid.UUID `gorm:"type:uuid;not null;index"`
+	AuthVersion int64     `gorm:"not null;default:0"`
+	// Snapshot checked under the user lock when a login session is persisted.
+	PasswordHashSnapshot string `gorm:"-" json:"-"`
 
 	TokenHash string     `gorm:"size:64;uniqueIndex;not null"`
 	ExpiresAt time.Time  `gorm:"not null;index"`

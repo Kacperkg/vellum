@@ -7,6 +7,13 @@
 vellum.kacpergajdarski.com {
 	encode zstd gzip
 
+	@recovery path /forgot-password /reset-password
+	header @recovery {
+		Cache-Control "no-store"
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+	}
+
 	@api path /api /api/* /ping
 	handle @api {
 		reverse_proxy vellum-production-backend:8080
@@ -14,7 +21,7 @@ vellum.kacpergajdarski.com {
 
 	@auth {
 		method POST OPTIONS
-		path /register /login /refresh /logout
+		path /register /login /refresh /logout /forgot-password /reset-password
 	}
 	handle @auth {
 		reverse_proxy vellum-production-backend:8080
@@ -29,6 +36,13 @@ vellum.kacpergajdarski.com {
 staging.vellum.kacpergajdarski.com {
 	encode zstd gzip
 
+	@recovery path /forgot-password /reset-password
+	header @recovery {
+		Cache-Control "no-store"
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+	}
+
 	@api path /api /api/* /ping
 	handle @api {
 		reverse_proxy vellum-staging-backend:8080
@@ -36,7 +50,7 @@ staging.vellum.kacpergajdarski.com {
 
 	@auth {
 		method POST OPTIONS
-		path /register /login /refresh /logout
+		path /register /login /refresh /logout /forgot-password /reset-password
 	}
 	handle @auth {
 		reverse_proxy vellum-staging-backend:8080

@@ -7,4 +7,5 @@ type User struct {
 
 	Email        string `gorm:"uniqueIndex;not null"`
 	PasswordHash string `gorm:"not null"`
+	AuthVersion  int64  `gorm:"not null;default:0;check:auth_version >= 0"`
 }

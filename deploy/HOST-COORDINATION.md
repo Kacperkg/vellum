@@ -178,3 +178,24 @@ resuming timers after reboot/crash, verify backend startup/migrations are comple
 application-level migration coordination for autonomous restart paths would be a
 separate change. This fix guarantees exclusion for the managed paths above and
 guarded operator work; it does not claim to serialize every possible schema writer.
+
+## Staging authentication replacement and recovery
+
+For PR #28, follow [STAGING-AUTH-ROLLOUT.md](STAGING-AUTH-ROLLOUT.md). The entire
+stop/termination/removal/session-drain/start/health/smoke/receipt sequence stays
+inside the existing operation context. The lock order, lock inodes, pending
+format and recovery rules are unchanged. Only a successful operation clears the
+pending record. Even if no new container started, a failed stop/removal/drain
+keeps the record and requires review.
+
+After cancellation, do not infer quiescence from a dead controller or unchanged
+receipts. A Docker daemon request or new backend restart can still be executing
+AutoMigrate. Privately inspect all staging backend instances (including one-offs),
+actual digests, startup health and staging DB client sessions/transactions. Drain
+all relevant Docker/SSM work before authorized recovery; stop and remove failed
+candidate writers through a reviewed maintenance operation if needed. Confirm
+that no old restartable container remains before clearing a pending marker under
+the existing approved recovery procedure. Do not clear a marker automatically,
+delete lock files, change PostgreSQL/volumes, restart a version-unaware image,
+downgrade installed tooling or rewrite receipt hashes. Prefer a version-aware
+roll-forward release using the installed reviewed bundle.

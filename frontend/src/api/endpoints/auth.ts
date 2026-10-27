@@ -61,3 +61,16 @@ export async function logout(): Promise<void> {
     await api.post(logoutPath, { refresh_token: token }).catch(() => {});
   }
 }
+
+export async function forgotPassword(email: string): Promise<void> {
+  await api.post("/forgot-password", { email: email.trim() });
+}
+
+export async function resetPassword(
+  token: string,
+  newPassword: string,
+): Promise<void> {
+  await api.post("/reset-password", { token, new_password: newPassword });
+  // The reset revokes all sessions, including a session in this browser.
+  clearAuth();
+}

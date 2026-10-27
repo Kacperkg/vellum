@@ -4,7 +4,7 @@ import { useId, useState, type SubmitEvent } from "react";
 import { login } from "@/api/endpoints/auth";
 import axios from "axios";
 import type { ApiErrorResponse } from "@/api/types";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 
 type SignInFormProps = {
   onRegister: () => void;
@@ -79,15 +79,12 @@ export default function SignInForm({ onRegister }: SignInFormProps) {
         />
       </div>
       <div className="flex w-full justify-end py-2">
-        <Button
-          variant="ghost"
-          className="cursor-pointer pr-0 text-muted-foreground hover:bg-transparent!"
-          size="sm"
-          disabled
-          title="Password recovery is not available yet"
+        <Link
+          to="/forgot-password"
+          className="rounded-sm py-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           Forgot password?
-        </Button>
+        </Link>
       </div>
       <Button size="lg" type="submit" disabled={isSubmitting}>
         {isSubmitting ? "Signing in..." : "Sign in"}

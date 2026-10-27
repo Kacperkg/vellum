@@ -1,14 +1,19 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/auth"
 )
 
-func AuthMiddleware(secret string) gin.HandlerFunc {
+func AuthMiddleware(secret string, validateVersion func(context.Context, uuid.UUID, int64) bool) gin.HandlerFunc {
+	if validateVersion == nil {
+		panic("authentication requires an auth version validator")
+	}
 	return func(c *gin.Context) {
 
 		// Get Authorization header
@@ -36,7 +41,7 @@ func AuthMiddleware(secret string) gin.HandlerFunc {
 
 		// Validate token
 		claims, err := auth.ValidateToken(tokenString, secret)
-		if err != nil {
+		if err != nil || !validateVersion(c.Request.Context(), claims.UserID, claims.AuthVersion) {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "invalid or expired token",
 			})
