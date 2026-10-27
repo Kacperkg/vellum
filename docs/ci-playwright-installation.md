@@ -1,9 +1,17 @@
 # Playwright installation on CI
 
-The browser job still runs `pnpm exec playwright install --with-deps chromium`,
-then requires a clean `dpkg --audit`. Browser binaries remain cached with the
-existing Ubuntu/architecture/lockfile key. Operating-system dependencies are
-installed on every selected browser job.
+The browser job runs
+`pnpm exec playwright install --with-deps chromium firefox webkit`, then requires
+a clean `dpkg --audit`. The local CLI from `pnpm install --frozen-lockfile`
+installs the exact browser revisions required by the locked Playwright package
+for the desktop and mobile CSP projects, in both report-only and enforcing modes.
+
+Browser binaries use a CSP-specific Ubuntu/architecture/lockfile cache key. The
+old Chromium-only key remains an exact restore fallback, so Chromium can be
+reused while the complete browser set is saved under the new key. Installation
+runs on every selected browser job, including cache hits, to fill any missing
+browsers and install all required operating-system dependencies. Other jobs do
+not install browsers.
 
 ## Why the mirror preference exists
 

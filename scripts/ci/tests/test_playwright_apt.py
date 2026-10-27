@@ -157,11 +157,11 @@ print(config.read_text().replace('"15"', '"30"') if os.environ.get('OVERRIDE_TIM
 
     def test_installer_and_package_audit_failures_are_not_masked(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
-        block = workflow.split("      - name: Install Chromium and complete operating-system dependencies\n", 1)[1]
+        block = workflow.split("      - name: Install CSP browsers and complete operating-system dependencies\n", 1)[1]
         code = block.split("        run: |\n", 1)[1].split("      - ", 1)[0]
         code = "\n".join(line[10:] for line in code.splitlines())
-        self.assertIn("pnpm exec playwright install --with-deps chromium", code)
-        self.executable("pnpm", "import os, sys\nassert sys.argv[1:] == ['exec', 'playwright', 'install', '--with-deps', 'chromium']\nsys.exit(int(os.environ.get('INSTALL_EXIT', '0')))\n")
+        self.assertIn("pnpm exec playwright install --with-deps chromium firefox webkit", code)
+        self.executable("pnpm", "import os, sys\nassert sys.argv[1:] == ['exec', 'playwright', 'install', '--with-deps', 'chromium', 'firefox', 'webkit']\nsys.exit(int(os.environ.get('INSTALL_EXIT', '0')))\n")
         self.executable("dpkg", "import os, sys\nassert sys.argv[1:] == ['--audit']\nprint(os.environ.get('AUDIT_OUTPUT', ''), end='')\nsys.exit(int(os.environ.get('AUDIT_EXIT', '0')))\n")
         for env, expected in (({}, 0), ({"INSTALL_EXIT": "7"}, 7),
                               ({"AUDIT_EXIT": "8"}, 8), ({"AUDIT_OUTPUT": "package left unconfigured"}, 1)):
