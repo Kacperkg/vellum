@@ -9,8 +9,6 @@ export JWT_SECRET=synthetic-config-validation-only TRUSTED_PROXY_CIDRS=172.18.25
 export VELLUM_BACKEND_IMAGE=ghcr.io/kacperkg/vellum-backend@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 export VELLUM_FRONTEND_IMAGE=ghcr.io/kacperkg/vellum-frontend@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
-docker compose -f deploy/compose.yml config --quiet
-docker compose -f deploy/compose.yml -f deploy/compose.registry.yml config --quiet
 python3 - <<'PY'
 import json
 import os
@@ -18,8 +16,9 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-# Relocation must preserve the entire model. Only synthetic values are used;
-# remove exported Compose/application settings so --env-file is actually tested.
+# All Compose calls use an allowlisted client environment and explicit env file:
+# neither local .env files nor ambient application/COMPOSE_* settings may enter
+# this synthetic check. Preserve only Docker client connection settings.
 base = Path("deploy/compose.yml").resolve()
 clean_env = {
     key: os.environ[key]
@@ -31,6 +30,19 @@ keys = (
     "JWT_SECRET", "TRUSTED_PROXY_CIDRS", "VELLUM_BACKEND_IMAGE",
     "VELLUM_FRONTEND_IMAGE",
 )
+synthetic_env = {
+    **clean_env, **{key: os.environ[key] for key in keys},
+    "COMPOSE_PROJECT_NAME": "vellum-config-check", "APP_ORIGIN": "https://example.invalid",
+}
+for files in ((base,), (base, base.with_name("compose.registry.yml"))):
+    subprocess.run(
+        ["docker", "compose", "--env-file", os.devnull,
+         *[arg for path in files for arg in ("-f", str(path))], "config", "--quiet"],
+        env=synthetic_env, check=True,
+    )
+
+# Relocation must preserve the entire model; remove application settings from
+# the subprocess environment so the synthetic --env-file is actually tested.
 with tempfile.TemporaryDirectory() as temporary:
     checkout = Path(temporary) / "checkout/deploy"
     managed = Path(temporary) / "etc/vellum-cd"
