@@ -252,11 +252,11 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
         if: steps.scope.outputs.run == 'true'
       - run: docker pull postgres:17
         if: steps.scope.outputs.run == 'true'
-      - run: pnpm test:e2e
+      - run: pnpm test:e2e:csp
         if: steps.scope.outputs.run == 'true'
       - name: Retain browser failure diagnostics
         if: failure() && steps.scope.outputs.run == 'true'

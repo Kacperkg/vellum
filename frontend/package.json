@@ -12,6 +12,7 @@
     "test:finance": "node --test src/features/transactions/utils/activity.test.mjs",
     "test:architecture": "node --test tests/architecture.test.mjs",
     "test:e2e": "node scripts/run-e2e.mjs",
+    "test:e2e:csp": "node scripts/run-e2e.mjs --csp-report-only && node scripts/run-e2e.mjs --csp-enforce",
     "test:e2e:check": "tsc -p tsconfig.e2e.json",
     "screenshots": "node scripts/run-e2e.mjs --capture-screenshots",
     "format": "prettier --write .",
