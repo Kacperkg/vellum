@@ -3,6 +3,8 @@
 # Do not use handle_path: Go expects the /api prefix to be preserved.
 # Forward auth preflights too; GET /login must still reach the SPA.
 # Omitting OPTIONS can send it to Nginx's SPA fallback (HTML 405), not Gin.
+# Nginx owns browser CSP (initially report-only). Preserve its header unchanged;
+# do not add a second policy here. See CONTENT-SECURITY-POLICY.md for rollout.
 
 vellum.kacpergajdarski.com {
 	encode zstd gzip
