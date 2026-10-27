@@ -1,9 +1,11 @@
 # CI/CD implementation and activation handoff
 
-Status: **first end-to-end staging deployment succeeded; production remains disabled**.
+Status: **staging verified; production workflow dispatch-only, deployment blocked pending release and restore evidence**.
 `.github/workflows/release-staging.yml` validates protected staging pushes and
 requires `VELLUM_CD_ENABLED=true` plus a release-needed change plan before
-publication/deployment. The production workflow remains `.yml.disabled`.
+publication/deployment. The production workflow is
+`.github/workflows/release-production.yml`; it has no push trigger. See
+[PRODUCTION-ACTIVATION.md](PRODUCTION-ACTIVATION.md) for the guarded operator procedure.
 An explicitly acknowledged manual staging deployment verification now reuses
 the same workflow with full CI and an exact SHA. See
 [MANUAL-STAGING-VERIFICATION.md](MANUAL-STAGING-VERIFICATION.md), including the
@@ -52,45 +54,28 @@ controller files.
 - The current controller version is part of the tested bundle. An operator must
   install matching trusted controller files before a release that changes them.
 
-## Production approval modes
+## Production manual approval
 
-Set `PRODUCTION_APPROVAL_MODE` explicitly; unset means no production job runs.
+`PRODUCTION_APPROVAL_MODE=manual` is required. Unset or `environment` mode
+cannot deploy. Production only accepts explicit `workflow_dispatch` on protected
+main in the exact repository, with the exact reviewed `expected_sha` and
+`confirm_production_deployment=true`. No merge/push deploys production.
+Keep the active workflow/helper on staging (default-branch discovery) and main
+(execution). Operator dispatch, remaining restore/release blockers, current
+GitHub configuration and recommended protections are documented in
+[PRODUCTION-ACTIVATION.md](PRODUCTION-ACTIVATION.md).
 
-1. `environment`: required reviewers on the `production` GitHub Environment
-   approve a main push that changes `deploy/production-release.json`, or a manual
-   rerun. Enable prevent-self-review and disable administrator bypass where
-   supported. Do not select this mode until those rules are verified effective.
-2. `manual`: when environment required reviewers are unavailable, use an
-   explicit human `workflow_dispatch` on **main** after merging the reviewed
-   release-selection PR. Main pushes do not deploy in this mode. Restrict Actions
-   write/dispatch access to operators. This is an explicit operator gate, not
-   enforced two-person approval; if two-person approval is mandatory, upgrade
-   the plan/use a supported external gate before activation.
-
-With default `staging`, the **active** production workflow must exist at the
-same `.github/workflows/release-production.yml` path on both `staging` (manual
-dispatch discovery) and `main` (the selected workflow and production source).
-The `.yml.disabled` templates intentionally cannot be dispatched. On later,
-separately approved activation, keep both copies reviewed and synchronized.
-In Actions, select **Promote production → Run workflow → Branch: main**; or use
-`gh workflow run release-production.yml --repo Kacperkg/vellum --ref main`.
-This command deploys when enabled and approved: it is not a validation command.
-Omitting `--ref` selects the default branch, where the production job skips.
-Never relax the explicit `refs/heads/main` guard to the default branch or add
-a forwarding deployment job on `staging` to work around dispatch discovery.
-
-Manual dispatch checks out the selected main event revision. The production
-resolver reads `deploy/production-release.json` there, queries the exact run ID
-and attempt, and downloads its exact artifact ID. No API request resolves a
-default-branch file or selects the latest run. Provenance still requires a
-successful push on `staging`, the staging workflow path, the selected attempt,
-the reviewed manifest hash, matching source trees/bundle and verified digests.
-Bootstrap/manual runs and unverified manifests remain ineligible for promotion.
+The runner-only production adapter validates the request before AWS credentials,
+requires successful publication and all required CI jobs for the exact latest
+ordinary staging-push attempt, then delegates data-only artifact/hash/digest/tree
+validation to the unchanged six-file resolver. It rechecks current main and
+eligibility before the existing pinned SSM dispatcher. Manual verification,
+skipped publication and historical receipt substitutions remain ineligible.
 
 Environment protection features vary by plan and visibility. GitHub currently
 restricts required-reviewer rules on several plans to public repositories.
 See [GitHub environment availability](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments).
-Both modes still require protected deployment branches: only `staging` may use
+The workflow requires protected deployment branches: only `staging` may use
 the staging environment, only `main` the production environment. If your plan
 cannot enforce those branch restrictions, **do not activate this OIDC design**.
 The environment OIDC subject replaces branch information; a workflow `if` is
@@ -108,10 +93,11 @@ main branch only for production, with no wildcard/tag policies.
 
 The ruleset currently requires no approving/code-owner reviews. Before enabling
 CD, enforce the human/code-owner reviews below; do not mistake CI success for
-independent approval. Production environment reviewers are not configured in the
-previous audit; retain manual mode until effective approval rules are verified.
-This PR does not modify those settings. See STAGING-ACTIVATION.md for the current
-activation prerequisites and first-trigger procedure.
+independent approval. Production environment reviewers remain absent in the
+2026-10-27 read-only inspection; retain manual mode and review the recommendations
+in the activation runbook.
+This PR does not modify those settings. See PRODUCTION-ACTIVATION.md for current
+production prerequisites and STAGING-ACTIVATION.md for historical staging setup.
 
 GitHub's current OIDC subject settings report `use_default=true`,
 `use_immutable_subject=false`, prefix `repo:Kacperkg/vellum`. The example trust
@@ -260,7 +246,7 @@ missing or expired. Public-package activation does not require this helper.
 | Scope | Name | Meaning |
 | --- | --- | --- |
 | Repository | `VELLUM_CD_ENABLED` | Keep unset/false until human-approved activation |
-| Repository | `PRODUCTION_APPROVAL_MODE` | `environment` or `manual`, as described above |
+| Repository | `PRODUCTION_APPROVAL_MODE` | `manual` only; explicit acknowledged dispatch on main |
 | Each environment | `AWS_ACCOUNT_ID` | Expected AWS account allowlist |
 | Each environment | `AWS_REGION` | Region of the target instance/documents |
 | Each environment | `AWS_DEPLOY_ROLE_ARN` | Different OIDC deployment role for that environment |
@@ -301,9 +287,9 @@ planned maintenance/recovery procedure and must not pass this CD gate.
 
 The staging workflow is now `.yml`, but requires the runtime CD flag. After
 human review and all prerequisites, use STAGING-ACTIVATION.md to enable that flag
-and trigger a fresh staging push. Keep production `.yml.disabled`; production
-workflow activation remains a separate reviewed change. No flag or deployment
-was activated by this PR.
+and approve a fresh ordinary staging push. Production is dispatch-only; its
+selector remains unconfigured until an eligible release exists. No flag or
+deployment is enabled by adding the workflow file.
 
 Push/merge a feature into `staging`. Check the actual CI result, GHCR digest
 visibility/pulls, SSM status and staging manifest summary. Through staging Caddy,
@@ -321,8 +307,9 @@ synthetic headers alone cannot establish that operational fact.
 
 Then open the promotion PR to `main`, selecting the successful run/attempt and
 manifest hash. Prepare that release's backup/schema approval record on EC2.
-Merge the PR and approve the production Environment job, or explicitly dispatch
-on main in `manual` mode. Production deploys the selected digests unchanged.
+After a separately authorised merge, explicitly dispatch on main in `manual`
+mode with the exact SHA and acknowledgement from the activation runbook.
+Production deploys the selected digests unchanged.
 Do not dispatch on a feature branch or attempt to bypass missing evidence.
 
 ## Failure handling, rollback and manual fallback
@@ -340,9 +327,11 @@ A final singleton/health/digest check precedes the unchanged Caddy smoke/receipt
 This barrier applies with SES disabled. Production uses the same barrier while
 retaining its verified-staging provenance and release-specific approval. Follow
 the runbook's production backup, installation and recovery prerequisites. This
-change does not enable the production workflow or authorize deployment.
+activation does not authorize deployment; the production activation runbook
+adds manual guards without changing this installed barrier.
 
-The six-file installed bundle changes. Approve and install its exact reviewed
+The PR #28/#29 authentication transition changed the six-file installed bundle;
+this workflow activation leaves it unchanged. Approve and install its reviewed
 bytes under a drained host-wide maintenance freeze before the merge-triggered
 staging release. Old receipts fail the existing bundle-hash gate. Keep that gate,
 old images/receipts and the host locks/pending marker; never rewrite hashes or
@@ -423,30 +412,15 @@ If a GitHub wait times out, SSM may still be executing. Inspect the exact comman
 status, host locks and [pending operation recovery](HOST-COORDINATION.md) before
 retrying; canceling a workflow does not stop SSM or establish database quiescence.
 
-For rollback, select `production-previous.json` (or a retained tested release),
-review schema compatibility and create fresh release-specific backup approval.
-If the tested deployment bundle differs, use an explicitly reviewed recovery
-release compatible with the current coordinated six-file bundle. Do not downgrade
-to an older controller or rewrite receipt hashes; see [host coordination](HOST-COORDINATION.md). An authorized operator on EC2 can invoke the same controller
-with the receipt as data; the host lock and production gate remain enforced:
-
-```sh
-sudo sh -c 'export SSM_Manifest="$(base64 -w0 /var/lib/vellum-cd/production-previous.json)"; exec /usr/bin/python3 -I /usr/local/lib/vellum-cd/cd/controller.py production'
-```
-
-Image rollback does not undo migrations or preserve newer authentication semantics.
-After the password recovery transition, use a reviewed version-aware recovery
-release; the generic legacy-image procedure below is not authorization to bypass
-authentication revocation or the current bundle hash gate. If an old binary cannot use the current
-schema, follow the private database restore procedure, with downtime and explicit
-data-loss review, before starting the matching image. No `down -v`, volume prune
-or automatic database replacement is part of CD.
-
-If Actions/OIDC/SSM is unavailable, the operator can use the existing manual
-SHA-tagged Compose procedure in `README.md`, or the same installed digest
-controller with a previously tested receipt. Retain previous tested images and
-receipts. Manual operations outside the controller must coordinate with its host
-lock; do not bypass serialization while a workflow is running.
+Recovery must use a reviewed version-aware release compatible with the installed
+coordinated six-file bundle and fresh release-specific backup/restore approval.
+Never downgrade the controller, rewrite receipt hashes, automatically revive
+pre-PR28 authentication code or assume image rollback undoes migration. Follow
+[PRODUCTION-ACTIVATION.md](PRODUCTION-ACTIVATION.md) and
+[HOST-COORDINATION.md](HOST-COORDINATION.md) for failure investigation and separately
+approved recovery. Historical receipts describe successful history, not proof of
+current runtime state. No unreviewed manual Compose fallback is authorised by
+this production activation workflow.
 
 ## What remains unverified before activation
 
@@ -455,7 +429,7 @@ visibility and EC2 registry authentication, OIDC/IAM/SSM agent/document/version
 configuration, existing server resources, off-host backup/restore evidence and
 real public client-IP behavior require manual setup and staging verification.
 Local unit/mock tests cannot certify those external conditions. This work does
-not deploy, activate production, modify infrastructure or configure S3 backups.
+not deploy, enable CD, modify infrastructure or configure S3 backups.
 
 Relevant references: [GitHub OIDC with AWS](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws),
 [SSM safe parameter interpolation](https://docs.aws.amazon.com/systems-manager/latest/userguide/documents-syntax-data-elements-parameters.html),
