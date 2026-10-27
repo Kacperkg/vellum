@@ -1,9 +1,20 @@
 # Merge these site blocks into the EXISTING Caddy configuration manually.
 # Caddy must already be attached to the external Docker network "web".
 # Do not use handle_path: Go expects the /api prefix to be preserved.
+# Forward auth preflights too; GET /login must still reach the SPA.
+# Omitting OPTIONS can send it to Nginx's SPA fallback (HTML 405), not Gin.
+# Nginx owns browser CSP (initially report-only). Preserve its header unchanged;
+# do not add a second policy here. See CONTENT-SECURITY-POLICY.md for rollout.
 
 vellum.kacpergajdarski.com {
 	encode zstd gzip
+
+	@recovery path /forgot-password /reset-password
+	header @recovery {
+		Cache-Control "no-store"
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+	}
 
 	@api path /api /api/* /ping
 	handle @api {
@@ -11,8 +22,8 @@ vellum.kacpergajdarski.com {
 	}
 
 	@auth {
-		method POST
-		path /register /login /refresh /logout
+		method POST OPTIONS
+		path /register /login /refresh /logout /forgot-password /reset-password
 	}
 	handle @auth {
 		reverse_proxy vellum-production-backend:8080
@@ -27,14 +38,21 @@ vellum.kacpergajdarski.com {
 staging.vellum.kacpergajdarski.com {
 	encode zstd gzip
 
+	@recovery path /forgot-password /reset-password
+	header @recovery {
+		Cache-Control "no-store"
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+	}
+
 	@api path /api /api/* /ping
 	handle @api {
 		reverse_proxy vellum-staging-backend:8080
 	}
 
 	@auth {
-		method POST
-		path /register /login /refresh /logout
+		method POST OPTIONS
+		path /register /login /refresh /logout /forgot-password /reset-password
 	}
 	handle @auth {
 		reverse_proxy vellum-staging-backend:8080

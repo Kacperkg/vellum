@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OnlyFixedEnvironmentDocumentAndInstance",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": [
+        "arn:aws:ssm:REPLACE_REGION:REPLACE_ACCOUNT_ID:document/VellumDeploy-REPLACE_ENVIRONMENT",
+        "arn:aws:ec2:REPLACE_REGION:REPLACE_ACCOUNT_ID:instance/REPLACE_INSTANCE_ID"
+      ]
+    },
+    {
+      "Sid": "ReadInvocationStatus",
+      "Effect": "Allow",
+      "Action": "ssm:GetCommandInvocation",
+      "Resource": "*"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily independent Vellum production freshness check
+
+[Timer]
+OnCalendar=*-*-* 04:45:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=vellum-backup-freshness@production.service
+
+[Install]
+WantedBy=timers.target

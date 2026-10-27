@@ -9,27 +9,38 @@ import (
 )
 
 type HandlerSet struct {
-	Auth         *handlers.AuthHandler
-	Accounts     *handlers.AccountHandler
-	Categories   *handlers.CategoryHandler
-	Budgets      *handlers.BudgetHandler
-	Goals        *handlers.GoalHandler
-	Transactions *handlers.TransactionHandler
-	Transfers    *handlers.TransferHandler
-	Settings     *handlers.UserSettingsHandler
+	PasswordReset *handlers.PasswordResetHandler
+	Auth          *handlers.AuthHandler
+	Accounts      *handlers.AccountHandler
+	Categories    *handlers.CategoryHandler
+	Budgets       *handlers.BudgetHandler
+	Goals         *handlers.GoalHandler
+	Transactions  *handlers.TransactionHandler
+	Transfers     *handlers.TransferHandler
+	Settings      *handlers.UserSettingsHandler
 }
 
-func Register(router *gin.Engine, jwtSecret string, handlerSet HandlerSet) {
+func Register(router *gin.Engine, jwtSecret string, handlerSet HandlerSet, authRateLimiter *middleware.AuthRateLimiter) {
+	if authRateLimiter == nil {
+		panic("authentication routes require a rate limiter")
+	}
 	router.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "pong"})
 	})
-	router.POST("/register", handlerSet.Auth.Register)
-	router.POST("/login", handlerSet.Auth.Login)
-	router.POST("/refresh", handlerSet.Auth.Refresh)
-	router.POST("/logout", handlerSet.Auth.Logout)
+	registerAuthRoute := func(path string, endpoint middleware.AuthEndpoint, handler gin.HandlerFunc) {
+		router.POST(path, authRateLimiter.Handler(endpoint), handler)
+	}
+	registerAuthRoute("/register", middleware.RegisterEndpoint, handlerSet.Auth.Register)
+	registerAuthRoute("/login", middleware.LoginEndpoint, handlerSet.Auth.Login)
+	registerAuthRoute("/refresh", middleware.RefreshEndpoint, handlerSet.Auth.Refresh)
+	registerAuthRoute("/logout", middleware.LogoutEndpoint, handlerSet.Auth.Logout)
 
+	if handlerSet.PasswordReset != nil {
+		registerAuthRoute("/forgot-password", middleware.ForgotPasswordEndpoint, handlerSet.PasswordReset.ForgotPassword)
+		registerAuthRoute("/reset-password", middleware.ResetPasswordEndpoint, handlerSet.PasswordReset.ResetPassword)
+	}
 	api := router.Group("/api")
-	api.Use(middleware.AuthMiddleware(jwtSecret))
+	api.Use(middleware.AuthMiddleware(jwtSecret, handlerSet.Auth.ValidateAuthVersion))
 
 	api.POST("/accounts", handlerSet.Accounts.Create)
 	api.GET("/accounts", handlerSet.Accounts.ListByUser)

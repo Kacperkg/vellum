@@ -11,6 +11,18 @@ if (
   throw new Error("Use pnpm test:e2e to start the isolated Vellum test stack.");
 }
 
+// Mobile covers real auth/onboarding/refresh as well as forms, recovery, charts
+// and policy probes. Other desktop workflows remain in the full desktop matrix.
+const mobileTests = {
+  testMatch: [
+    "**/mobile.spec.ts",
+    "**/password-recovery.spec.ts",
+    "**/content-security-policy.spec.ts",
+    "**/workflows.spec.ts",
+  ],
+  grep: /mobile\.spec|password-recovery\.spec|content-security-policy\.spec|registration, logout|concurrent expired-session|a rejected refresh/,
+};
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
@@ -27,6 +39,19 @@ export default defineConfig({
     video: "retain-on-failure",
   },
   projects: [
+    ...["firefox", "webkit"].map((name) => ({
+      name,
+      testIgnore: ["**/mobile.spec.ts", "**/screenshots.spec.ts"],
+      use: {
+        browserName: name as "firefox" | "webkit",
+        viewport: { width: 1440, height: 1000 },
+      },
+    })),
+    {
+      name: "mobile-webkit",
+      ...mobileTests,
+      use: { ...devices["iPhone 13"] },
+    },
     {
       name: "chromium",
       testIgnore: ["**/mobile.spec.ts", "**/screenshots.spec.ts"],
@@ -37,7 +62,7 @@ export default defineConfig({
     },
     {
       name: "mobile",
-      testMatch: "**/mobile.spec.ts",
+      ...mobileTests,
       use: { ...devices["iPhone 13"], defaultBrowserType: "chromium" },
     },
     ...(process.env.VELLUM_CAPTURE_SCREENSHOTS === "1"

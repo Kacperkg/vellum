@@ -8,13 +8,19 @@ import (
 )
 
 type Claims struct {
-	UserID uuid.UUID `json:"user_id"`
+	UserID      uuid.UUID `json:"user_id"`
+	AuthVersion int64     `json:"auth_version"`
 	jwt.RegisteredClaims
 }
 
-func GenerateToken(userID uuid.UUID, secret string, expiry time.Duration) (string, error) {
+func GenerateToken(userID uuid.UUID, secret string, expiry time.Duration, version ...int64) (string, error) {
+	var authVersion int64
+	if len(version) > 0 {
+		authVersion = version[0]
+	}
 	claims := &Claims{
-		UserID: userID,
+		UserID:      userID,
+		AuthVersion: authVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -31,7 +37,7 @@ func ValidateToken(tokenString string, secret string) (*Claims, error) {
 		&Claims{},
 		func(token *jwt.Token) (interface{}, error) {
 			return []byte(secret), nil
-		})
+		}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithExpirationRequired())
 
 	if err != nil {
 		return nil, err

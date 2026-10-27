@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Vellum production backup at 02:15 UTC
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=vellum-backup@production.service
+
+[Install]
+WantedBy=timers.target

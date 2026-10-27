@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 
 	"github.com/google/uuid"
@@ -47,8 +48,11 @@ func (r *userRepository) CreateRegistration(user *models.User, settings *models.
 }
 
 func (r *userRepository) FindByID(id uuid.UUID) (*models.User, error) {
+	return r.FindByIDContext(context.Background(), id)
+}
+func (r *userRepository) FindByIDContext(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	var user models.User
-	err := r.db.First(&user, "id = ?", id).Error
+	err := r.db.WithContext(ctx).First(&user, "id = ?", id).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound

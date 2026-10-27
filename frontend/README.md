@@ -251,27 +251,35 @@ those assets and make the Go API reachable at the base URL configured in
 
 ## Browser tests and screenshots
 
-Install frontend dependencies, Go, Docker, and Chromium before the first run:
+Install frontend dependencies, Go, Docker, and the browser engines before the first run:
 
 ```sh
-pnpm exec playwright install chromium
+pnpm exec playwright install --with-deps chromium firefox webkit
 pnpm test:e2e
+pnpm test:e2e:csp # report-only followed by the same policy in enforcing mode
 ```
 
-`scripts/run-e2e.mjs` creates a throwaway PostgreSQL container, compiles a Go
-binary into a temporary directory, and starts dedicated API/frontend processes
-on ports 18080/15173. It rejects occupied ports instead of reusing existing
-servers. The API runs outside the backend directory with explicit synthetic
-configuration, so it does not load the development `.env`. Processes, temporary
-files, and the database container are removed after the run.
+`scripts/run-e2e.mjs` creates a private disposable Docker network with PostgreSQL,
+an unprivileged Go API, the production Nginx configuration and Caddy routing. It
+serves built Vite assets with same-origin API requests. Test ports 18080/15173 and
+a random direct-Nginx port are published only to loopback; occupied fixed ports
+are rejected. The API receives only synthetic configuration, no developer dotenv
+files or SES delivery settings. Processes, temporary files, containers and the
+private network are removed after the run.
 
-The desktop Chromium suite covers browser authentication, transfer balances,
+The desktop Chromium, Firefox and WebKit suites cover authentication, transfer balances,
 linked goal availability, duplicate budgets, activity editing/filter/sort/export,
-settings persistence, and successful/rejected session refresh. A mobile project
-checks navigation, sorting, account creation, and page overflow. Tests use fresh
+settings persistence, and successful/rejected session refresh. Mobile Chromium and
+iPhone WebKit cover auth/onboarding/refresh, recovery, forms, charts, CSP probes,
+navigation and page overflow. Tests use fresh
 synthetic users in separate browser contexts. Browser tests are separately
 type-checked by `tsconfig.e2e.json`; the production build still checks application
 source. The normal `pnpm test` suite remains fast and does not require Docker.
+
+Normal browser flows fail on unexpected CSP violations. See the
+[CSP inventory and rollout runbook](../deploy/CONTENT-SECURITY-POLICY.md) for the
+initial report-only policy, exact WebKit style hash, privacy boundaries and
+separately authorised enforcement/deployment requirements.
 
 Failures retain traces, screenshots, and video under ignored `test-results/` and
 `playwright-report/` directories. CI uploads failure diagnostics for review.

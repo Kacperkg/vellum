@@ -1,0 +1,5 @@
+{
+  "bucket": "REPLACE_WITH_PRIVATE_BUCKET",
+  "account_id": "REPLACE_WITH_12_DIGIT_ACCOUNT_ID",
+  "alert_topic_arn": null
+}

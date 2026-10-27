@@ -1,6 +1,7 @@
 package middleware_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -21,7 +22,7 @@ func TestAuthMiddleware(t *testing.T) {
 	}
 
 	router := gin.New()
-	router.Use(middleware.AuthMiddleware("secret"))
+	router.Use(middleware.AuthMiddleware("secret", func(context.Context, uuid.UUID, int64) bool { return true }))
 	router.GET("/protected", func(c *gin.Context) {
 		value, exists := c.Get("userID")
 		if !exists || value != userID {

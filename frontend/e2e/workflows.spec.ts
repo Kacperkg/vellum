@@ -9,6 +9,7 @@ import {
   openPage,
   addAccount,
   currentDate,
+  signOut,
 } from "./fixtures";
 
 test("registration, logout, login and protected-route redirects", async ({
@@ -26,9 +27,46 @@ test("registration, logout, login and protected-route redirects", async ({
     .getByRole("button", { name: "Create account", exact: true })
     .click();
   await expect(
+    page.getByRole("heading", {
+      name: "Add your first bank account",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", {
+      name: "Add your first bank account",
+      exact: true,
+    }),
+  ).toBeVisible();
+  for (const path of ["/transactions", "/settings", "/accounts", "/"]) {
+    await page.goto(path);
+    await expect(
+      page.getByRole("heading", {
+        name: "Add your first bank account",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.locator(".app-frame")).toHaveCount(0);
+  }
+  await signOut(page);
+  await page.getByLabel("Email", { exact: true }).fill(email);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Add your first bank account",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByLabel("Account name", { exact: true }).fill("Everyday");
+  await page
+    .getByRole("button", { name: "Add account and continue", exact: true })
+    .click();
+  await expect(
     page.getByRole("heading", { name: /Good .*Alex/ }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await expect(page).toHaveURL(/\/login$/);
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
@@ -46,8 +84,8 @@ test("income, recurring transfer and expense preserve the correct account totals
   page,
   finance,
 }) => {
+  await finance.create("accounts", { name: "Salary" });
   await openPage(page, "/accounts", "Accounts");
-  await addAccount(page, "Salary");
   await addAccount(page, "Bills");
   await openPage(page, "/transactions", "Transactions");
   await page
@@ -195,6 +233,7 @@ test("budgets persist and duplicate categories return a conflict", async ({
   page,
   finance,
 }) => {
+  await finance.create("accounts", { name: "Everyday" });
   await openPage(page, "/budgets", "Budgets");
   await page.getByRole("button", { name: "New budget", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "New Budget", exact: true });
@@ -301,7 +340,7 @@ test("display preferences save and survive a reload", async ({
   page,
   finance,
 }) => {
-  void finance;
+  await finance.create("accounts", { name: "Everyday" });
   await openPage(page, "/settings", "Settings");
   await page.getByLabel("Currency", { exact: true }).selectOption("EUR");
   await expect(
@@ -322,7 +361,7 @@ test("concurrent expired-session requests share a successful refresh", async ({
   page,
   finance,
 }) => {
-  void finance;
+  await finance.create("accounts", { name: "Everyday" });
   await page.evaluate(() =>
     localStorage.setItem("vellum:access_token", "expired-test-access"),
   );
@@ -332,7 +371,7 @@ test("concurrent expired-session requests share a successful refresh", async ({
   });
   await openPage(page, "/accounts", "Accounts");
   await expect(
-    page.getByText("No accounts yet", { exact: true }),
+    page.getByRole("heading", { name: "Everyday", exact: true }),
   ).toBeVisible();
   expect(refreshes).toBe(1);
 });
@@ -360,7 +399,7 @@ test("a late stale-token 401 retries without a second refresh", async ({
   page,
   finance,
 }) => {
-  void finance;
+  await finance.create("accounts", { name: "Everyday" });
   await page.evaluate(() =>
     localStorage.setItem("vellum:access_token", "expired-test-access"),
   );
@@ -387,10 +426,262 @@ test("a late stale-token 401 retries without a second refresh", async ({
     });
     releaseLateResponse();
     await expect(
-      page.getByText("No accounts yet", { exact: true }),
+      page.getByRole("heading", { name: "Everyday", exact: true }),
     ).toBeVisible();
     expect(refreshes).toBe(1);
   } finally {
     releaseLateResponse();
+  }
+});
+
+test("account checks fail closed and retry without showing the dashboard", async ({
+  page,
+  finance,
+}) => {
+  await finance.create("accounts", { name: "Existing account" });
+  await page.route(`${apiURL}/api/accounts`, (route) =>
+    route.fulfill({ status: 500, json: { error: "Synthetic outage" } }),
+  );
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", {
+      name: "Unable to check your accounts",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.locator(".app-frame")).toHaveCount(0);
+  await expect(page.getByLabel("Account name", { exact: true })).toHaveCount(0);
+  await page.unroute(`${apiURL}/api/accounts`);
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: /Good .*Alex/ }),
+  ).toBeVisible();
+});
+
+test("a committed account with a lost response is recovered from server state", async ({
+  page,
+  finance,
+}) => {
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", {
+      name: "Add your first bank account",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.route(`${apiURL}/api/accounts`, async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    expect(response.status()).toBe(201);
+    await route.abort("failed");
+  });
+  await page
+    .getByLabel("Account name", { exact: true })
+    .fill("Recovered account");
+  await page
+    .getByRole("button", { name: "Add account and continue", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: /Good .*Alex/ }),
+  ).toBeVisible();
+  expect(await finance.list("accounts")).toHaveLength(1);
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: /Good .*Alex/ }),
+  ).toBeVisible();
+});
+
+test("failed account creation stays in setup and can be retried", async ({
+  page,
+  finance,
+}) => {
+  void finance;
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", {
+      name: "Add your first bank account",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByLabel("Account name", { exact: true }).fill("   ");
+  await expect(
+    page.getByRole("button", { name: "Add account and continue", exact: true }),
+  ).toBeDisabled();
+  await page.route(`${apiURL}/api/accounts`, async (route) => {
+    if (route.request().method() === "POST")
+      await route.fulfill({
+        status: 500,
+        json: { error: "Please retry creation" },
+      });
+    else await route.continue();
+  });
+  await page.getByLabel("Account name", { exact: true }).fill("Retry account");
+  await page
+    .getByRole("button", { name: "Add account and continue", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toHaveText("Please retry creation");
+  await expect(page.locator(".app-frame")).toHaveCount(0);
+  await page.unroute(`${apiURL}/api/accounts`);
+  await page
+    .getByRole("button", { name: "Add account and continue", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: /Good .*Alex/ }),
+  ).toBeVisible();
+});
+
+test("deleting the last account returns to setup and refresh preserves it", async ({
+  page,
+  finance,
+}) => {
+  await finance.create("accounts", { name: "Only account" });
+  await openPage(page, "/accounts", "Accounts");
+  await page
+    .getByRole("button", { name: "Delete Only account", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Delete", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Add your first bank account",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.locator(".app-frame")).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page.getByRole("heading", {
+      name: "Add your first bank account",
+      exact: true,
+    }),
+  ).toBeVisible();
+});
+
+test("an expired access token refreshes back into unfinished account setup", async ({
+  page,
+  finance,
+}) => {
+  void finance;
+  await page.evaluate(() =>
+    localStorage.setItem("vellum:access_token", "expired-test-access"),
+  );
+  await page.goto("/transactions");
+  await expect(
+    page.getByRole("heading", {
+      name: "Add your first bank account",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.locator(".app-frame")).toHaveCount(0);
+});
+
+test("a failed setup confirmation offers a read retry instead of another creation", async ({
+  page,
+  finance,
+}) => {
+  let created = false;
+  await page.route(`${apiURL}/api/accounts`, async (route) => {
+    if (route.request().method() === "POST") {
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      created = true;
+      await route.fulfill({ response });
+    } else if (created) {
+      await route.fulfill({
+        status: 500,
+        json: { error: "Synthetic read outage" },
+      });
+    } else await route.continue();
+  });
+  await page.goto("/");
+  await page
+    .getByLabel("Account name", { exact: true })
+    .fill("Confirmed later");
+  await page
+    .getByRole("button", { name: "Add account and continue", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Unable to check your accounts",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Account name", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".app-frame")).toHaveCount(0);
+  await page.unroute(`${apiURL}/api/accounts`);
+  await page.getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: /Good .*Alex/ }),
+  ).toBeVisible();
+  expect(await finance.list("accounts")).toHaveLength(1);
+});
+
+test("focus rechecks server setup and ignores an older account response", async ({
+  page,
+  finance,
+}) => {
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", {
+      name: "Add your first bank account",
+      exact: true,
+    }),
+  ).toBeVisible();
+  let releaseStale!: () => void;
+  const staleReleased = new Promise<void>((resolve) => {
+    releaseStale = resolve;
+  });
+  let markStaleStarted!: () => void;
+  const staleStarted = new Promise<void>((resolve) => {
+    markStaleStarted = resolve;
+  });
+  let first = true;
+  await page.route(`${apiURL}/api/accounts`, async (route) => {
+    if (!first) {
+      await route.continue();
+      return;
+    }
+    first = false;
+    markStaleStarted();
+    await staleReleased;
+    await route.fulfill({ status: 200, json: [] });
+  });
+  try {
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await staleStarted;
+    // Simulates setup completed in another browser tab while a prior read waits.
+    await finance.create("accounts", { name: "Created elsewhere" });
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(
+      page.getByRole("heading", { name: /Good .*Alex/ }),
+    ).toBeVisible();
+    const staleResponse = page.waitForResponse(
+      (response) => response.url() === `${apiURL}/api/accounts`,
+    );
+    releaseStale();
+    await staleResponse;
+    // Flush the response handler before checking the older empty list was ignored.
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    await expect(
+      page.getByRole("heading", { name: /Good .*Alex/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        name: "Add your first bank account",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+  } finally {
+    releaseStale();
   }
 });

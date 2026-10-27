@@ -7,6 +7,7 @@ import (
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func Connect(cfg *config.Config) (*gorm.DB, error) {
@@ -22,7 +23,9 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 
 	db, err := gorm.Open(
 		postgres.Open(dsn),
-		&gorm.Config{},
+		// SQL errors can contain credentials, password hashes or recipient data.
+		// Services and workers emit fixed operational messages instead.
+		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)},
 	)
 
 	if err != nil {

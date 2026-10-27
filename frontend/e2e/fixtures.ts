@@ -6,7 +6,7 @@ import {
 } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
-export const apiURL = "http://localhost:18080";
+export const apiURL = "http://localhost:15173";
 export const appURL = "http://localhost:15173";
 export const password = "Synthetic-E2E-Password-2026!";
 type Session = {
@@ -56,7 +56,40 @@ export async function enterSession(page: Page, session: Session) {
   }, session);
 }
 
-export const test = base.extend<{ finance: FinanceAPI }>({
+export const test = base.extend<{
+  finance: FinanceAPI;
+  allowCSPViolations: boolean;
+  cspAudit: void;
+}>({
+  allowCSPViolations: [false, { option: true }],
+  cspAudit: [
+    async ({ page, allowCSPViolations }, use) => {
+      const violations: string[] = [];
+      // Only these two non-sensitive fields cross into test diagnostics.
+      await page.exposeFunction(
+        "recordCSPViolation",
+        (directive: string, disposition: string) => {
+          violations.push(`${disposition}: ${directive}`);
+        },
+      );
+      await page.addInitScript(() => {
+        document.addEventListener("securitypolicyviolation", (event) => {
+          void (
+            window as unknown as {
+              recordCSPViolation: (
+                directive: string,
+                disposition: string,
+              ) => Promise<void>;
+            }
+          ).recordCSPViolation(event.effectiveDirective, event.disposition);
+        });
+      });
+      await use();
+      if (!allowCSPViolations)
+        expect(violations, "Unexpected CSP violations").toEqual([]);
+    },
+    { auto: true },
+  ],
   finance: async ({ request, page }, provide) => {
     const { session } = await signUpAPI(request);
     await enterSession(page, session);
@@ -91,4 +124,13 @@ export async function addAccount(page: Page, name: string) {
 export function currentDate() {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}T12:00:00Z`;
+}
+
+export async function signOut(page: Page) {
+  const button = page.getByRole("button", { name: "Sign out", exact: true });
+  if (!(await button.isVisible()))
+    await page
+      .getByRole("button", { name: "Open workspace navigation", exact: true })
+      .click();
+  await button.click();
 }
