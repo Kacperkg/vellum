@@ -245,15 +245,26 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         if: steps.scope.outputs.run == 'true'
-      # A sampled Chromium CDN failure cost 6m18s. Cache only version-bound
-      # browser binaries; always run the installer for OS dependencies.
+      # Cache version-bound browser binaries; OS dependencies still need APT.
+      # HTTPS mirror preference below addresses the sampled 7–11 minute APT stalls.
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: steps.scope.outputs.run == 'true'
         with:
           path: ~/.cache/ms-playwright
           key: playwright-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
-      - run: pnpm exec playwright install --with-deps chromium
+      - name: Prefer HTTPS Ubuntu mirrors for Playwright dependencies
         if: steps.scope.outputs.run == 'true'
+        working-directory: .
+        run: bash scripts/ci/prepare-playwright-apt.sh
+      - name: Install Chromium and complete operating-system dependencies
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          package_audit=$(dpkg --audit)
+          if [ -n "$package_audit" ]; then
+            printf '%s\n' "$package_audit" >&2
+            exit 1
+          fi
       - run: docker pull postgres:17
         if: steps.scope.outputs.run == 'true'
       - run: pnpm test:e2e
