@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -22,6 +23,9 @@ func NewGoalService(goalRepository repository.GoalRepository, accountRepository 
 }
 
 func (s *GoalService) Create(userID uuid.UUID, req CreateGoalRequest) (*GoalResponse, error) {
+	if err := validateResourceName(req.Name); err != nil {
+		return nil, err
+	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return nil, ErrGoalNameRequired
@@ -139,6 +143,9 @@ func (s *GoalService) Update(userID uuid.UUID, goalID uuid.UUID, req UpdateGoalR
 		return nil, ErrGoalNotFound
 	}
 
+	if err := validateResourceName(req.Name); err != nil {
+		return nil, err
+	}
 	newName := strings.TrimSpace(req.Name)
 	if newName == "" {
 		return nil, ErrGoalNameRequired
@@ -236,4 +243,12 @@ func (s *GoalService) validateAccount(userID uuid.UUID, accountID *uuid.UUID) er
 		return ErrAccountNotFound
 	}
 	return nil
+}
+
+// WithContext returns a request-scoped copy; the shared service is never mutated.
+func (s *GoalService) WithContext(ctx context.Context) *GoalService {
+	clone := *s
+	clone.goalRepository = s.goalRepository.WithContext(ctx)
+	clone.accountRepository = s.accountRepository.WithContext(ctx)
+	return &clone
 }

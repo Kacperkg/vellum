@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
@@ -179,7 +180,7 @@ func (s *TransactionService) FindByCategoryID(userID, categoryID uuid.UUID) ([]*
 }
 
 func (s *TransactionService) FindByDateRange(userID uuid.UUID, startDate, endDate time.Time) ([]*TransactionResponse, error) {
-	if startDate.IsZero() || endDate.IsZero() || startDate.After(endDate) {
+	if startDate.IsZero() || endDate.IsZero() || startDate.After(endDate) || endDate.Sub(startDate) > MaxTransactionDateRange {
 		return nil, ErrTransactionDateRange
 	}
 
@@ -259,6 +260,9 @@ func validateTransaction(
 	frequency models.Frequency,
 	transactionType models.TransactionType,
 ) error {
+	if err := validateResourceName(name); err != nil {
+		return err
+	}
 	if strings.TrimSpace(name) == "" {
 		return ErrTransactionNameRequired
 	}
@@ -317,4 +321,13 @@ func transactionResponses(transactions []*models.Transaction) []*TransactionResp
 	}
 
 	return responses
+}
+
+// WithContext returns a request-scoped copy; the shared service is never mutated.
+func (s *TransactionService) WithContext(ctx context.Context) *TransactionService {
+	clone := *s
+	clone.transactionRepository = s.transactionRepository.WithContext(ctx)
+	clone.accountRepository = s.accountRepository.WithContext(ctx)
+	clone.categoryRepository = s.categoryRepository.WithContext(ctx)
+	return &clone
 }

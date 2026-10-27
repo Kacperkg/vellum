@@ -75,6 +75,14 @@ refresh token, and the authenticated user.
 Authorization: Bearer <access-token>
 ```
 
+## Authenticated resource limits
+
+Protected APIs enforce bounded request bodies, names, filters, date ranges,
+rate/concurrency admission, request cancellation and PostgreSQL work. See
+[the resource policy](RESOURCE_LIMITS.md) for exact limits, retry behavior,
+performance measurements and the Issue #25 pagination compatibility boundary.
+Complete transaction/transfer arrays and financial totals remain unchanged.
+
 ## Environment variables
 
 Every variable is required. Expiry values use Go duration syntax.

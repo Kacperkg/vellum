@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -21,6 +22,9 @@ func NewAccountService(accountRepository repository.AccountRepository) *AccountS
 
 func (s *AccountService) Create(userID uuid.UUID, req CreateAccountRequest) (*AccountResponse, error) {
 	// Validate the request
+	if err := validateResourceName(req.Name); err != nil {
+		return nil, err
+	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return nil, ErrAccountNameRequired
@@ -130,6 +134,9 @@ func (s *AccountService) Update(userID uuid.UUID, accountID uuid.UUID, req Updat
 	}
 
 	// Validate the new name
+	if err := validateResourceName(req.Name); err != nil {
+		return nil, err
+	}
 	newName := strings.TrimSpace(req.Name)
 	if newName == "" {
 		return nil, ErrAccountNameRequired
@@ -190,4 +197,11 @@ func (s *AccountService) Delete(userID uuid.UUID, accountID uuid.UUID) error {
 	}
 
 	return nil
+}
+
+// WithContext returns a request-scoped copy; the shared service is never mutated.
+func (s *AccountService) WithContext(ctx context.Context) *AccountService {
+	clone := *s
+	clone.accountRepository = s.accountRepository.WithContext(ctx)
+	return &clone
 }

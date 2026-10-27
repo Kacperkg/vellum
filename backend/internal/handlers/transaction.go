@@ -15,7 +15,7 @@ type TransactionHandler struct {
 }
 
 type transactionRequest struct {
-	Name       string                 `json:"name" binding:"required"`
+	Name       string                 `json:"name" binding:"required,max=200"`
 	Amount     int64                  `json:"amount" binding:"required,gt=0"`
 	AccountID  uuid.UUID              `json:"account_id" binding:"required"`
 	CategoryID uuid.UUID              `json:"category_id" binding:"required"`
@@ -33,7 +33,7 @@ func NewTransactionHandler(transactionService *services.TransactionService) *Tra
 func (h *TransactionHandler) Create(c *gin.Context) {
 	var req transactionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithBindingError(c, err)
 		return
 	}
 
@@ -42,7 +42,7 @@ func (h *TransactionHandler) Create(c *gin.Context) {
 		return
 	}
 
-	response, err := h.transactionService.Create(userID, services.CreateTransactionRequest(req))
+	response, err := h.transactionService.WithContext(c.Request.Context()).Create(userID, services.CreateTransactionRequest(req))
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -62,7 +62,7 @@ func (h *TransactionHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	response, err := h.transactionService.GetByID(userID, transactionID)
+	response, err := h.transactionService.WithContext(c.Request.Context()).GetByID(userID, transactionID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -77,7 +77,7 @@ func (h *TransactionHandler) ListByUser(c *gin.Context) {
 		return
 	}
 
-	response, err := h.transactionService.FindByUserID(userID)
+	response, err := h.transactionService.WithContext(c.Request.Context()).FindByUserID(userID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -94,7 +94,7 @@ func (h *TransactionHandler) Update(c *gin.Context) {
 
 	var req transactionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithBindingError(c, err)
 		return
 	}
 
@@ -103,7 +103,7 @@ func (h *TransactionHandler) Update(c *gin.Context) {
 		return
 	}
 
-	response, err := h.transactionService.Update(userID, transactionID, services.UpdateTransactionRequest(req))
+	response, err := h.transactionService.WithContext(c.Request.Context()).Update(userID, transactionID, services.UpdateTransactionRequest(req))
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -123,7 +123,7 @@ func (h *TransactionHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.transactionService.Delete(userID, transactionID); err != nil {
+	if err := h.transactionService.WithContext(c.Request.Context()).Delete(userID, transactionID); err != nil {
 		respondWithServiceError(c, err)
 		return
 	}
@@ -142,7 +142,7 @@ func (h *TransactionHandler) ListByAccount(c *gin.Context) {
 		return
 	}
 
-	response, err := h.transactionService.FindByAccountID(userID, accountID)
+	response, err := h.transactionService.WithContext(c.Request.Context()).FindByAccountID(userID, accountID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -162,7 +162,7 @@ func (h *TransactionHandler) ListByCategory(c *gin.Context) {
 		return
 	}
 
-	response, err := h.transactionService.FindByCategoryID(userID, categoryID)
+	response, err := h.transactionService.WithContext(c.Request.Context()).FindByCategoryID(userID, categoryID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -189,7 +189,7 @@ func (h *TransactionHandler) ListByDateRange(c *gin.Context) {
 		return
 	}
 
-	response, err := h.transactionService.FindByDateRange(userID, startDate, endDate)
+	response, err := h.transactionService.WithContext(c.Request.Context()).FindByDateRange(userID, startDate, endDate)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -205,7 +205,7 @@ func (h *TransactionHandler) ListByFrequency(c *gin.Context) {
 	}
 
 	frequency := models.Frequency(c.Query("frequency"))
-	response, err := h.transactionService.FindByFrequency(userID, frequency)
+	response, err := h.transactionService.WithContext(c.Request.Context()).FindByFrequency(userID, frequency)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return

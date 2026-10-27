@@ -1,7 +1,9 @@
 package handlers_test
 
 import (
+	"context"
 	"encoding/json"
+	"github.com/kacperkg/vellum/internal/repository"
 	"net/http"
 	"strings"
 	"testing"
@@ -92,3 +94,5 @@ func TestTransferHandler(t *testing.T) {
 	requireStatus(t, perform(router, http.MethodDelete, "/transfers/"+id, ""), http.StatusNoContent)
 	requireStatus(t, perform(router, http.MethodGet, "/transfers/"+id, ""), http.StatusNotFound)
 }
+
+func (r *fakeTransferRepository) WithContext(context.Context) repository.TransferRepository { return r }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -43,6 +44,10 @@ func getUUIDParam(c *gin.Context, name string) (id uuid.UUID, ok bool) {
 
 func respondWithServiceError(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "request timed out"})
+	case errors.Is(err, context.Canceled):
+		c.JSON(http.StatusRequestTimeout, gin.H{"error": "request canceled"})
 	case errors.Is(err, services.ErrUnauthorized):
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrNotFound):
@@ -54,4 +59,14 @@ func respondWithServiceError(c *gin.Context, err error) {
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 	}
+}
+
+// Binding errors never echo parser internals or user-controlled values.
+func respondWithBindingError(c *gin.Context, err error) {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large"})
+		return
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 }

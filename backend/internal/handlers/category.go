@@ -23,7 +23,7 @@ func (h *CategoryHandler) FindByID(c *gin.Context) {
 		return
 	}
 
-	response, err := h.categoryService.FindByID(categoryID)
+	response, err := h.categoryService.WithContext(c.Request.Context()).FindByID(categoryID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -33,7 +33,7 @@ func (h *CategoryHandler) FindByID(c *gin.Context) {
 }
 
 func (h *CategoryHandler) ListAll(c *gin.Context) {
-	response, err := h.categoryService.ListAll()
+	response, err := h.categoryService.WithContext(c.Request.Context()).ListAll()
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
