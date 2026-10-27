@@ -9,7 +9,9 @@ execution prerequisites supersede the historical first-trigger instructions here
 
 This PR removes GHCR bootstrap and enables the staging workflow in source only.
 It does not set `VELLUM_CD_ENABLED`, dispatch a deployment, change GitHub settings
-or touch AWS. Production stays `.github/workflows/release-production.yml.disabled`.
+or touch AWS. Production was disabled at that historical activation; the current
+dispatch-only workflow and remaining prerequisites are in
+[PRODUCTION-ACTIVATION.md](PRODUCTION-ACTIVATION.md).
 
 ## Effect of merging
 

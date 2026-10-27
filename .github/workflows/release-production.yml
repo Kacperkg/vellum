@@ -1,0 +1,70 @@
+# Dispatch only; keep this reviewed path on default staging and main.
+name: Promote production
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact 40-character reviewed main commit SHA to promote
+        required: true
+        type: string
+      confirm_production_deployment:
+        description: I approve production replacement, API downtime, migrations and smoke requests
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vellum-deploy-production
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'Kacperkg/vellum' &&
+      github.ref == 'refs/heads/main' && github.ref_protected &&
+      vars.VELLUM_CD_ENABLED == 'true' && vars.PRODUCTION_APPROVAL_MODE == 'manual' &&
+      inputs.confirm_production_deployment == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      EXPECTED_SHA: ${{ inputs.expected_sha }}
+      CONFIRM_PRODUCTION_DEPLOYMENT: ${{ inputs.confirm_production_deployment }}
+      VELLUM_CD_ENABLED: ${{ vars.VELLUM_CD_ENABLED }}
+      PRODUCTION_APPROVAL_MODE: ${{ vars.PRODUCTION_APPROVAL_MODE }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate explicit production request before resolution or AWS credentials
+        run: python3 scripts/ci/production_release.py guard
+      - name: Resolve approved staging artifact and compare tested source trees
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/production_release.py resolve --output approved-release.json
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          role-duration-seconds: 1800
+          role-session-name: vellum-production-${{ github.run_id }}
+      - name: Promote exact digests through production-specific SSM document
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SSM_INSTANCE_ID: ${{ vars.SSM_INSTANCE_ID }}
+          SSM_DOCUMENT_ARN: ${{ vars.SSM_DOCUMENT_ARN }}
+          SSM_DOCUMENT_VERSION: ${{ vars.SSM_DOCUMENT_VERSION }}
+          SSM_DOCUMENT_SHA256: ${{ vars.SSM_DOCUMENT_SHA256 }}
+        run: python3 scripts/ci/production_release.py dispatch --manifest approved-release.json
