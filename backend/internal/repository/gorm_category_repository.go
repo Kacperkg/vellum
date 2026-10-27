@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 
 	"github.com/google/uuid"
@@ -37,4 +38,9 @@ func (r *categoryRepository) ListAll() ([]*models.Category, error) {
 		return nil, err
 	}
 	return categories, nil
+}
+
+// WithContext returns a request-scoped clone; the shared repository is never mutated.
+func (r *categoryRepository) WithContext(ctx context.Context) CategoryRepository {
+	return &categoryRepository{db: r.db.WithContext(ctx)}
 }

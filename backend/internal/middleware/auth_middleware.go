@@ -41,7 +41,14 @@ func AuthMiddleware(secret string, validateVersion func(context.Context, uuid.UU
 
 		// Validate token
 		claims, err := auth.ValidateToken(tokenString, secret)
-		if err != nil || !validateVersion(c.Request.Context(), claims.UserID, claims.AuthVersion) {
+		validVersion := false
+		if err == nil {
+			validVersion = validateVersion(c.Request.Context(), claims.UserID, claims.AuthVersion)
+			if !resourceContextActive(c) {
+				return
+			}
+		}
+		if err != nil || !validVersion {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "invalid or expired token",
 			})

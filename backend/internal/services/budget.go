@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 
 	"github.com/google/uuid"
@@ -221,4 +222,12 @@ func (s *BudgetService) ensureCategoryAvailable(userID, categoryID, excludedBudg
 	}
 
 	return nil
+}
+
+// WithContext returns a request-scoped copy; the shared service is never mutated.
+func (s *BudgetService) WithContext(ctx context.Context) *BudgetService {
+	clone := *s
+	clone.budgetRepository = s.budgetRepository.WithContext(ctx)
+	clone.categoryRepository = s.categoryRepository.WithContext(ctx)
+	return &clone
 }

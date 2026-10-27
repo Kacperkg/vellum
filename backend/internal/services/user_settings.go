@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 
 	"github.com/google/uuid"
@@ -86,4 +87,11 @@ func userSettingsResponse(settings *models.UserSettings) *UserSettingsResponse {
 		NumberFormat: settings.NumberFormat,
 		WeekStartsOn: settings.WeekStartsOn,
 	}
+}
+
+// WithContext returns a request-scoped copy; the shared service is never mutated.
+func (s *UserSettingsService) WithContext(ctx context.Context) *UserSettingsService {
+	clone := *s
+	clone.userSettingsRepository = s.userSettingsRepository.WithContext(ctx)
+	return &clone
 }

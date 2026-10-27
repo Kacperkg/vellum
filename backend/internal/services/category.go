@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 
 	"github.com/google/uuid"
@@ -52,4 +53,11 @@ func (s *CategoryService) ListAll() ([]*CategoryResponse, error) {
 	}
 
 	return responses, nil
+}
+
+// WithContext returns a request-scoped copy; the shared service is never mutated.
+func (s *CategoryService) WithContext(ctx context.Context) *CategoryService {
+	clone := *s
+	clone.categoryRepository = s.categoryRepository.WithContext(ctx)
+	return &clone
 }

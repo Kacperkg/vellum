@@ -1,11 +1,13 @@
 package repository
 
 import (
+	"context"
 	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/models"
 )
 
 type TransferRepository interface {
+	WithContext(context.Context) TransferRepository
 	Create(transfer *models.Transfer) error
 	FindByID(id uuid.UUID) (*models.Transfer, error)
 	FindByUserID(userID uuid.UUID) ([]*models.Transfer, error)

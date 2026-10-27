@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -100,6 +101,9 @@ func (s *TransferService) owned(userID, transferID uuid.UUID) (*models.Transfer,
 }
 
 func (s *TransferService) validate(userID uuid.UUID, req CreateTransferRequest) error {
+	if err := validateResourceName(req.Name); err != nil {
+		return err
+	}
 	if strings.TrimSpace(req.Name) == "" {
 		return ErrTransferNameRequired
 	}
@@ -142,4 +146,12 @@ func transferFrequency(frequency models.Frequency) models.Frequency {
 		return models.OneOff
 	}
 	return frequency
+}
+
+// WithContext returns a request-scoped copy; the shared service is never mutated.
+func (s *TransferService) WithContext(ctx context.Context) *TransferService {
+	clone := *s
+	clone.transferRepository = s.transferRepository.WithContext(ctx)
+	clone.accountRepository = s.accountRepository.WithContext(ctx)
+	return &clone
 }

@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 
 	"github.com/google/uuid"
@@ -67,4 +68,9 @@ func budgetWriteError(err error) error {
 
 func (r *budgetRepository) Delete(userID, id uuid.UUID) error {
 	return mutationError(r.db.Delete(&models.Budget{}, "id = ? AND user_id = ?", id, userID))
+}
+
+// WithContext returns a request-scoped clone; the shared repository is never mutated.
+func (r *budgetRepository) WithContext(ctx context.Context) BudgetRepository {
+	return &budgetRepository{db: r.db.WithContext(ctx)}
 }

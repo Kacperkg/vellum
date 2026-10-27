@@ -12,7 +12,7 @@ type AccountHandler struct {
 }
 
 type accountRequest struct {
-	Name string `json:"name" binding:"required"`
+	Name string `json:"name" binding:"required,max=200"`
 }
 
 func NewAccountHandler(accountService *services.AccountService) *AccountHandler {
@@ -26,7 +26,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithBindingError(c, err)
 		return
 	}
 
@@ -35,7 +35,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 		return
 	}
 
-	response, err := h.accountService.Create(userID, services.CreateAccountRequest(req))
+	response, err := h.accountService.WithContext(c.Request.Context()).Create(userID, services.CreateAccountRequest(req))
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -55,7 +55,7 @@ func (h *AccountHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	response, err := h.accountService.GetByID(userID, accountID)
+	response, err := h.accountService.WithContext(c.Request.Context()).GetByID(userID, accountID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -70,7 +70,7 @@ func (h *AccountHandler) ListByUser(c *gin.Context) {
 		return
 	}
 
-	accounts, err := h.accountService.FindByUserID(userID)
+	accounts, err := h.accountService.WithContext(c.Request.Context()).FindByUserID(userID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -89,7 +89,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithBindingError(c, err)
 		return
 	}
 
@@ -98,7 +98,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		return
 	}
 
-	response, err := h.accountService.Update(userID, accountID, services.UpdateAccountRequest(req))
+	response, err := h.accountService.WithContext(c.Request.Context()).Update(userID, accountID, services.UpdateAccountRequest(req))
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -118,7 +118,7 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	err := h.accountService.Delete(userID, accountID)
+	err := h.accountService.WithContext(c.Request.Context()).Delete(userID, accountID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return

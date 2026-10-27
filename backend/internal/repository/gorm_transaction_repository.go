@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -97,4 +98,9 @@ func (r *transactionRepository) FindByFrequency(userID uuid.UUID, frequency mode
 		return nil, err
 	}
 	return transactions, nil
+}
+
+// WithContext returns a request-scoped clone; the shared repository is never mutated.
+func (r *transactionRepository) WithContext(ctx context.Context) TransactionRepository {
+	return &transactionRepository{db: r.db.WithContext(ctx)}
 }
