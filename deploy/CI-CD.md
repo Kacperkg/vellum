@@ -56,6 +56,14 @@ controller files.
 
 ## Production manual approval
 
+The one-use, fixed-sunset [pre-launch exception](PRELAUNCH-PRODUCTION.md) requires
+explicit workflow choice/acknowledgement plus a root-private release-specific
+approval with `restore_verified=false`. Standard mode remains the default and
+requires genuine restore evidence. The exception changes the six-file bundle and
+adds a bounded production SSM `ApprovalMode` parameter: a new eligible release,
+reviewed matching controller installation and revised numeric document/hash pins
+are required before use. Staging's SSM document and OIDC restrictions are unchanged.
+
 `PRODUCTION_APPROVAL_MODE=manual` is required. Unset or `environment` mode
 cannot deploy. Production only accepts explicit `workflow_dispatch` on protected
 main in the exact repository, with the exact reviewed `expected_sha` and
@@ -185,7 +193,8 @@ missing or expired. Public-package activation does not require this helper.
   `VellumDeploy-production` from `ssm/staging.json` and `ssm/production.json`.
   Record their immutable numeric versions and SHA-256 hashes from AWS document
   metadata. The workflow sends both, not `$LATEST`/`$DEFAULT`. Deployment roles
-  cannot modify documents. The documents take only base64 JSON data and invoke
+  cannot modify documents. The documents take base64 JSON data (production also
+  takes the bounded recovery approval mode) and invoke
   a fixed environment/controller; no caller-provided shell is executed.
   Manifest parameters use an alphabet-only regex, with supported `minChars: 1`
   and `maxChars: 45000` fields for the encoded size bound. Do not put the large

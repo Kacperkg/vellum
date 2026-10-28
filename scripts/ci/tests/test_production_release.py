@@ -76,6 +76,21 @@ def manifest():
 
 
 class GuardTests(unittest.TestCase):
+    def test_prelaunch_requires_two_explicit_inputs_and_default_is_standard(self):
+        for values, expected in (({}, "standard"),
+            ({"PRODUCTION_RECOVERY_APPROVAL": "standard", "CONFIRM_PRELAUNCH_DATA_LOSS": "false"}, "standard"),
+            ({"PRODUCTION_RECOVERY_APPROVAL": "prelaunch", "CONFIRM_PRELAUNCH_DATA_LOSS": "true"}, "prelaunch")):
+            with self.subTest(values=values), patch.dict(os.environ, values, clear=True):
+                self.assertEqual(production.recovery_approval_mode(), expected)
+        for mode, ack in (("prelaunch", None), ("prelaunch", "false"), ("prelaunch", "True"),
+                          ("prelaunch", "1"), ("standard", "true"), ("", "true"),
+                          ("Prelaunch", "true"), ("$(id)", "true")):
+            values = {"PRODUCTION_RECOVERY_APPROVAL": mode}
+            if ack is not None: values["CONFIRM_PRELAUNCH_DATA_LOSS"] = ack
+            with self.subTest(values=values), patch.dict(os.environ, {**context(), **values}, clear=True), patch.object(release, "git") as git:
+                with self.assertRaises(ValueError): production.guard()
+                git.assert_not_called()
+
     def test_exact_protected_main_and_checkout_are_required(self):
         with patch.dict(os.environ, context(), clear=True), patch.object(release, "git", return_value=SHA) as git:
             self.assertEqual(production.guard(), SHA)
@@ -276,7 +291,7 @@ class OperationTests(unittest.TestCase):
             with patch.object(production, "guard", side_effect=lambda: order.append("guard") or SHA), patch.object(production, "selection", return_value=selected), patch.object(production, "current_main", side_effect=lambda sha: order.append("main")), patch.object(production, "eligible", side_effect=lambda value: order.append("eligible")), patch.object(release, "dispatch", side_effect=lambda args: order.append("dispatch")) as dispatch:
                 production.dispatch(argparse.Namespace(manifest=path))
                 self.assertEqual(order, ["guard", "main", "eligible", "dispatch"])
-                self.assertEqual(vars(dispatch.call_args.args[0]), {"environment": "production", "manifest": path})
+                self.assertEqual(vars(dispatch.call_args.args[0]), {"environment": "production", "manifest": path, "approval_mode": "standard"})
                 path.write_bytes(data + b"\n")
                 dispatch.reset_mock()
                 with self.assertRaisesRegex(ValueError, "differs from the reviewed selector"):
@@ -361,8 +376,12 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse((ROOT / ".github/workflows/release-production.yml.disabled").exists())
         triggers = self.workflow.split("on:\n", 1)[1].split("\npermissions:", 1)[0]
         self.assertEqual(re.findall(r"^  ([a-z_]+):", triggers, re.M), ["workflow_dispatch"])
-        self.assertEqual(re.findall(r"^      ([a-z_]+):", triggers, re.M), ["expected_sha", "confirm_production_deployment"])
+        self.assertEqual(re.findall(r"^      ([a-z_]+):", triggers, re.M), [
+            "expected_sha", "confirm_production_deployment", "recovery_approval", "confirm_prelaunch_data_loss"])
         self.assertIn("required: true\n        default: false\n        type: boolean", triggers)
+        self.assertIn("default: standard\n        type: choice\n        options:\n          - standard\n          - prelaunch", triggers)
+        self.assertIn("PRODUCTION_RECOVERY_APPROVAL: ${{ inputs.recovery_approval }}", self.promote)
+        self.assertIn("CONFIRM_PRELAUNCH_DATA_LOSS: ${{ inputs.confirm_prelaunch_data_loss }}", self.promote)
         self.assertNotIn("pull_request_target", self.workflow)
         self.assertNotIn("workflow_run:", self.workflow)
 

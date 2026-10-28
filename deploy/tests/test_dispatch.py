@@ -1,6 +1,7 @@
 """Synthetic SSM polling failures must never become successful release evidence."""
 from contextlib import contextmanager
 import os
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -129,6 +130,32 @@ class DispatchFailureTests(unittest.TestCase):
 
 class ProductionDispatchFailureTests(DispatchFailureTests):
     environment = "production"
+
+
+class ApprovalModeDispatchTests(unittest.TestCase):
+    def test_modes_arrive_as_production_only_data_under_existing_ssm_pins(self):
+        for target, mode in (("staging", "standard"), ("production", "standard"),
+                             ("production", "prelaunch")):
+            with self.subTest(target=target, mode=mode), invocation([status("Success")], [100, 101], target) as f:
+                f.args.approval_mode = mode
+                release.dispatch(f.args)
+                command = f.send.call_args.args[0]
+                parameters = json.loads(command[command.index("--parameters") + 1])
+                if target == "production":
+                    self.assertEqual(parameters["ApprovalMode"], [mode])
+                else:
+                    self.assertNotIn("ApprovalMode", parameters)
+                self.assertEqual(command[command.index("--document-version") + 1], "3")
+                self.assertEqual(command[command.index("--document-hash") + 1], "e" * 64)
+
+    def test_staging_and_invalid_mode_fail_before_aws(self):
+        for target, mode in (("staging", "prelaunch"), ("production", ""),
+                             ("production", "$(id)"), ("production", None)):
+            with self.subTest(target=target, mode=mode), invocation([], [], target) as f:
+                f.args.approval_mode = mode
+                with self.assertRaises(ValueError):
+                    release.dispatch(f.args)
+                f.send.assert_not_called()
 
 
 if __name__ == "__main__":
