@@ -202,7 +202,8 @@ missing or expired. Public-package activation does not require this helper.
   repetition counts above 1000. The controller independently enforces that
   encoded bound, strict base64/JSON decoding, and the 32-KiB decoded JSON limit.
   When updating these templates, create reviewed document versions and refresh
-  the pinned version/hash variables; do not edit live documents automatically.
+  staging's pinned Environment variables or production's reviewed workflow pin;
+  do not edit live documents automatically.
 - Review and install controller assets from the exact trusted revision outside
   the writable checkout. On EC2, an operator can use:
 
@@ -261,8 +262,9 @@ missing or expired. Public-package activation does not require this helper.
 | Each environment | `AWS_DEPLOY_ROLE_ARN` | Different OIDC deployment role for that environment |
 | Each environment | `SSM_INSTANCE_ID` | Exact existing instance ID |
 | Each environment | `SSM_DOCUMENT_ARN` | Its fixed environment document ARN |
-| Each environment | `SSM_DOCUMENT_VERSION` | Reviewed numeric document version |
-| Each environment | `SSM_DOCUMENT_SHA256` | Reviewed document content hash from AWS metadata |
+| Staging environment | `SSM_DOCUMENT_VERSION` | Reviewed numeric staging document version |
+| Staging environment | `SSM_DOCUMENT_SHA256` | Reviewed staging document content hash from AWS metadata |
+| Production workflow | `SSM_DOCUMENT_VERSION`, `SSM_DOCUMENT_SHA256` | Reviewed production version `2` and AWS metadata SHA-256 pinned in source |
 
 No AWS access-key secrets are required; OIDC credentials are temporary. The
 built-in `GITHUB_TOKEN` is supplied by GitHub. Real application secrets stay in

@@ -9,7 +9,7 @@ release/configuration observations below are dated; PR #36 subsequently promoted
 run 40587847468/1, which cannot use the new exception's changed bundle.
 
 This is the operator runbook for a later, separately approved promotion. The
-implementation PR activates a workflow file, not a deployment. It changes no AWS
+workflow is active in source; this pin change does not deploy or change AWS
 resources, GitHub settings, runtime configuration, databases, Caddy or timers.
 **Production deployment is not ready:** current live prerequisites still need
 operator verification. Standard mode requires actual isolated restore evidence;
@@ -46,19 +46,19 @@ separately reviewed implementation/configuration. This workflow rejects
 `environment` mode and never deploys on push.
 
 Production Environment variables must identify only the production account,
-role, region, instance and pinned document: `AWS_ACCOUNT_ID`, `AWS_REGION`,
-`AWS_DEPLOY_ROLE_ARN`, `SSM_INSTANCE_ID`, `SSM_DOCUMENT_ARN`,
-`SSM_DOCUMENT_VERSION`, `SSM_DOCUMENT_SHA256`. The job gets `contents: read`,
+role, region, instance and document: `AWS_ACCOUNT_ID`, `AWS_REGION`,
+`AWS_DEPLOY_ROLE_ARN`, `SSM_INSTANCE_ID`, `SSM_DOCUMENT_ARN`. The reviewed
+version `2` and AWS metadata SHA-256 are pinned in the workflow. The job gets
+`contents: read`,
 `actions: read`, `id-token: write`; no package writes. PR CI receives no AWS
 credentials. The exact case-sensitive repository/workflow identity remains
 `Kacperkg/vellum`, independently of case-insensitive GitHub URLs.
 
 ## 2. Workflow availability
 
-Merge this draft PR to staging only after review/CI and separate merge approval.
-Later include `.github/workflows/release-production.yml` **and its runner helper**
-in the reviewed promotion PR to main. With staging as default, the workflow must
-exist at that same path on both branches for dispatch discovery and execution.
+This pin change targets main through a reviewed PR and separate merge approval.
+With staging as default, `.github/workflows/release-production.yml` must exist
+at the same path on both branches for dispatch discovery and execution.
 The only trigger is `workflow_dispatch`. A merge to either branch cannot trigger
 this production workflow, even if the selector changes. A dispatch to staging,
 a feature branch, a tag, another repository or an unprotected main cannot deploy.
@@ -70,7 +70,11 @@ Historical AWS evidence (not current live verification): region `eu-west-2`,
 instance `i-073a8f8cf2abd86c5`, role `vellum-github-production-deploy`, document
 `VellumDeploy-production`, version `1`, metadata SHA-256
 `63e591e39c255a88d9a947474062242124816434eacf0c9c4f6ad8db1b000626`.
-This task did not contact AWS. With an authorised read-only operator identity:
+The owner reports that version `2` is Active in `eu-west-2`, with AWS metadata
+SHA-256 `8d43e90f07c95456d7f781b591cc187eaf448e0c80b3a87d0433b9665297f83a`.
+Version `1` remains the default; the workflow selects version `2` explicitly.
+This repository change did not contact AWS. With an authorised read-only
+operator identity:
 
 ```sh
 aws sts get-caller-identity --query Account --output text
@@ -78,9 +82,9 @@ aws iam get-role --role-name vellum-github-production-deploy
 aws iam list-role-policies --role-name vellum-github-production-deploy
 aws iam list-attached-role-policies --role-name vellum-github-production-deploy
 aws ssm describe-document --region eu-west-2 --name VellumDeploy-production \
-  --document-version 1 --query 'Document.{Name:Name,Version:DocumentVersion,Hash:Hash,HashType:HashType,Owner:Owner,Status:Status}'
+  --document-version 2 --query 'Document.{Name:Name,Version:DocumentVersion,Hash:Hash,HashType:HashType,Owner:Owner,Status:Status}'
 aws ssm get-document --region eu-west-2 --name VellumDeploy-production \
-  --document-version 1 --document-format JSON --query Content --output text
+  --document-version 2 --document-format JSON --query Content --output text
 aws ssm describe-instance-information --region eu-west-2 \
   --filters Key=InstanceIds,Values=i-073a8f8cf2abd86c5 \
   --query 'InstanceInformationList[].{Id:InstanceId,Agent:AgentVersion,Ping:PingStatus}'
@@ -97,8 +101,8 @@ metadata hash/version to the independently reviewed pin; a local JSON formatting
 hash is not a substitute. The document must execute only the root-installed
 `python3 -I` controller for production using the Manifest ENV_VAR input. The
 revised template also requires bounded `ApprovalMode` ENV_VAR data, defaulting to
-`standard`; separately review a new numeric version and its AWS metadata hash
-before updating production pins, as detailed in the pre-launch runbook. Verify
+`standard`. For any later document change, separately review its numeric version
+and AWS metadata hash before changing the workflow pin. Verify
 SSM Agent ENV_VAR support. Investigate drift; do not update pins blindly.
 
 ## 4. Exact six-file bundle verification

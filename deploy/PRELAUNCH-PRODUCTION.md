@@ -134,30 +134,31 @@ Create a separate reviewed promotion PR to main selecting those actual values
 in `deploy/production-release.json` and carrying the exact tested runtime/bundle
 trees, workflow and runner helper. Verify PR #31 remains excluded. Require CI,
 independent review and separate merge approval. Never fill placeholders with
-guessed identifiers. This implementation PR targets staging and does not change
-its null selector or main's existing selection.
+guessed identifiers. The earlier pre-launch policy change targeted staging and
+did not change its null selector or main's existing selection. This pin change
+targets main and leaves the selector unchanged.
 
-## 5. Revise and pin the production SSM document
+## 5. Verify the pinned production SSM document
 
 The production template adds bounded `ApprovalMode` (`standard` by default,
 `prelaunch` allowed), passed through SSM `ENV_VAR`. Staging's document is
 unchanged and accepts no exception parameter. The production script requires
 both ENV_VAR inputs and still executes only the fixed installed controller.
 
-Through separately approved AWS administration, create a new **numeric version**
-of the existing `VellumDeploy-production` document from reviewed
-`ssm/production.json`. Inspect its exact content and AWS metadata SHA-256, then
-separately approve updating production Environment `SSM_DOCUMENT_VERSION` and
-`SSM_DOCUMENT_SHA256` to those verified pins. Do not guess a version or reuse the
-historical hash; do not use `$LATEST`/`$DEFAULT`. Keep the fixed document ARN,
-instance, production-only OIDC audience/subject and least-privilege deployment
-role. Grant no document-edit permission to Actions. Verify SSM Agent
->=3.3.2746.0 and actual ENV_VAR support. These are proposed operator changes,
-not actions performed by this PR.
+The owner reports that `VellumDeploy-production` version `2` is Active in
+`eu-west-2`, with AWS metadata SHA-256
+`8d43e90f07c95456d7f781b591cc187eaf448e0c80b3a87d0433b9665297f83a`.
+The production workflow pins both values in reviewed source; version `1` remains
+the default. Before dispatch, independently compare version `2` content and AWS
+metadata with the reviewed `ssm/production.json` template and workflow pin. Do
+not use `$LATEST`/`$DEFAULT`. Keep the fixed document ARN, instance,
+production-only OIDC audience/subject and least-privilege deployment role. Grant
+no document-edit permission to Actions. Verify SSM Agent >=3.3.2746.0 and
+actual ENV_VAR support. This PR does not change AWS resources or the default.
 
 Keep revised workflow/helper available on default staging and main. New
-production dispatches send `ApprovalMode` even in standard mode, so the old
-document is incompatible and must be repinned before dispatch. Old documents
+production dispatches send `ApprovalMode` even in standard mode, so the workflow
+selects the revised version `2`; older documents are incompatible. Old documents
 cannot silently activate the exception; a missing mode defaults to standard at
 the controller and a pre-launch-shaped record then fails the standard schema.
 

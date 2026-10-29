@@ -423,8 +423,12 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("ref: ${{ github.sha }}", self.promote)
         self.assertIn("fetch-depth: 0", self.promote)
         self.assertIn("persist-credentials: false", self.promote)
-        for name in ("AWS_DEPLOY_ROLE_ARN", "AWS_REGION", "AWS_ACCOUNT_ID", "SSM_INSTANCE_ID", "SSM_DOCUMENT_ARN", "SSM_DOCUMENT_VERSION", "SSM_DOCUMENT_SHA256"):
+        for name in ("AWS_DEPLOY_ROLE_ARN", "AWS_REGION", "AWS_ACCOUNT_ID", "SSM_INSTANCE_ID", "SSM_DOCUMENT_ARN"):
             self.assertIn("${{ vars." + name + " }}", self.promote)
+        self.assertIn("SSM_DOCUMENT_VERSION: '2'", self.promote)
+        self.assertIn("SSM_DOCUMENT_SHA256: 8d43e90f07c95456d7f781b591cc187eaf448e0c80b3a87d0433b9665297f83a", self.promote)
+        self.assertNotIn("${{ vars.SSM_DOCUMENT_VERSION }}", self.promote)
+        self.assertNotIn("${{ vars.SSM_DOCUMENT_SHA256 }}", self.promote)
         self.assertIn("role-session-name: vellum-production-${{ github.run_id }}", self.promote)
         self.assertLess(self.promote.index("production_release.py guard"), self.promote.index("production_release.py resolve"))
         self.assertLess(self.promote.index("production_release.py resolve"), self.promote.index("aws-actions/configure-aws-credentials"))
