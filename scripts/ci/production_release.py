@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Runner-only production gates around the unchanged six-file controller bundle."""
+"""Runner-only production gates around the verified six-file controller bundle."""
 import argparse
 import hashlib
 import os
@@ -27,6 +27,17 @@ REQUIRED_JOBS = (
 )
 
 
+def recovery_approval_mode():
+    mode = os.environ.get("PRODUCTION_RECOVERY_APPROVAL", "standard")
+    confirmed = os.environ.get("CONFIRM_PRELAUNCH_DATA_LOSS", "false")
+    release.require(
+        (mode == "standard" and confirmed == "false")
+        or (mode == "prelaunch" and confirmed == "true"),
+        "select standard recovery approval or explicitly acknowledge prelaunch data loss",
+    )
+    return mode
+
+
 def guard():
     release.require(
         os.environ.get("GITHUB_REPOSITORY") == "Kacperkg/vellum"
@@ -43,6 +54,7 @@ def guard():
         and os.environ.get("CONFIRM_PRODUCTION_DEPLOYMENT") == "true",
         "production requires enabled CD, manual approval mode and explicit acknowledgement",
     )
+    recovery_approval_mode()
     sha = os.environ.get("EXPECTED_SHA", "")
     release.require(
         re.fullmatch(release.SHA, sha) and int(sha, 16)
@@ -147,7 +159,8 @@ def dispatch(args):
         hashlib.sha256(data).hexdigest() == selected["manifest_sha256"],
         "resolved manifest differs from the reviewed selector",
     )
-    release.dispatch(argparse.Namespace(environment="production", manifest=args.manifest))
+    release.dispatch(argparse.Namespace(environment="production", manifest=args.manifest,
+                                        approval_mode=recovery_approval_mode()))
 
 
 def main():

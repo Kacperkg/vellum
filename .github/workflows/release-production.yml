@@ -13,6 +13,19 @@ on:
         required: true
         default: false
         type: boolean
+      recovery_approval:
+        description: Recovery approval (prelaunch is a one-use exception before 4 November 2026 UTC)
+        required: true
+        default: standard
+        type: choice
+        options:
+          - standard
+          - prelaunch
+      confirm_prelaunch_data_loss:
+        description: No public users; I accept pre-launch data loss without verified restore
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -41,6 +54,8 @@ jobs:
       CONFIRM_PRODUCTION_DEPLOYMENT: ${{ inputs.confirm_production_deployment }}
       VELLUM_CD_ENABLED: ${{ vars.VELLUM_CD_ENABLED }}
       PRODUCTION_APPROVAL_MODE: ${{ vars.PRODUCTION_APPROVAL_MODE }}
+      PRODUCTION_RECOVERY_APPROVAL: ${{ inputs.recovery_approval }}
+      CONFIRM_PRELAUNCH_DATA_LOSS: ${{ inputs.confirm_prelaunch_data_loss }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:

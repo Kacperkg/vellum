@@ -1,10 +1,19 @@
 # Guarded production activation
 
+For the specifically approved first-deployment data-loss exception, see
+[PRELAUNCH-PRODUCTION.md](PRELAUNCH-PRODUCTION.md). It waives only isolated restore
+verification, requires a new immutable staging release/matching controller and
+revised pinned production SSM document, and expires by 4 November 2026 UTC. The
+standard procedure below still requires genuine restore evidence. Historical
+release/configuration observations below are dated; PR #36 subsequently promoted
+run 40587847468/1, which cannot use the new exception's changed bundle.
+
 This is the operator runbook for a later, separately approved promotion. The
 implementation PR activates a workflow file, not a deployment. It changes no AWS
 resources, GitHub settings, runtime configuration, databases, Caddy or timers.
-**Production deployment is not ready:** a fresh eligible ordinary staging-push
-release and actual isolated restore evidence are still required.
+**Production deployment is not ready:** current live prerequisites still need
+operator verification. Standard mode requires actual isolated restore evidence;
+the pre-launch exception needs a new compatible release and its separate gates.
 
 ## 1. GitHub configuration and verified current state
 
@@ -86,13 +95,17 @@ and instance, with no generic shell-document, document-edit or alternate role
 grants. Preserve the existing GetCommandInvocation read permission. Compare AWS
 metadata hash/version to the independently reviewed pin; a local JSON formatting
 hash is not a substitute. The document must execute only the root-installed
-`python3 -I` controller for production using the Manifest ENV_VAR input. Verify
+`python3 -I` controller for production using the Manifest ENV_VAR input. The
+revised template also requires bounded `ApprovalMode` ENV_VAR data, defaulting to
+`standard`; separately review a new numeric version and its AWS metadata hash
+before updating production pins, as detailed in the pre-launch runbook. Verify
 SSM Agent ENV_VAR support. Investigate drift; do not update pins blindly.
 
 ## 4. Exact six-file bundle verification
 
-The implementation intentionally changes none of the installed six files. It
-does not certify that the live host already has PR #29's compatible bundle.
+The pre-launch policy changes `cd/controller.py` and `cd/release.py` within the
+six-file bundle. It does not certify the live installation. The existing
+40587847468/1 manifest is incompatible with those changes; do not rewrite it.
 Before creating a new staging release, verify the installed bundle against the
 reviewed source on the drained host under the existing authorised installation
 procedure in [STAGING-AUTH-ROLLOUT.md](STAGING-AUTH-ROLLOUT.md). The exact list is:
@@ -136,12 +149,14 @@ checkout; never install/execute it as root.
 
 ## 5. Obtain a fresh ordinary staging-push release
 
-Current evidence: PR #29 push `40565614034/1` succeeded overall but skipped
+Historical evidence before PR #36: PR #29 push `40565614034/1` succeeded overall but skipped
 `publish-and-deploy` and has no artifact. PR #28 push `40558125941/1` has no
 release artifact. Manual `40560489451/1` produced
 `vellum-staging-verification-40560489451-1`, which is ineligible. The selector
-therefore remains exactly three null fields. Older receipts cannot substitute
-for the new controller/authentication source.
+was therefore exactly three null fields at that time. PR #36 subsequently
+selected real release 40587847468/1 on main. This staging-based policy branch
+retains staging's null selector; a new compatible release/promotion is required
+for the exception. Older receipts cannot substitute for changed controller source.
 
 After independently approving staging deployment, matching bundle/runtime/proxy
 readiness and required CI, an operator may enable CD through the existing
@@ -213,7 +228,8 @@ Two-day S3 retention is accepted, but is not restore proof. **Never set
 `restore_verified=true` without an actual isolated verified restore.** Missing
 restore evidence intentionally blocks production, even after workflow activation.
 
-Minimum procedure before first promotion:
+Minimum procedure for standard production approval (the specifically approved
+pre-launch alternative is described in PRELAUNCH-PRODUCTION.md):
 
 1. On an authorised private disposable host, follow
    [backup/RESTORE.md](backup/RESTORE.md) using an actual recent **production**
