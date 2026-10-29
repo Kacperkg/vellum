@@ -80,6 +80,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SSM_INSTANCE_ID: ${{ vars.SSM_INSTANCE_ID }}
           SSM_DOCUMENT_ARN: ${{ vars.SSM_DOCUMENT_ARN }}
-          SSM_DOCUMENT_VERSION: ${{ vars.SSM_DOCUMENT_VERSION }}
-          SSM_DOCUMENT_SHA256: ${{ vars.SSM_DOCUMENT_SHA256 }}
+          SSM_DOCUMENT_VERSION: '2'
+          SSM_DOCUMENT_SHA256: 8d43e90f07c95456d7f781b591cc187eaf448e0c80b3a87d0433b9665297f83a
         run: python3 scripts/ci/production_release.py dispatch --manifest approved-release.json
