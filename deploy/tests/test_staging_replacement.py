@@ -66,6 +66,7 @@ class Runtime:
         self.candidate_on_failure = False
         self.drain_results = ["0\n"]
         self.drain_error = None
+        self.backend_env = {"APP_ENV": "production", "PASSWORD_RESET_EMAIL_MODE": "disabled"}
 
     def __call__(self, args, **kwargs):
         self.calls.append(list(args))
@@ -127,7 +128,7 @@ class Runtime:
                     "backend": {"image": self.compose_image or self.value["images"]["backend"], "environment": {
                         "CORS_ALLOWED_ORIGINS": controller.ORIGINS[self.environment],
                         "RATE_LIMIT_LOGIN_REQUESTS": "10",
-                        "TRUSTED_PROXY_CIDRS": controller.TRUSTED_PROXY_CIDRS}},
+                        "TRUSTED_PROXY_CIDRS": controller.TRUSTED_PROXY_CIDRS, **self.backend_env}},
                     "frontend": {"image": self.value["images"]["frontend"]}}})
             elif "up" in args:
                 if self.records:
@@ -487,6 +488,8 @@ class StagingReplacementTests(unittest.TestCase):
                 original_write = controller.atomic_json
                 writes = []
                 def write(path, contents):
+                    if path.name == controller.PRELAUNCH_CLOSED:
+                        return original_write(path, contents)
                     writes.append(path)
                     if len(writes) == failed_write:
                         raise OSError("synthetic receipt persistence failure")

@@ -65,9 +65,19 @@ from release import (  # noqa: E402 - import only after validating the installed
     validate_manifest,
 )
 from smoke import smoke  # noqa: E402
-from coordination import operation  # noqa: E402
+from coordination import operation, sync_state  # noqa: E402
 
 MAX_ENCODED_MANIFEST_CHARS = 45000
+# Deliberately fixed in reviewed source; extending this needs a new release.
+PRELAUNCH_SUNSET = datetime(2026, 11, 4, tzinfo=timezone.utc)
+PRELAUNCH_ACKNOWLEDGEMENT = "I_ACCEPT_PRELAUNCH_DATA_LOSS_WITHOUT_RESTORE_VERIFICATION"
+PRELAUNCH_CLOSED = "production-prelaunch-closed.json"
+
+
+def validate_approval_mode(environment, approval_mode):
+    require(approval_mode in ("standard", "prelaunch"), "unknown production approval mode")
+    require(environment == "production" or approval_mode == "standard",
+            "prelaunch approval is production-only")
 
 
 def decode_manifest_parameter(encoded):
@@ -121,21 +131,19 @@ def validate_environment_file(environment):
     return path
 
 
-def validate_approval(approval, manifest, now=None):
+def validate_approval(approval, manifest, now=None, approval_mode="standard"):
     now = now or datetime.now(timezone.utc)
+    validate_approval_mode("production", approval_mode)
+    fields = {
+        "manifest_sha256", "verified_at", "backup_created_at", "backup_reference",
+        "off_host_copy_verified", "restore_verified", "schema_compatible",
+        "trusted_proxy_reviewed",
+    }
+    if approval_mode == "prelaunch":
+        fields |= {"approval_mode", "no_public_users", "accept_data_loss",
+                   "acknowledgement", "expires_at"}
     require(
-        isinstance(approval, dict)
-        and set(approval)
-        == {
-            "manifest_sha256",
-            "verified_at",
-            "backup_created_at",
-            "backup_reference",
-            "off_host_copy_verified",
-            "restore_verified",
-            "schema_compatible",
-            "trusted_proxy_reviewed",
-        },
+        isinstance(approval, dict) and set(approval) == fields,
         "invalid operator approval record",
     )
     require(
@@ -165,7 +173,6 @@ def validate_approval(approval, manifest, now=None):
     )
     for field in (
         "off_host_copy_verified",
-        "restore_verified",
         "schema_compatible",
         "trusted_proxy_reviewed",
     ):
@@ -173,6 +180,39 @@ def validate_approval(approval, manifest, now=None):
             approval[field] is True,
             "production requires explicit backup, restore, schema and proxy review",
         )
+    if approval_mode == "standard":
+        require(approval["restore_verified"] is True,
+                "production requires genuine restore verification")
+        return
+    require(approval["approval_mode"] == "prelaunch"
+            and approval["restore_verified"] is False
+            and approval["no_public_users"] is True
+            and approval["accept_data_loss"] is True
+            and approval["acknowledgement"] == PRELAUNCH_ACKNOWLEDGEMENT,
+            "prelaunch requires explicit no-public-users and data-loss acknowledgement; restore remains unverified")
+    expires_at = datetime.fromisoformat(approval["expires_at"].replace("Z", "+00:00"))
+    require(expires_at.tzinfo is not None
+            and now < expires_at <= min(verified_at + timedelta(hours=24), PRELAUNCH_SUNSET),
+            "prelaunch approval expired or exceeds the fixed sunset/24-hour limit")
+
+
+def close_prelaunch(approval, manifest, approval_mode):
+    """Called under host locks; closure survives failure and is never reset here."""
+    path = STATE / PRELAUNCH_CLOSED
+    if approval_mode == "prelaunch":
+        require(not os.path.lexists(path), "prelaunch exception already consumed or retired")
+        require(not os.path.lexists(STATE / "production-current.json"),
+                "prelaunch exception is only for the first managed production deployment")
+    if not os.path.lexists(path):
+        atomic_json(path, {
+            "schema": 1,
+            "reason": "consumed" if approval_mode == "prelaunch" else "standard-mode-retirement",
+            "closed_at": datetime.now(timezone.utc).isoformat(),
+            "manifest_sha256": hashlib.sha256(canonical(manifest)).hexdigest(),
+            "approval": approval,
+        })
+        # File fsync alone cannot guarantee persistence of the directory entry.
+        sync_state(STATE)
 
 
 def atomic_json(path, value):
@@ -189,9 +229,11 @@ def atomic_json(path, value):
 
 
 class Commands:
-    def __init__(self, environment, manifest):
+    def __init__(self, environment, manifest, approval_mode="standard"):
         require(environment in ORIGINS, "unknown deployment environment")
+        validate_approval_mode(environment, approval_mode)
         self.environment = environment
+        self.approval_mode = approval_mode
         self.project = "vellum-" + environment
         self.env = {
             "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -356,6 +398,10 @@ class Commands:
             "unexpected application origin",
         )
         backend_env = resolved["services"]["backend"]["environment"]
+        if self.approval_mode == "prelaunch":
+            require(backend_env.get("APP_ENV") == "production"
+                    and backend_env.get("PASSWORD_RESET_EMAIL_MODE") == "disabled",
+                    "prelaunch requires production runtime with SES sending disabled")
         require(
             backend_env.get("TRUSTED_PROXY_CIDRS") == TRUSTED_PROXY_CIDRS,
             "trusted proxy must match the reviewed fixed Caddy address",
@@ -465,8 +511,9 @@ class Commands:
             print("Service diagnostics unavailable", file=sys.stderr)
 
 
-def deploy(environment, manifest, commands=None):
+def deploy(environment, manifest, commands=None, approval_mode="standard"):
     require(environment in ORIGINS, "unknown deployment environment")
+    validate_approval_mode(environment, approval_mode)
     validate_manifest(manifest, REPOSITORY, verified=environment == "production")
     require(
         bundle_hashes(BASE) == manifest["deployment_files"],
@@ -475,9 +522,17 @@ def deploy(environment, manifest, commands=None):
     if environment == "production":
         approval_path = STATE / "production-approval.json"
         protected(approval_path, private=True)
-        validate_approval(read_json(approval_path), manifest)
-    commands = commands or Commands(environment, manifest)
+        validate_approval(read_json(approval_path), manifest, approval_mode=approval_mode)
+    commands = commands or Commands(environment, manifest, approval_mode=approval_mode)
     with operation(STATE, "deployment", environment):
+        if environment == "production":
+            # Re-read/freshness-check after locking; do not consume a pending operation.
+            protected(approval_path, private=True)
+            approval = read_json(approval_path)
+            validate_approval(approval, manifest, approval_mode=approval_mode)
+            close_prelaunch(approval, manifest, approval_mode)
+            if approval_mode == "prelaunch":
+                print("production: PRELAUNCH data-loss exception; restore verification NOT performed; exception consumed")
         try:
             commands.apply(manifest)
         except Exception:
@@ -520,7 +575,7 @@ def main():
         "unsafe deployment state directory",
     )
     manifest = decode_manifest_parameter(os.environ["SSM_Manifest"])
-    deploy(environment, manifest)
+    deploy(environment, manifest, approval_mode=os.environ.get("SSM_ApprovalMode", "standard"))
 
 
 if __name__ == "__main__":
