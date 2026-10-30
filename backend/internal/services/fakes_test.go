@@ -275,3 +275,10 @@ func (r *fakeRefreshTokenRepository) RevokeByHash(hash string, now time.Time) er
 func (r *fakeUserRepository) FindByIDContext(context.Context, uuid.UUID) (*models.User, error) {
 	return r.User, r.Err
 }
+
+func (r *fakeRefreshTokenRepository) HasActiveFamily(_ context.Context, userID uuid.UUID, version int64, familyID uuid.UUID, now time.Time) (bool, error) {
+	if r.Err != nil {
+		return false, r.Err
+	}
+	return r.Token != nil && r.Token.UserID == userID && r.Token.AuthVersion == version && r.Token.SessionFamilyID() == familyID && r.Token.RevokedAt == nil && r.Token.ExpiresAt.After(now), nil
+}

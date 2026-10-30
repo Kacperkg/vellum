@@ -1,4 +1,4 @@
-import { test, expect, apiURL } from "./fixtures";
+import { test, expect, apiURL, storedSession } from "./fixtures";
 
 const token = "A".repeat(43);
 
@@ -47,7 +47,18 @@ test("missing reset token is actionable and recovery remains public with a store
   await page.goto("/reset-password");
   await expect(page.getByRole("alert")).toContainText("invalid or has expired");
   await page.evaluate(() =>
-    localStorage.setItem("vellum:access_token", "old-session"),
+    localStorage.setItem(
+      "vellum:session",
+      JSON.stringify({
+        generation: crypto.randomUUID(),
+        revision: crypto.randomUUID(),
+        credentials: {
+          access_token: "old-session",
+          refresh_token: "old-refresh",
+          user: { id: "synthetic" },
+        },
+      }),
+    ),
   );
   await page.goto("/forgot-password");
   await expect(
@@ -101,8 +112,18 @@ test("reset keeps token out of URL/storage, validates matching passwords, clears
     .getByLabel("Confirm new password", { exact: true })
     .fill("NewPassword123!");
   await page.evaluate(() => {
-    localStorage.setItem("vellum:access_token", "old-session");
-    localStorage.setItem("vellum:refresh_token", "old-refresh");
+    localStorage.setItem(
+      "vellum:session",
+      JSON.stringify({
+        generation: crypto.randomUUID(),
+        revision: crypto.randomUUID(),
+        credentials: {
+          access_token: "old-session",
+          refresh_token: "old-refresh",
+          user: { id: "synthetic" },
+        },
+      }),
+    );
   });
   await page
     .getByRole("button", { name: "Reset password", exact: true })
@@ -114,7 +135,7 @@ test("reset keeps token out of URL/storage, validates matching passwords, clears
   await expect(page.getByRole("status")).toContainText(
     "Your password has been reset",
   );
-  expect(await page.evaluate(() => localStorage.length)).toBe(0);
+  expect((await storedSession(page)) === null).toBe(true);
   await page.getByRole("link", { name: "Back to sign in" }).click();
   await expect(page).toHaveURL(/\/login$/);
   await page.goBack();

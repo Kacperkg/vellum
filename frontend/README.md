@@ -26,27 +26,54 @@ The development server runs at `http://localhost:5173`. API requests default to
 
 ## Authentication flow
 
-1. Register or login returns an access token, rotating refresh token, and user.
-2. `tokenStorage.ts` stores both tokens and the returned user in browser
-   `localStorage`.
-3. The request interceptor attaches the access token as a Bearer token.
-4. A `401` from a protected `/api/...` request starts one shared refresh request.
-5. Successful refresh stores the replacement pair and retries the original
-   request once.
-6. Failed refresh clears local authentication and returns to `/login`.
-7. Logout clears local tokens and asks the backend to revoke the refresh token.
+1. Register or login starts a new browser session generation, then stores the
+   access token, rotating refresh token and user together in one `localStorage`
+   record (`vellum:session`). Older sign-in responses cannot replace that generation.
+2. The request interceptor binds protected requests to their session generation
+   before sending them. It attaches the current access token as a Bearer token.
+3. A protected `401` takes a Web Lock shared by tabs for that generation. The
+   first tab rotates the refresh token; waiting tabs reuse the replacement.
+   Protected requests retry at most once, within the same generation. A request
+   from an old login is never replayed with another login's credentials.
+4. Credential writes and clears use a separate, short Web Lock and compare the
+   stored generation and revision. Neither stale success nor stale failure can
+   overwrite a newer login. Successful responses from obsolete protected requests
+   are also rejected.
+5. Logout immediately replaces the record with a credential-free tombstone under
+   the short lock. Storage subscriptions remove protected pages in every tab and
+   reset their finance state; the originating tab uses SPA navigation so its
+   revocation request can continue. Logout never waits for an in-flight refresh
+   lock. Reload reads the tombstone and stays signed out.
+6. The backend logout request revokes the token's entire rotation family, including
+   descendants already issued before logout. A late discarded response also gets
+   a best-effort revocation request. Failed refresh attempts revoke their captured
+   predecessor because a lost response may already have rotated on the server.
+   Other login families remain separate.
 
-Refresh requests are shared because backend refresh tokens are single-use; this
-prevents simultaneous `401` responses from trying to rotate the same token more
-than once.
+Logout is immediately final in local state. Server revocation requires a successful
+request: offline/network failure cannot prove that the server received logout.
+The client bounds refresh and logout requests and never automatically retries auth
+mutations. Existing server expiry and password-reset revocation remain in force.
 
-The local storage keys are:
+The browser requires Web Locks in a secure context (HTTPS, or loopback during
+local development). Authentication fails closed when those APIs are unavailable;
+there is no unsafe storage-only coordination fallback. Legacy three-key credentials
+are deliberately ignored and removed on the next authentication state change, so
+users must sign in again after this client upgrade. Existing old client tabs need
+reloading to gain the new UI coordination; backend family revocation still applies.
+
+The session record has this shape:
 
 ```text
-vellum:access_token
-vellum:refresh_token
-vellum:user
+{ generation, revision, credentials: { access_token, refresh_token, user } | null }
 ```
+
+A fresh generation starts on explicit sign-in and logout; rotation changes only
+the revision. The credential-free tombstone is intentionally retained rather than
+removing the key, preventing pending sign-in responses from passing an empty-state
+comparison after logout. Password-reset completion clears only its original
+browser generation under the state lock, including any rotation queued before
+cleanup while preserving a later successful sign-in.
 
 ## Key pieces
 

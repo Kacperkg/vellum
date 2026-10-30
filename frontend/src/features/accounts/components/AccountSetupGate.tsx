@@ -1,5 +1,4 @@
 import { useId, useState, type FormEvent, type ReactNode } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import { createAccount } from "@/api/endpoints/accounts";
 import { logout } from "@/api/endpoints/auth";
 import { apiErrorMessage } from "@/api/errors";
@@ -16,7 +15,6 @@ export default function AccountSetupGate({
   children: ReactNode;
 }) {
   const { accounts, loading, errors, refresh } = useFinanceData();
-  const navigate = useNavigate();
   const formId = useId();
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -25,7 +23,6 @@ export default function AccountSetupGate({
 
   async function signOut() {
     await logout();
-    await navigate({ to: "/login", replace: true });
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {

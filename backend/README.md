@@ -65,7 +65,17 @@ refresh token, and the authenticated user.
 - Refresh tokens are random values; only SHA-256 hashes are stored.
 - `POST /refresh` atomically revokes the submitted refresh token and creates its
   replacement.
-- `POST /logout` revokes the submitted refresh token.
+- Each login/registration starts an independent session family. Rotation keeps
+  that family. `POST /logout` accepts any refresh credential from the family,
+  including an already rotated ancestor, and revokes all its active successors.
+  Unrelated logins remain valid. Repeated/unknown-token logout succeeds without
+  changing another session.
+- New access JWTs include the session family and require both the current user
+  authentication version and an unrevoked, unexpired refresh token in that family.
+  Thus logout also rejects access tokens issued by a rotation whose HTTP response
+  arrives late. Normal rotation does not invalidate earlier access tokens in the
+  same live family. Password reset still revokes every family and increments the
+  account authentication version.
 - Reused, expired, or revoked refresh tokens are rejected.
 - Registration creates its user, default settings, and initial refresh-token
   hash in one repository transaction. A persistence failure rolls everything
@@ -74,6 +84,29 @@ refresh token, and the authenticated user.
 ```http
 Authorization: Bearer <access-token>
 ```
+
+Logout and rotation take the same user-row lock used by password reset. If
+rotation commits first, logout revokes its successor; if logout commits first,
+rotation fails. Cancellation of an HTTP response is not the revocation mechanism.
+Server revocation is guaranteed after a successful logout response. A network or
+database failure cannot prove server revocation; local sign-out alone is not that
+proof. Requests already authorised before revocation may finish.
+
+The migration adds a nullable indexed `refresh_tokens.family_id`; existing rows
+and tokens remain intact. A legacy row's own ID is its family root, and its first
+new-code rotation inherits that ID. JWTs issued before this change have no family
+claim and retain their original expiry/authentication-version rules, including
+password-reset invalidation. Historical rotations before this migration have no
+stored lineage and cannot be retrospectively associated. The stronger logout
+access-token guarantee applies to JWTs issued by the new code; reload existing
+browser tabs to activate the client guards. Keep ancestor refresh rows while
+families can still be active, because they are logout capabilities.
+
+Use the existing reviewed backend-writer transition: stop old writers and drain
+the target database before starting one new backend. An older backend cannot
+honour family revocation, even though the additive schema remains readable.
+Rollback requires a reviewed compatible recovery release, not an old auth image.
+No environment variable, IAM change or new dependency is required.
 
 ## Environment variables
 
@@ -193,11 +226,10 @@ history. Persistent edge controls or a shared store would be warranted when
 scaling or responding to sustained distributed abuse; Redis is not required for
 the current single-instance deployment.
 
-The existing frontend clears local authentication on any failed refresh,
-including 429, and its interceptor redirects to login. A transient throttle can
-therefore require another sign-in; automatic `Retry-After` handling would be a
-separate client change. Authentication handler and token-rotation behavior are
-unchanged.
+The frontend clears the matching browser session on a failed refresh, including
+429, and its session subscription returns protected pages to login. A stale
+failure cannot clear a newer login. A transient throttle can still require another
+sign-in; automatic `Retry-After` handling would be a separate client change.
 
 ## Budget uniqueness and existing records
 
@@ -223,7 +255,7 @@ Public routes:
 | `POST` | `/register` | Create a user and token pair.                 |
 | `POST` | `/login`    | Authenticate and create a token pair.         |
 | `POST` | `/refresh`  | Rotate a refresh token and create a new pair. |
-| `POST` | `/logout`   | Revoke a refresh token.                       |
+| `POST` | `/logout`   | Revoke one refresh-token family.              |
 
 Protected resource groups:
 

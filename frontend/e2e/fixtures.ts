@@ -9,10 +9,10 @@ import { randomUUID } from "node:crypto";
 export const apiURL = "http://localhost:15173";
 export const appURL = "http://localhost:15173";
 export const password = "Synthetic-E2E-Password-2026!";
-type Session = {
+export type Session = {
   access_token: string;
   refresh_token: string;
-  user: { first_name: string };
+  user: { first_name: string; email: string };
 };
 type RecordData = Record<string, unknown>;
 
@@ -50,9 +50,14 @@ export async function signUpAPI(request: APIRequestContext) {
 export async function enterSession(page: Page, session: Session) {
   await page.goto("/login");
   await page.evaluate((value) => {
-    localStorage.setItem("vellum:access_token", value.access_token);
-    localStorage.setItem("vellum:refresh_token", value.refresh_token);
-    localStorage.setItem("vellum:user", JSON.stringify(value.user));
+    localStorage.setItem(
+      "vellum:session",
+      JSON.stringify({
+        generation: crypto.randomUUID(),
+        revision: crypto.randomUUID(),
+        credentials: value,
+      }),
+    );
   }, session);
 }
 
@@ -133,4 +138,22 @@ export async function signOut(page: Page) {
       .getByRole("button", { name: "Open workspace navigation", exact: true })
       .click();
   await button.click();
+}
+
+// Simulate an expired/revoked credential without changing login identity.
+export async function expireSession(page: Page, revokeRefresh = false) {
+  await page.evaluate((revoke) => {
+    const state = JSON.parse(localStorage.getItem("vellum:session")!);
+    state.credentials.access_token = "expired-test-access";
+    if (revoke) state.credentials.refresh_token = "revoked-test-refresh";
+    localStorage.setItem("vellum:session", JSON.stringify(state));
+  }, revokeRefresh);
+}
+
+export async function storedSession(page: Page): Promise<Session | null> {
+  return page.evaluate(
+    () =>
+      JSON.parse(localStorage.getItem("vellum:session") ?? "null")
+        ?.credentials ?? null,
+  );
 }

@@ -107,3 +107,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 func (h *AuthHandler) ValidateAuthVersion(ctx context.Context, id uuid.UUID, version int64) bool {
 	return h.userService.ValidateAuthVersion(ctx, id, version)
 }
+
+func (h *AuthHandler) ValidateSession(ctx context.Context, id uuid.UUID, version int64, familyID *uuid.UUID) bool {
+	return h.userService.ValidateSession(ctx, id, version, familyID)
+}

@@ -10,9 +10,9 @@ import (
 	"github.com/kacperkg/vellum/internal/auth"
 )
 
-func AuthMiddleware(secret string, validateVersion func(context.Context, uuid.UUID, int64) bool) gin.HandlerFunc {
-	if validateVersion == nil {
-		panic("authentication requires an auth version validator")
+func AuthMiddleware(secret string, validateSession func(context.Context, uuid.UUID, int64, *uuid.UUID) bool) gin.HandlerFunc {
+	if validateSession == nil {
+		panic("authentication requires a session validator")
 	}
 	return func(c *gin.Context) {
 
@@ -41,7 +41,7 @@ func AuthMiddleware(secret string, validateVersion func(context.Context, uuid.UU
 
 		// Validate token
 		claims, err := auth.ValidateToken(tokenString, secret)
-		if err != nil || !validateVersion(c.Request.Context(), claims.UserID, claims.AuthVersion) {
+		if err != nil || !validateSession(c.Request.Context(), claims.UserID, claims.AuthVersion, claims.SessionID) {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "invalid or expired token",
 			})

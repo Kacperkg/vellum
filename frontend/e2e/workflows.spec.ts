@@ -10,6 +10,8 @@ import {
   addAccount,
   currentDate,
   signOut,
+  expireSession,
+  storedSession,
 } from "./fixtures";
 
 test("registration, logout, login and protected-route redirects", async ({
@@ -362,9 +364,7 @@ test("concurrent expired-session requests share a successful refresh", async ({
   finance,
 }) => {
   await finance.create("accounts", { name: "Everyday" });
-  await page.evaluate(() =>
-    localStorage.setItem("vellum:access_token", "expired-test-access"),
-  );
+  await expireSession(page);
   let refreshes = 0;
   page.on("request", (request) => {
     if (request.url() === `${apiURL}/refresh`) refreshes++;
@@ -381,18 +381,13 @@ test("a rejected refresh clears the session and returns to sign in", async ({
   finance,
 }) => {
   void finance;
-  await page.evaluate(() => {
-    localStorage.setItem("vellum:access_token", "expired-test-access");
-    localStorage.setItem("vellum:refresh_token", "revoked-test-refresh");
-  });
+  await expireSession(page, true);
   await page.goto("/accounts");
   await expect(page).toHaveURL(/\/login$/);
   await expect(
     page.getByRole("heading", { name: "Welcome back.", exact: true }),
   ).toBeVisible();
-  expect(
-    await page.evaluate(() => localStorage.getItem("vellum:access_token")),
-  ).toBeNull();
+  expect((await storedSession(page)) === null).toBe(true);
 });
 
 test("a late stale-token 401 retries without a second refresh", async ({
@@ -400,9 +395,7 @@ test("a late stale-token 401 retries without a second refresh", async ({
   finance,
 }) => {
   await finance.create("accounts", { name: "Everyday" });
-  await page.evaluate(() =>
-    localStorage.setItem("vellum:access_token", "expired-test-access"),
-  );
+  await expireSession(page);
   let refreshes = 0;
   let releaseLateResponse!: () => void;
   const release = new Promise<void>((resolve) => {
@@ -421,8 +414,9 @@ test("a late stale-token 401 retries without a second refresh", async ({
   try {
     await page.goto("/accounts");
     await page.waitForFunction(() => {
-      const token = localStorage.getItem("vellum:access_token");
-      return token !== null && token !== "expired-test-access";
+      const token = JSON.parse(localStorage.getItem("vellum:session") ?? "null")
+        ?.credentials?.access_token;
+      return !!token && token !== "expired-test-access";
     });
     releaseLateResponse();
     await expect(
@@ -567,9 +561,7 @@ test("an expired access token refreshes back into unfinished account setup", asy
   finance,
 }) => {
   void finance;
-  await page.evaluate(() =>
-    localStorage.setItem("vellum:access_token", "expired-test-access"),
-  );
+  await expireSession(page);
   await page.goto("/transactions");
   await expect(
     page.getByRole("heading", {
