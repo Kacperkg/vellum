@@ -22,7 +22,7 @@ func TestAuthMiddleware(t *testing.T) {
 	}
 
 	router := gin.New()
-	router.Use(middleware.AuthMiddleware("secret", func(context.Context, uuid.UUID, int64) bool { return true }))
+	router.Use(middleware.AuthMiddleware("secret", func(context.Context, uuid.UUID, int64, *uuid.UUID) bool { return true }))
 	router.GET("/protected", func(c *gin.Context) {
 		value, exists := c.Get("userID")
 		if !exists || value != userID {

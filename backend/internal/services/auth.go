@@ -87,7 +87,7 @@ func (s *UserService) Register(req RegisterRequest) (*AuthResponse, error) {
 		WeekStartsOn: models.Monday,
 	}
 
-	response, err := s.issueTokenPair(user, func(token *models.RefreshToken) error {
+	response, err := s.issueTokenPair(user, uuid.New(), func(token *models.RefreshToken) error {
 		return s.userRepository.CreateRegistration(user, defaultSettings, token)
 	})
 	if errors.Is(err, repository.ErrConflict) {
@@ -116,7 +116,7 @@ func (s *UserService) Login(req LoginRequest) (*AuthResponse, error) {
 		return nil, ErrInvalidCredentials
 	}
 
-	return s.issueTokenPair(user, s.refreshTokenRepository.Create)
+	return s.issueTokenPair(user, uuid.New(), s.refreshTokenRepository.Create)
 }
 
 func (s *UserService) Refresh(req RefreshRequest) (*AuthResponse, error) {
@@ -134,7 +134,7 @@ func (s *UserService) Refresh(req RefreshRequest) (*AuthResponse, error) {
 		return nil, ErrInvalidRefreshToken
 	}
 
-	return s.issueTokenPair(user, func(replacement *models.RefreshToken) error {
+	return s.issueTokenPair(user, current.SessionFamilyID(), func(replacement *models.RefreshToken) error {
 		return s.refreshTokenRepository.Rotate(current.ID, replacement, now)
 	})
 }
@@ -145,9 +145,10 @@ func (s *UserService) Logout(req RefreshRequest) error {
 
 func (s *UserService) issueTokenPair(
 	user *models.User,
+	familyID uuid.UUID,
 	persist func(*models.RefreshToken) error,
 ) (*AuthResponse, error) {
-	accessToken, err := auth.GenerateToken(user.ID, s.jwtSecret, s.jwtExpiry, user.AuthVersion)
+	accessToken, err := auth.GenerateSessionToken(user.ID, s.jwtSecret, s.jwtExpiry, user.AuthVersion, familyID)
 	if err != nil {
 		return nil, fmt.Errorf("generate access token: %w", err)
 	}
@@ -160,6 +161,7 @@ func (s *UserService) issueTokenPair(
 	refreshToken := &models.RefreshToken{
 		UserID:               user.ID,
 		AuthVersion:          user.AuthVersion,
+		FamilyID:             &familyID,
 		PasswordHashSnapshot: user.PasswordHash,
 		TokenHash:            hashRefreshToken(rawRefreshToken),
 		ExpiresAt:            time.Now().Add(s.refreshExpiry),
@@ -206,4 +208,22 @@ func (s *UserService) ValidateAuthVersion(ctx context.Context, userID uuid.UUID,
 	defer cancel()
 	user, err := s.userRepository.FindByIDContext(ctx, userID)
 	return err == nil && user != nil && version >= 0 && user.AuthVersion == version
+}
+
+// ValidateSession preserves pre-upgrade JWTs until their existing expiry (or a
+// password reset), while new JWTs also require their own live refresh family.
+func (s *UserService) ValidateSession(ctx context.Context, userID uuid.UUID, version int64, familyID *uuid.UUID) bool {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if !s.ValidateAuthVersion(ctx, userID, version) {
+		return false
+	}
+	if familyID == nil {
+		return true
+	}
+	if *familyID == uuid.Nil {
+		return false
+	}
+	active, err := s.refreshTokenRepository.HasActiveFamily(ctx, userID, version, *familyID, time.Now())
+	return err == nil && active
 }

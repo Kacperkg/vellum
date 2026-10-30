@@ -17,10 +17,11 @@ const mobileTests = {
   testMatch: [
     "**/mobile.spec.ts",
     "**/password-recovery.spec.ts",
+    "**/auth-session.spec.ts",
     "**/content-security-policy.spec.ts",
     "**/workflows.spec.ts",
   ],
-  grep: /mobile\.spec|password-recovery\.spec|content-security-policy\.spec|registration, logout|concurrent expired-session|a rejected refresh/,
+  grep: /auth-session\.spec|mobile\.spec|password-recovery\.spec|content-security-policy\.spec|registration, logout|concurrent expired-session|a rejected refresh/,
 };
 
 export default defineConfig({

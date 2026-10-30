@@ -329,8 +329,11 @@ func TestPasswordResetMigrationPreservesLegacyUsers(t *testing.T) {
 	if err := tx.First(&refresh, "id = ?", refreshID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if refresh.AuthVersion != 0 || refresh.RevokedAt != nil {
+	if refresh.AuthVersion != 0 || refresh.RevokedAt != nil || refresh.FamilyID != nil {
 		t.Fatal("migration invalidated legacy refresh session unexpectedly")
+	}
+	if !tx.Migrator().HasColumn(&models.RefreshToken{}, "family_id") {
+		t.Fatal("session family column was not migrated")
 	}
 	if !tx.Migrator().HasTable(&models.PasswordResetToken{}) {
 		t.Fatal("reset-token table was not migrated")

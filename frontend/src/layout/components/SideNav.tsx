@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Logo from "@/components/shared/Logo";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import Card, {
   CardContent,
   CardFooter,
@@ -26,7 +26,6 @@ const routes = [
 ] as const;
 
 export default function SideNav() {
-  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { budgets, transactions, settings } = useFinanceData();
   const allocated = budgets.reduce(
@@ -51,10 +50,6 @@ export default function SideNav() {
 
   async function handleLogout(): Promise<void> {
     await logout();
-    await navigate({
-      to: "/login",
-      replace: true,
-    });
   }
 
   return (

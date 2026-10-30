@@ -1,61 +1,41 @@
 import axios from "axios";
-import type { InternalAxiosRequestConfig } from "axios";
-import { api } from "./client";
+import { api, type SessionRequestConfig } from "./client";
 import { refresh } from "./endpoints/auth";
-import { getAccessToken } from "./tokenStorage";
+import { getSession, SessionChangedError } from "./tokenStorage";
 
-type RetryableRequestConfig = InternalAxiosRequestConfig & {
-  _retry?: boolean;
-};
-
-let refreshPromise: Promise<void> | null = null;
+function isCurrentSession(request: SessionRequestConfig): boolean {
+  const session = getSession();
+  return (
+    !!session?.credentials && request._authGeneration === session.generation
+  );
+}
 
 api.interceptors.response.use(
-  (response) => response,
-
-  async (error: unknown) => {
-    if (!axios.isAxiosError(error)) {
-      return Promise.reject(error);
-    }
-
-    const status = error.response?.status;
-    const originalRequest = error.config as RetryableRequestConfig | undefined;
-
-    const isProtectedRequest = originalRequest?.url?.startsWith("/api/");
-
-    if (status !== 401 || !isProtectedRequest || !originalRequest) {
-      return Promise.reject(error);
-    }
-
-    if (originalRequest._retry) {
-      return Promise.reject(error);
-    }
-
-    originalRequest._retry = true;
-
-    // A slow response can report 401 after another request already rotated the
-    // token. Retry it with the current token instead of rotating a second time.
-    const currentToken = getAccessToken();
+  (response) => {
     if (
-      currentToken &&
-      originalRequest.headers.get("Authorization") !== `Bearer ${currentToken}`
-    ) {
-      return api(originalRequest);
-    }
+      response.config.url?.startsWith("/api/") &&
+      !isCurrentSession(response.config as SessionRequestConfig)
+    )
+      throw new SessionChangedError();
+    return response;
+  },
+  async (error: unknown) => {
+    if (!axios.isAxiosError(error)) return Promise.reject(error);
+    const request = error.config as SessionRequestConfig | undefined;
+    if (
+      error.response?.status !== 401 ||
+      !request?.url?.startsWith("/api/") ||
+      request._retry
+    )
+      return Promise.reject(error);
 
-    if (!refreshPromise) {
-      refreshPromise = refresh().finally(() => {
-        refreshPromise = null;
-      });
-    }
-
-    try {
-      await refreshPromise;
-    } catch (refreshError) {
-      window.location.assign("/login");
-      return Promise.reject(refreshError);
-    }
-
-    return api(originalRequest);
+    if (!isCurrentSession(request)) throw new SessionChangedError();
+    request._retry = true;
+    const session = getSession()!;
+    // Only a rotation within the same session can authorise this request again.
+    // Never replay a mutation belonging to a different login/account.
+    if (request._authRevision === session.revision) await refresh(session);
+    if (!isCurrentSession(request)) throw new SessionChangedError();
+    return api(request);
   },
 );

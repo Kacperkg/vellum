@@ -8,8 +8,9 @@ import (
 )
 
 type Claims struct {
-	UserID      uuid.UUID `json:"user_id"`
-	AuthVersion int64     `json:"auth_version"`
+	UserID      uuid.UUID  `json:"user_id"`
+	AuthVersion int64      `json:"auth_version"`
+	SessionID   *uuid.UUID `json:"session_id,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -18,9 +19,19 @@ func GenerateToken(userID uuid.UUID, secret string, expiry time.Duration, versio
 	if len(version) > 0 {
 		authVersion = version[0]
 	}
+	return generateToken(userID, secret, expiry, authVersion, nil)
+}
+
+// GenerateSessionToken binds newly issued access credentials to one refresh family.
+func GenerateSessionToken(userID uuid.UUID, secret string, expiry time.Duration, version int64, sessionID uuid.UUID) (string, error) {
+	return generateToken(userID, secret, expiry, version, &sessionID)
+}
+
+func generateToken(userID uuid.UUID, secret string, expiry time.Duration, authVersion int64, sessionID *uuid.UUID) (string, error) {
 	claims := &Claims{
 		UserID:      userID,
 		AuthVersion: authVersion,
+		SessionID:   sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiry)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

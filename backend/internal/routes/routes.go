@@ -40,7 +40,7 @@ func Register(router *gin.Engine, jwtSecret string, handlerSet HandlerSet, authR
 		registerAuthRoute("/reset-password", middleware.ResetPasswordEndpoint, handlerSet.PasswordReset.ResetPassword)
 	}
 	api := router.Group("/api")
-	api.Use(middleware.AuthMiddleware(jwtSecret, handlerSet.Auth.ValidateAuthVersion))
+	api.Use(middleware.AuthMiddleware(jwtSecret, handlerSet.Auth.ValidateSession))
 
 	api.POST("/accounts", handlerSet.Accounts.Create)
 	api.GET("/accounts", handlerSet.Accounts.ListByUser)
