@@ -319,3 +319,48 @@ Playwright setup follows its official [fixtures](https://playwright.dev/docs/tes
 and [CI](https://playwright.dev/docs/ci-intro) documentation. The custom runner
 owns the database and process lifecycle so tests cannot silently reuse a local
 application server.
+
+## Monetary and calendar-date contracts
+
+GBP, USD and EUR use integer minor units, with 100 minor units per major unit.
+Every API money field is bounded by JavaScript's largest exact integer:
+`9007199254740991` minor units (`90071992547409.91` major units). Transactions,
+transfers, budget allocations and goal targets start at one minor unit; goal
+saved amounts and monthly contributions may be zero. Signed account summaries
+use the same absolute bound. The bound follows the existing JSON-number API and
+browser representation rather than a presumed personal-finance spending limit.
+
+Forms parse decimal text into integer minor units before converting to a JSON
+number. They accept at most two decimal places, reject extra precision and
+unsupported ranges, and never round an input to fit. Edit fields, CSV exports
+and currency labels preserve the final penny at the upper boundary. Whole-unit
+summary labels still round for presentation. Derived totals (including totals
+across accounts, category/month totals, net history and projected spending) use
+native `BigInt`; conversion to floating point is limited to chart proportions.
+Projections round to the nearest minor unit, with exact half units rounded up.
+The API rejects mutations that would put an account summary outside its supported
+range, without partial writes. The form shows that rejection. Legacy API values
+outside the exact range produce an explicit data error instead of rounded totals;
+existing records are never changed automatically.
+
+Ledger `date` values represent calendar days selected by the user, separately
+from timestamp fields such as authentication expiry and creation times. Forms
+submit `YYYY-MM-DD` from `0001-01-02` through `9999-12-31` (the backend's zero-time sentinel `0001-01-01` is rejected). The API also accepts RFC3339 input and preserves its written
+calendar day: `2026-10-31T23:30:00-12:00` records 31 October, regardless of the UTC
+instant it describes. Responses retain the existing RFC3339 string shape, with
+newly written ledger dates normalised to UTC midnight. Display, edit, CSV,
+filtering, sorting and monthly budgets/analytics all use that same calendar day.
+Numeric date preferences render exactly `DD/MM/YYYY`, `MM/DD/YYYY` or `YYYY-MM-DD`.
+The current month and today's default date follow the viewer's local calendar;
+viewers actually in different local months may therefore select different
+current-month windows, while each record's month remains stable.
+
+Existing database timestamps keep their persisted UTC calendar day. Their
+original input timezone was not retained, so it cannot be reconstructed. This
+change does not migrate historical records or infer historical timezone data;
+any correction to ambiguous records requires a separate reviewed data decision.
+Authentication and other genuine timestamp behaviour is unchanged.
+
+`pnpm test:finance` includes monetary/date contract regressions. The browser
+financial contract scenarios exercise the real API in UTC−12, UTC+14 and London,
+including list/filter/edit/CSV, budgets and monthly summary agreement.

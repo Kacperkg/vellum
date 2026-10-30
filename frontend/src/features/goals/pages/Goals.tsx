@@ -11,7 +11,7 @@ import NewGoalDialog from "../components/NewGoalDialog";
 import DeleteDialog from "@/components/shared/DeleteDialog";
 import type { Goal } from "@/api/types";
 import { useFinanceData } from "@/contexts/FinanceDataContext";
-import { formatMoney } from "@/utils/finance";
+import { formatMoney, moneyInteger, maxMoney } from "@/utils/finance";
 
 export default function Goals() {
   const { goals, accounts, settings, loading, errors, refresh } =
@@ -85,13 +85,15 @@ export default function Goals() {
                 goal.target_amount > 0
                   ? (goal.saved_amount / goal.target_amount) * 100
                   : 0;
-              const remaining = Math.max(
-                goal.target_amount - goal.saved_amount,
-                0,
+              const remaining = maxMoney(
+                moneyInteger(goal.target_amount) -
+                  moneyInteger(goal.saved_amount),
+                0n,
               );
               const months =
                 goal.monthly_contribution > 0
-                  ? Math.ceil(remaining / goal.monthly_contribution)
+                  ? (remaining + moneyInteger(goal.monthly_contribution) - 1n) /
+                    moneyInteger(goal.monthly_contribution)
                   : null;
               return (
                 <Card className="goal-card" key={goal.id}>
@@ -105,7 +107,7 @@ export default function Goals() {
                       <span>
                         {months === null
                           ? "Not set"
-                          : months === 0
+                          : months === 0n
                             ? "Reached"
                             : `${months} mo`}
                       </span>

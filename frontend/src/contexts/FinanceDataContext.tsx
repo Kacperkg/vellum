@@ -27,6 +27,9 @@ import type {
   UserSettings,
 } from "@/api/types";
 
+import { apiErrorMessage } from "@/api/errors";
+import { validateMoneyRows } from "@/utils/finance";
+
 type FinanceData = {
   accounts: Account[];
   budgets: Budget[];
@@ -83,13 +86,27 @@ export function FinanceDataProvider({ children }: { children: ReactNode }) {
       settings,
       transfers,
     ] = await Promise.allSettled([
-      listAccounts(),
-      listBudgets(),
+      listAccounts().then((rows) =>
+        validateMoneyRows(rows, [
+          "balance",
+          "allocated_amount",
+          "unallocated_amount",
+        ]),
+      ),
+      listBudgets().then((rows) =>
+        validateMoneyRows(rows, ["allocated_amount"]),
+      ),
       listCategories(),
-      listGoals(),
-      listTransactions(),
+      listGoals().then((rows) =>
+        validateMoneyRows(rows, [
+          "target_amount",
+          "saved_amount",
+          "monthly_contribution",
+        ]),
+      ),
+      listTransactions().then((rows) => validateMoneyRows(rows, ["amount"])),
       getSettings(),
-      listTransfers(),
+      listTransfers().then((rows) => validateMoneyRows(rows, ["amount"])),
     ] as const);
 
     if (version !== refreshState.current.version) return;
@@ -111,15 +128,32 @@ export function FinanceDataProvider({ children }: { children: ReactNode }) {
       transfers:
         transfers.status === "fulfilled" ? transfers.value : current.transfers,
     }));
-    const message = "This data could not be loaded. Please try again.";
+    const loadError = (
+      result: PromiseSettledResult<unknown>,
+    ): string | null => {
+      if (result.status === "fulfilled") return null;
+      const message = apiErrorMessage(
+        result.reason,
+        "This data could not be loaded. Please try again.",
+      );
+      if (
+        result.reason instanceof RangeError ||
+        /monetary|supported.*range|safe.*range|money must remain within/i.test(
+          message,
+        )
+      ) {
+        return "This financial data exceeds the supported exact monetary range (9007199254740991 minor units). Existing records have not been changed; review them before retrying.";
+      }
+      return "This data could not be loaded. Please try again.";
+    };
     setErrors({
-      accounts: accounts.status === "rejected" ? message : null,
-      budgets: budgets.status === "rejected" ? message : null,
-      categories: categories.status === "rejected" ? message : null,
-      goals: goals.status === "rejected" ? message : null,
-      transactions: transactions.status === "rejected" ? message : null,
-      settings: settings.status === "rejected" ? message : null,
-      transfers: transfers.status === "rejected" ? message : null,
+      accounts: loadError(accounts),
+      budgets: loadError(budgets),
+      categories: loadError(categories),
+      goals: loadError(goals),
+      transactions: loadError(transactions),
+      settings: loadError(settings),
+      transfers: loadError(transfers),
     });
     setLoading(false);
   }, []);

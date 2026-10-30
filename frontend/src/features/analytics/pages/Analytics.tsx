@@ -3,7 +3,14 @@ import Card from "@/components/ui/Card";
 import DataState from "@/components/shared/DataState";
 import PageHeader from "@/components/shared/PageHeader";
 import { useFinanceData } from "@/contexts/FinanceDataContext";
-import { formatMoney, monthKey } from "@/utils/finance";
+import {
+  formatMoney,
+  monthKey,
+  moneyInteger,
+  moneyRatio,
+  maxMoney,
+  compareMoney,
+} from "@/utils/finance";
 
 function ChartHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
@@ -39,18 +46,19 @@ export default function Analytics() {
           month: "long",
           year: "numeric",
         }).format(date),
-        income: 0,
-        expenses: 0,
+        income: 0n,
+        expenses: 0n,
       };
     });
     const monthByKey = new Map(months.map((item) => [item.key, item]));
     transactions.forEach((transaction) => {
       const month = monthByKey.get(monthKey(transaction.date));
       if (!month) return;
-      if (transaction.type === "income") month.income += transaction.amount;
-      else month.expenses += transaction.amount;
+      if (transaction.type === "income")
+        month.income += moneyInteger(transaction.amount);
+      else month.expenses += moneyInteger(transaction.amount);
     });
-    const categoryTotals = new Map<string, number>();
+    const categoryTotals = new Map<string, bigint>();
     transactions
       .filter(
         (item) =>
@@ -59,18 +67,19 @@ export default function Analytics() {
       .forEach((item) =>
         categoryTotals.set(
           item.category_id,
-          (categoryTotals.get(item.category_id) ?? 0) + item.amount,
+          (categoryTotals.get(item.category_id) ?? 0n) +
+            moneyInteger(item.amount),
         ),
       );
     const topCategories = [...categoryTotals.entries()]
-      .sort((a, b) => b[1] - a[1])
+      .sort((a, b) => compareMoney(b[1], a[1]))
       .slice(0, 6);
     return { months, topCategories };
   }, [transactions]);
 
-  const maxMonthly = Math.max(
+  const maxMonthly = maxMoney(
     ...analytics.months.flatMap((month) => [month.income, month.expenses]),
-    1,
+    1n,
   );
   const activeMonth = analytics.months.find(
     (month) => month.key === activeMonthKey,
@@ -78,7 +87,7 @@ export default function Analytics() {
   const axisDigits = maxMonthly < 10000 ? 2 : 0;
   const categoryTotal = analytics.topCategories.reduce(
     (sum, [, value]) => sum + value,
-    0,
+    0n,
   );
   const colors = [
     "#e2416c",
@@ -96,7 +105,8 @@ export default function Analytics() {
         "Uncategorised",
       amount,
       color: colors[index],
-      percentage: categoryTotal > 0 ? (amount / categoryTotal) * 100 : 0,
+      percentage:
+        categoryTotal > 0 ? moneyRatio(amount, categoryTotal) * 100 : 0,
     }),
   );
   const donut = categorySegments
@@ -153,13 +163,13 @@ export default function Analytics() {
                 <div className="y-labels">
                   <span>{formatMoney(maxMonthly, settings, axisDigits)}</span>
                   <span>
-                    {formatMoney(maxMonthly * 0.75, settings, axisDigits)}
+                    {formatMoney((maxMonthly * 3n) / 4n, settings, axisDigits)}
                   </span>
                   <span>
-                    {formatMoney(maxMonthly * 0.5, settings, axisDigits)}
+                    {formatMoney((maxMonthly * 2n) / 4n, settings, axisDigits)}
                   </span>
                   <span>
-                    {formatMoney(maxMonthly * 0.25, settings, axisDigits)}
+                    {formatMoney((maxMonthly * 1n) / 4n, settings, axisDigits)}
                   </span>
                   <span>{formatMoney(0, settings, axisDigits)}</span>
                 </div>
@@ -191,13 +201,13 @@ export default function Analytics() {
                         <span
                           className="income-bar"
                           style={{
-                            height: `${(month.income / maxMonthly) * 100}%`,
+                            height: `${moneyRatio(month.income, maxMonthly) * 100}%`,
                           }}
                         />
                         <span
                           className="expense-bar"
                           style={{
-                            height: `${(month.expenses / maxMonthly) * 100}%`,
+                            height: `${moneyRatio(month.expenses, maxMonthly) * 100}%`,
                           }}
                         />
                       </span>

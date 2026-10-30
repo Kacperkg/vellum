@@ -62,7 +62,9 @@ export default function AccountSetupGate({
           <div className="flex flex-col gap-4 py-8">
             <h1 className="text-3xl">Unable to check your accounts</h1>
             <p role="alert">
-              We could not confirm your account setup. Please try again.
+              {errors.accounts.includes("supported exact monetary range")
+                ? errors.accounts
+                : "We could not confirm your account setup. Please try again."}
             </p>
             <Button
               disabled={retrying}

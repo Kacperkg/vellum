@@ -23,7 +23,7 @@ import {
 import { deleteTransaction } from "@/api/endpoints/transactions";
 import { exportTransactions } from "../utils/transactionExport";
 import { useFinanceData } from "@/contexts/FinanceDataContext";
-import { formatDate, formatMoney } from "@/utils/finance";
+import { formatDate, formatMoney, calendarDate } from "@/utils/finance";
 
 const sortColumns: { key: ActivitySortKey; label: string }[] = [
   { key: "merchant", label: "Merchant" },
@@ -118,8 +118,8 @@ export default function Transactions() {
               (item.type === "transfer" && item.to_account_id === accountId)) &&
             (transactionType === "all" || item.type === transactionType) &&
             (frequency === "all" || item.frequency === frequency) &&
-            (!startDate || item.date.slice(0, 10) >= startDate) &&
-            (!endDate || item.date.slice(0, 10) <= endDate) &&
+            (!startDate || calendarDate(item.date) >= startDate) &&
+            (!endDate || calendarDate(item.date) <= endDate) &&
             `${item.name} ${category} ${accountById.get(item.account_id) ?? ""} ${item.type === "transfer" ? (accountById.get(item.to_account_id) ?? "") : ""}`
               .toLowerCase()
               .includes(query.toLowerCase())
