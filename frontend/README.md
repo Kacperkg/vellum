@@ -55,8 +55,16 @@ request: offline/network failure cannot prove that the server received logout.
 The client bounds refresh and logout requests and never automatically retries auth
 mutations. Existing server expiry and password-reset revocation remain in force.
 
+Firefox can retain a localStorage snapshot for the current JavaScript task and
+publish writes only when that task ends. Each authentication lock callback starts
+after a `MessageChannel` task boundary and waits for another boundary before
+releasing the lock, including when the callback throws. This lets a queued tab
+observe the preceding holder's credential changes. These are explicit scheduling
+boundaries, without guessed delays or retries; the short credential-state lock
+still performs no network operation.
+
 The browser requires Web Locks in a secure context (HTTPS, or loopback during
-local development). Authentication fails closed when those APIs are unavailable;
+local development) and `MessageChannel`. Authentication fails closed when those APIs are unavailable;
 there is no unsafe storage-only coordination fallback. Legacy three-key credentials
 are deliberately ignored and removed on the next authentication state change, so
 users must sign in again after this client upgrade. Existing old client tabs need
@@ -283,7 +291,7 @@ Install frontend dependencies, Go, Docker, and the browser engines before the fi
 ```sh
 pnpm exec playwright install --with-deps chromium firefox webkit
 pnpm test:e2e
-pnpm test:e2e:csp # report-only followed by the same policy in enforcing mode
+pnpm test:e2e:csp # each browser in report-only and enforcing modes, in fresh stacks
 ```
 
 `scripts/run-e2e.mjs` creates a private disposable Docker network with PostgreSQL,
@@ -293,6 +301,22 @@ a random direct-Nginx port are published only to loopback; occupied fixed ports
 are rejected. The API receives only synthetic configuration, no developer dotenv
 files or SES delivery settings. Processes, temporary files, containers and the
 private network are removed after the run.
+
+Both browser commands discover the selected projects from Playwright and run
+each project in a fresh disposable stack. `test:e2e` uses the production policy;
+`test:e2e:csp` runs every project in both report-only and enforcing modes. The production
+registration limiter permits 100 attempts per network per hour (five per identity,
+with a shared-network multiplier of 20). All synthetic users behind one test Caddy
+share that network bucket, so a single stack for the entire growing browser matrix
+incorrectly made later tests depend on earlier registrations. Project isolation
+preserves the production limiter values and keeps each browser population
+independent; it does not bypass throttling, add retries or weaken assertions.
+Project filters and test-file arguments may be passed to either command;
+`test:e2e --csp-report-only` or `--csp-enforce` selects one explicit policy.
+Every selected project and requested mode runs even when an earlier project fails;
+any failing child makes the command fail.
+`--shard` and `--last-failed` are rejected because applying their global selection
+again inside each isolated project could silently omit tests.
 
 The desktop Chromium, Firefox and WebKit suites cover authentication, transfer balances,
 linked goal availability, duplicate budgets, activity editing/filter/sort/export,
@@ -310,6 +334,8 @@ separately authorised enforcement/deployment requirements.
 
 Failures retain traces, screenshots, and video under ignored `test-results/` and
 `playwright-report/` directories. CI uploads failure diagnostics for review.
+The browser runner separates these directories by policy mode and browser project,
+including service logs, so later runs cannot replace an earlier failure's evidence.
 
 `pnpm screenshots` explicitly opts into the screenshot fixture, seeds synthetic
 records through the real API, and updates `docs/screenshots/`. It does not
