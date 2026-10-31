@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import vm from "node:vm";
+import { MessageChannel } from "node:worker_threads";
 import ts from "typescript";
 
 // Execute the actual modules in independent tab realms. Only browser APIs and
@@ -37,7 +38,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function browser() {
+function browser({ deferredStorage = false } = {}) {
   const values = new Map();
   const queues = new Map();
   const windows = [];
@@ -65,17 +66,53 @@ function browser() {
         other.dispatchEvent(event);
       }
     };
+    let snapshot;
+    const pending = new Map();
+    const checkpoint = () => {
+      for (const [key, value] of pending) {
+        if (value === null) values.delete(key);
+        else values.set(key, value);
+      }
+      pending.clear();
+      snapshot = undefined;
+    };
+    const view = () => {
+      if (!deferredStorage) return values;
+      snapshot ??= new Map(values);
+      return snapshot;
+    };
     const localStorage = {
-      getItem: (key) => values.get(key) ?? null,
+      getItem: (key) => view().get(key) ?? null,
       setItem: (key, value) => {
-        values.set(key, value);
+        view().set(key, value);
+        if (deferredStorage) pending.set(key, value);
         emitStorage(key);
       },
       removeItem: (key) => {
-        values.delete(key);
+        view().delete(key);
+        if (deferredStorage) pending.set(key, null);
         emitStorage(key);
       },
     };
+    // Model Firefox's per-tab snapshot and task-end publication. A task in one
+    // tab does not invalidate another tab's current snapshot. No token data is
+    // shared until the writing tab crosses its own task boundary.
+    class StorageTaskChannel {
+      constructor() {
+        const channel = new MessageChannel();
+        const port = channel.port1;
+        this.port1 = {
+          close: () => port.close(),
+          set onmessage(handler) {
+            port.onmessage = (event) => {
+              checkpoint();
+              handler(event);
+            };
+          },
+        };
+        this.port2 = channel.port2;
+      }
+    }
     const responseHandlers = [];
     const api = Object.assign(async (request) => ({ retried: request }), {
       post,
@@ -89,6 +126,7 @@ function browser() {
       navigator: { locks },
       crypto: { randomUUID },
       Event,
+      MessageChannel: deferredStorage ? StorageTaskChannel : MessageChannel,
     });
     const exports = {};
     const load = (name) => {
@@ -120,6 +158,7 @@ function browser() {
       },
       localStorage,
       context,
+      checkpoint,
     };
   }
   return { tab };
@@ -205,6 +244,88 @@ test("two tabs share one rotation and cannot overwrite its replacement", async (
   assert.equal(rotations, 1);
   assert.equal(first.storage.getAccessToken(), "rotated-access");
   assert.equal(second.storage.getAccessToken(), "rotated-access");
+});
+
+test("queued tabs rotate once when storage snapshots and writes persist until task end", async () => {
+  const state = browser({ deferredStorage: true });
+  const started = deferred();
+  const delivery = deferred();
+  let rotations = 0;
+  const post = async () => {
+    rotations++;
+    started.resolve();
+    return delivery.promise;
+  };
+  const first = state.tab(post);
+  const second = state.tab(post);
+  await seed(first);
+  first.checkpoint(); // End the fixture's seeding task.
+  const expected = second.storage.getSession(); // Freeze the waiting tab's view.
+  const a = first.auth.refresh();
+  await started.promise;
+  const b = second.auth.refresh(expected);
+  delivery.resolve({ data: credentials("rotated") });
+  await Promise.all([a, b]);
+  assert.equal(rotations, 1);
+  assert.equal(first.storage.getAccessToken(), "rotated-access");
+  assert.equal(second.storage.getAccessToken(), "rotated-access");
+});
+
+test("a task-cached session cannot overwrite a published logout tombstone", async () => {
+  const state = browser({ deferredStorage: true });
+  const first = state.tab(async () => ({}));
+  const second = state.tab(async () => ({}));
+  const previous = await seed(first);
+  first.checkpoint();
+  assert.equal(second.storage.getAccessToken(), "original-access");
+  await first.auth.logout();
+  assert.equal(
+    await second.storage.saveSession(previous, credentials("late")),
+    false,
+  );
+  assert.equal(first.storage.getAccessToken(), null);
+  assert.equal(second.storage.getAccessToken(), null);
+});
+
+test("an auth lock publishes changed storage before releasing after an exception", async () => {
+  const state = browser({ deferredStorage: true });
+  const first = state.tab(async () => ({}));
+  const second = state.tab(async () => ({}));
+  await seed(first);
+  first.checkpoint();
+  const previous = second.storage.getSession();
+  await assert.rejects(
+    first.storage.withAuthLock("vellum:auth-state", () => {
+      first.localStorage.setItem(
+        "vellum:session",
+        JSON.stringify({
+          generation: "signed-out",
+          revision: "signed-out",
+          credentials: null,
+        }),
+      );
+      throw new Error("after storage mutation");
+    }),
+    /after storage mutation/,
+  );
+  assert.equal(
+    await second.storage.saveSession(previous, credentials("late")),
+    false,
+  );
+  assert.equal(second.storage.getAccessToken(), null);
+});
+
+test("missing task channels fails closed without starting authentication", async () => {
+  const tab = browser().tab(async () => {
+    throw new Error("network must not start");
+  });
+  await seed(tab);
+  tab.context.MessageChannel = undefined;
+  assert.equal(tab.storage.hasAccessToken(), false);
+  await assert.rejects(
+    tab.auth.login(loginRequest),
+    /current browser over HTTPS/,
+  );
 });
 
 test("logout propagates through storage subscribers and clears a reloaded tab", async () => {

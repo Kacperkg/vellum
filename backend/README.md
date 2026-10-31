@@ -2,10 +2,75 @@
 
 ## Money amounts
 
-All integer money fields use minor currency units. For the currently supported
-GBP, USD, and EUR currencies, `100` represents one major currency unit (for
-example, £1.00, $1.00, or €1.00). Clients convert decimal user input to minor
-units before sending requests and convert back for display.
+All money fields use integer minor currency units. GBP, USD and EUR have two
+fractional digits: `100` represents £1.00, $1.00 or €1.00. Positive transaction,
+transfer, budget allocation and goal target amounts range from `1` to
+`9007199254740991` minor units (£90,071,992,547,409.91). Goal saved amounts and
+monthly contributions also allow zero; saved amounts cannot exceed their target.
+
+The upper bound is `2^53 - 1`, the largest integer JavaScript can represent
+exactly. It preserves existing numeric JSON fields and leaves ample headroom
+within Go/PostgreSQL signed 64-bit storage. Clients convert decimal strings
+exactly, accepting up to two fractional digits and rejecting excess precision;
+neither the API nor the browser rounds financial input. Numeric API inputs must
+be integers. Unsupported input returns HTTP 400 without persistence.
+
+Account `balance`, `allocated_amount` and signed `unallocated_amount` must each
+remain within `+/-9007199254740991`. PostgreSQL calculates their sums, negations
+and differences as arbitrary-precision `numeric`, then checks the boundary before
+narrowing to integer JSON values. Mutations affecting account summaries lock the
+owner's user row and validate within the same database transaction; an operation
+that crosses a boundary is rolled back with HTTP 400, including an edit, transfer,
+goal reassignment or removal of an offsetting record. Transfer sides remain one
+atomic row. Service response construction also checks available-balance
+subtraction, so alternate repositories cannot silently wrap Go arithmetic.
+
+Browser-derived cross-account totals, gross income/expenses, budget totals and
+unlinked goal totals use exact `BigInt` arithmetic. They can exceed the per-field
+JSON boundary without imposing an arbitrary cap on lifetime turnover or the
+number of records. Money is never stored as floating point, clamped or silently
+rewritten.
+
+Existing out-of-range records remain untouched. Reads that would emit unsupported
+numeric money return a controlled HTTP 400 instead of an unsafe number or an
+aggregate scan failure. Owned edits and deletions remain available for explicit
+repair: no account-summary boundary violation may worsen or be newly introduced,
+while existing violations may stay unchanged or shrink. List reads can therefore
+remain unavailable until the affected records are explicitly corrected; use known
+record IDs or a separately reviewed operator remediation. No data migration or
+schema change is included.
+
+## Financial calendar dates
+
+Transaction and transfer `date` fields identify a financial calendar day, not an
+instant. Requests accept strict `YYYY-MM-DD` or RFC3339 (including fractional
+seconds and a required `Z`/numeric offset). For RFC3339 input the **written date**
+is retained: `2026-11-01T00:30:00+14:00` records 1 November, regardless of browser,
+server or database timezone. Invalid calendar days, missing timezone on timestamp
+inputs, year zero and the Go zero-date sentinel `0001-01-01` are rejected. Other
+calendar days in years 0001–9999 are supported.
+
+New/edited ledger dates are stored at UTC midnight in the existing timestamp
+columns. Responses preserve the RFC3339 string shape and return the financial
+day at `00:00:00Z`. Transaction date-range endpoints accept the same input formats;
+both start and end are inclusive **whole calendar days**, implemented as
+`>= start midnight` and `< midnight after end`. Hours in a supplied range timestamp
+are consequently ignored. Lists, browser month/year filtering, budgets and
+summaries use this same day, without local timezone conversion.
+
+Existing timestamps are not rewritten. Their persisted **UTC calendar day** is
+used for display and filtering, including historic non-midnight values. PostgreSQL
+has not retained their original submitted offsets, so the originally intended
+wall-calendar day cannot always be recovered. Any historical corrections need a
+separate, explicit data decision; the implementation does not invent timezone
+history. Authentication expiry, audit creation/update fields and other genuine
+instants keep their existing timestamp semantics.
+
+Release the matching frontend and backend together so input validation, numeric
+aggregates and calendar-day interpretation agree. Existing clients keep numeric
+money and RFC3339 response shapes, but unsupported amounts now receive HTTP 400
+and ledger timestamps/date-range bounds now have the calendar semantics above.
+No schema migration, environment variable or infrastructure change is required.
 
 Central REST API for Vellum. It owns PostgreSQL data, authentication,
 authorization, validation, and business rules for the browser client.
@@ -314,7 +379,7 @@ authenticated user's array (including `[]` when empty); `GET`, `PUT`, and
 `DELETE /api/transfers/:id` enforce ownership. Create returns 201, reads/updates
 200, and deletion 204. Both accounts must exist, be different, and belong to
 the authenticated user. Names must be nonempty, amounts positive integer minor
-units, and dates valid RFC3339 timestamps. Missing/foreign accounts or transfer
+units, and dates valid financial calendar dates (see above). Missing/foreign accounts or transfer
 records return 404; invalid requests return 400. `frequency` accepts `one-off`,
 `daily`, `weekly`, `monthly`, or `yearly`. Omitted/null frequency defaults to
 `one-off` for compatibility; invalid explicit values return 400. The migration

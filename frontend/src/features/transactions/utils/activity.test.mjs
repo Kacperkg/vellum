@@ -58,15 +58,15 @@ test("salary, transfer and subscription affect the correct accounts without chan
   const activity = financialActivity(transactions, [transfer]);
   assert.equal(
     recordedAccountBalance("payroll", transactions, [transfer]),
-    80000,
+    80000n,
   );
   assert.equal(
     recordedAccountBalance("bills", transactions, [transfer]),
-    19000,
+    19000n,
   );
-  assert.equal(activityNetAmount(activity), 99000);
-  assert.equal(activityNetAmount(activity, "payroll"), 80000);
-  assert.equal(activityNetAmount(activity, "bills"), 19000);
+  assert.equal(activityNetAmount(activity), 99000n);
+  assert.equal(activityNetAmount(activity, "payroll"), 80000n);
+  assert.equal(activityNetAmount(activity, "bills"), 19000n);
   assert.equal(
     activityNetAmount(activity),
     recordedAccountBalance("payroll", transactions, [transfer]) +
@@ -78,23 +78,23 @@ test("editing the amount or destination replaces the entire transfer effect", ()
   const edited = { ...transfer, amount: 35000, to_account_id: "savings" };
   assert.equal(
     recordedAccountBalance("payroll", transactions, [edited]),
-    65000,
+    65000n,
   );
-  assert.equal(recordedAccountBalance("bills", transactions, [edited]), -1000);
+  assert.equal(recordedAccountBalance("bills", transactions, [edited]), -1000n);
   assert.equal(
     recordedAccountBalance("savings", transactions, [edited]),
-    35000,
+    35000n,
   );
   assert.equal(
     activityNetAmount(financialActivity(transactions, [edited])),
-    99000,
+    99000n,
   );
 });
 
 test("deleting a transfer reverses both legs and preserves income and expenses", () => {
-  assert.equal(recordedAccountBalance("payroll", transactions, []), 100000);
-  assert.equal(recordedAccountBalance("bills", transactions, []), -1000);
-  assert.equal(activityNetAmount(financialActivity(transactions, [])), 99000);
+  assert.equal(recordedAccountBalance("payroll", transactions, []), 100000n);
+  assert.equal(recordedAccountBalance("bills", transactions, []), -1000n);
+  assert.equal(activityNetAmount(financialActivity(transactions, [])), 99000n);
 });
 
 test("a return transfer cancels the original account movement", () => {
@@ -106,11 +106,11 @@ test("a return transfer cancels the original account movement", () => {
   };
   assert.equal(
     recordedAccountBalance("payroll", transactions, [transfer, returned]),
-    100000,
+    100000n,
   );
   assert.equal(
     recordedAccountBalance("bills", transactions, [transfer, returned]),
-    -1000,
+    -1000n,
   );
 });
 
@@ -151,13 +151,13 @@ test("recurring transfers retain their frequency without multiplying the recorde
     );
     assert.equal(
       recordedAccountBalance("payroll", transactions, [recurring]),
-      80000,
+      80000n,
     );
     assert.equal(
       recordedAccountBalance("bills", transactions, [recurring]),
-      19000,
+      19000n,
     );
-    assert.equal(activityNetAmount(activity), 99000);
+    assert.equal(activityNetAmount(activity), 99000n);
   }
 });
 
@@ -200,7 +200,7 @@ test("sorting follows displayed names, full dates and signed amounts without mut
   );
 });
 
-test("sorting resolves case-insensitive ties deterministically and uses timestamp precision", () => {
+test("sorting resolves case-insensitive ties deterministically and treats ledger days as calendar dates", () => {
   const first = {
     ...payroll,
     id: "b",
@@ -220,7 +220,7 @@ test("sorting resolves case-insensitive ties deterministically and uses timestam
       (item) => item.id,
     );
   assert.deepEqual(sort("merchant"), ["a", "b", "c"]);
-  assert.deepEqual(sort("date"), ["b", "a", "c"]);
+  assert.deepEqual(sort("date"), ["a", "b", "c"]);
 });
 
 test("CSV preserves both transfer accounts and distinguishes amount from net impact", async (t) => {

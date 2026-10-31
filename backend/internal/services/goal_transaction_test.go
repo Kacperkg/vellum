@@ -165,7 +165,7 @@ func TestTransactionService(t *testing.T) {
 
 	t.Run("filter validation", func(t *testing.T) {
 		service, _, _, _ := transactionFixture(userID)
-		if _, err := service.FindByDateRange(userID, time.Now(), time.Now().Add(-time.Hour)); !errors.Is(err, services.ErrTransactionDateRange) {
+		if _, err := service.FindByDateRange(userID, time.Now(), time.Now().AddDate(0, 0, -1)); !errors.Is(err, services.ErrTransactionDateRange) {
 			t.Fatalf("error=%v", err)
 		}
 		if _, err := service.FindByFrequency(userID, "sometimes"); !errors.Is(err, services.ErrTransactionFrequency) {

@@ -55,8 +55,16 @@ request: offline/network failure cannot prove that the server received logout.
 The client bounds refresh and logout requests and never automatically retries auth
 mutations. Existing server expiry and password-reset revocation remain in force.
 
+Firefox can retain a localStorage snapshot for the current JavaScript task and
+publish writes only when that task ends. Each authentication lock callback starts
+after a `MessageChannel` task boundary and waits for another boundary before
+releasing the lock, including when the callback throws. This lets a queued tab
+observe the preceding holder's credential changes. These are explicit scheduling
+boundaries, without guessed delays or retries; the short credential-state lock
+still performs no network operation.
+
 The browser requires Web Locks in a secure context (HTTPS, or loopback during
-local development). Authentication fails closed when those APIs are unavailable;
+local development) and `MessageChannel`. Authentication fails closed when those APIs are unavailable;
 there is no unsafe storage-only coordination fallback. Legacy three-key credentials
 are deliberately ignored and removed on the next authentication state change, so
 users must sign in again after this client upgrade. Existing old client tabs need
@@ -283,7 +291,7 @@ Install frontend dependencies, Go, Docker, and the browser engines before the fi
 ```sh
 pnpm exec playwright install --with-deps chromium firefox webkit
 pnpm test:e2e
-pnpm test:e2e:csp # report-only followed by the same policy in enforcing mode
+pnpm test:e2e:csp # each browser in report-only and enforcing modes, in fresh stacks
 ```
 
 `scripts/run-e2e.mjs` creates a private disposable Docker network with PostgreSQL,
@@ -293,6 +301,22 @@ a random direct-Nginx port are published only to loopback; occupied fixed ports
 are rejected. The API receives only synthetic configuration, no developer dotenv
 files or SES delivery settings. Processes, temporary files, containers and the
 private network are removed after the run.
+
+Both browser commands discover the selected projects from Playwright and run
+each project in a fresh disposable stack. `test:e2e` uses the production policy;
+`test:e2e:csp` runs every project in both report-only and enforcing modes. The production
+registration limiter permits 100 attempts per network per hour (five per identity,
+with a shared-network multiplier of 20). All synthetic users behind one test Caddy
+share that network bucket, so a single stack for the entire growing browser matrix
+incorrectly made later tests depend on earlier registrations. Project isolation
+preserves the production limiter values and keeps each browser population
+independent; it does not bypass throttling, add retries or weaken assertions.
+Project filters and test-file arguments may be passed to either command;
+`test:e2e --csp-report-only` or `--csp-enforce` selects one explicit policy.
+Every selected project and requested mode runs even when an earlier project fails;
+any failing child makes the command fail.
+`--shard` and `--last-failed` are rejected because applying their global selection
+again inside each isolated project could silently omit tests.
 
 The desktop Chromium, Firefox and WebKit suites cover authentication, transfer balances,
 linked goal availability, duplicate budgets, activity editing/filter/sort/export,
@@ -310,6 +334,8 @@ separately authorised enforcement/deployment requirements.
 
 Failures retain traces, screenshots, and video under ignored `test-results/` and
 `playwright-report/` directories. CI uploads failure diagnostics for review.
+The browser runner separates these directories by policy mode and browser project,
+including service logs, so later runs cannot replace an earlier failure's evidence.
 
 `pnpm screenshots` explicitly opts into the screenshot fixture, seeds synthetic
 records through the real API, and updates `docs/screenshots/`. It does not
@@ -319,3 +345,48 @@ Playwright setup follows its official [fixtures](https://playwright.dev/docs/tes
 and [CI](https://playwright.dev/docs/ci-intro) documentation. The custom runner
 owns the database and process lifecycle so tests cannot silently reuse a local
 application server.
+
+## Monetary and calendar-date contracts
+
+GBP, USD and EUR use integer minor units, with 100 minor units per major unit.
+Every API money field is bounded by JavaScript's largest exact integer:
+`9007199254740991` minor units (`90071992547409.91` major units). Transactions,
+transfers, budget allocations and goal targets start at one minor unit; goal
+saved amounts and monthly contributions may be zero. Signed account summaries
+use the same absolute bound. The bound follows the existing JSON-number API and
+browser representation rather than a presumed personal-finance spending limit.
+
+Forms parse decimal text into integer minor units before converting to a JSON
+number. They accept at most two decimal places, reject extra precision and
+unsupported ranges, and never round an input to fit. Edit fields, CSV exports
+and currency labels preserve the final penny at the upper boundary. Whole-unit
+summary labels still round for presentation. Derived totals (including totals
+across accounts, category/month totals, net history and projected spending) use
+native `BigInt`; conversion to floating point is limited to chart proportions.
+Projections round to the nearest minor unit, with exact half units rounded up.
+The API rejects mutations that would put an account summary outside its supported
+range, without partial writes. The form shows that rejection. Legacy API values
+outside the exact range produce an explicit data error instead of rounded totals;
+existing records are never changed automatically.
+
+Ledger `date` values represent calendar days selected by the user, separately
+from timestamp fields such as authentication expiry and creation times. Forms
+submit `YYYY-MM-DD` from `0001-01-02` through `9999-12-31` (the backend's zero-time sentinel `0001-01-01` is rejected). The API also accepts RFC3339 input and preserves its written
+calendar day: `2026-10-31T23:30:00-12:00` records 31 October, regardless of the UTC
+instant it describes. Responses retain the existing RFC3339 string shape, with
+newly written ledger dates normalised to UTC midnight. Display, edit, CSV,
+filtering, sorting and monthly budgets/analytics all use that same calendar day.
+Numeric date preferences render exactly `DD/MM/YYYY`, `MM/DD/YYYY` or `YYYY-MM-DD`.
+The current month and today's default date follow the viewer's local calendar;
+viewers actually in different local months may therefore select different
+current-month windows, while each record's month remains stable.
+
+Existing database timestamps keep their persisted UTC calendar day. Their
+original input timezone was not retained, so it cannot be reconstructed. This
+change does not migrate historical records or infer historical timezone data;
+any correction to ambiguous records requires a separate reviewed data decision.
+Authentication and other genuine timestamp behaviour is unchanged.
+
+`pnpm test:finance` includes monetary/date contract regressions. The browser
+financial contract scenarios exercise the real API in UTC−12, UTC+14 and London,
+including list/filter/edit/CSV, budgets and monthly summary agreement.

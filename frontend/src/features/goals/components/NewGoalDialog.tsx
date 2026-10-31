@@ -3,7 +3,12 @@ import { createGoal, updateGoal } from "@/api/endpoints/goals";
 import type { Goal } from "@/api/types";
 import { apiErrorMessage } from "@/api/errors";
 import { useFinanceData } from "@/contexts/FinanceDataContext";
-import { formatMoney, majorToMinor, minorToMajor } from "@/utils/finance";
+import {
+  formatMoney,
+  majorToMinor,
+  minorToMajor,
+  moneyInteger,
+} from "@/utils/finance";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import Dialog from "@/components/ui/Dialog";
@@ -48,11 +53,13 @@ export default function NewGoalDialog({
     try {
       const request = {
         name: name.trim(),
-        target_amount: majorToMinor(Number(target)),
-        saved_amount: majorToMinor(Number(saved)),
-        monthly_contribution: majorToMinor(Number(monthly)),
+        target_amount: majorToMinor(target),
+        saved_amount: majorToMinor(saved, true),
+        monthly_contribution: majorToMinor(monthly, true),
         account_id: accountId || null,
       };
+      if (request.saved_amount > request.target_amount)
+        throw new RangeError("Saved amount cannot exceed the goal target.");
       if (goal) await updateGoal(goal.id, request);
       else await createGoal(request);
       await refresh();
@@ -62,7 +69,11 @@ export default function NewGoalDialog({
       setMonthly("0");
       setDialogOpen(false);
     } catch (error) {
-      setError(apiErrorMessage(error, "The goal could not be saved."));
+      setError(
+        error instanceof RangeError
+          ? error.message
+          : apiErrorMessage(error, "The goal could not be saved."),
+      );
     } finally {
       setSaving(false);
     }
@@ -112,9 +123,9 @@ export default function NewGoalDialog({
             <Input
               id={`${formId}-target`}
               required
-              min="0.01"
-              step="0.01"
               variant="number"
+              type="text"
+              inputMode="decimal"
               value={target}
               onChange={(event) => setTarget(event.target.value)}
             />
@@ -124,10 +135,9 @@ export default function NewGoalDialog({
             <Input
               id={`${formId}-saved`}
               required
-              min="0"
-              max={target || undefined}
-              step="0.01"
               variant="number"
+              type="text"
+              inputMode="decimal"
               value={saved}
               onChange={(event) => setSaved(event.target.value)}
             />
@@ -138,9 +148,9 @@ export default function NewGoalDialog({
           <Input
             id={`${formId}-monthly`}
             required
-            min="0"
-            step="0.01"
             variant="number"
+            type="text"
+            inputMode="decimal"
             value={monthly}
             onChange={(event) => setMonthly(event.target.value)}
           />
@@ -170,15 +180,18 @@ export default function NewGoalDialog({
             (() => {
               const account = accounts.find((item) => item.id === accountId);
               if (!account) return null;
-              const targetAmount = Number(target);
-              const nextTarget =
-                Number.isFinite(targetAmount) && targetAmount > 0
-                  ? majorToMinor(targetAmount)
-                  : 0;
+              let nextTarget: number;
+              try {
+                nextTarget = majorToMinor(target);
+              } catch {
+                return null;
+              }
               const available =
-                account.unallocated_amount +
-                (goal?.account_id === accountId ? goal.target_amount : 0) -
-                nextTarget;
+                moneyInteger(account.unallocated_amount) +
+                moneyInteger(
+                  goal?.account_id === accountId ? goal.target_amount : 0,
+                ) -
+                moneyInteger(nextTarget);
               return (
                 <p
                   aria-live="polite"

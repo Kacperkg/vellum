@@ -21,7 +21,7 @@ export function getSessionSnapshot(): string | null {
 }
 
 export function getSession(): AuthSession | null {
-  if (!navigator.locks) return null;
+  if (!navigator.locks || typeof MessageChannel === "undefined") return null;
   const value = getSessionSnapshot();
   if (!value) return null;
   try {
@@ -51,16 +51,42 @@ export function sameSessionRevision(
   );
 }
 
+// Firefox can retain a per-task localStorage snapshot and publish writes only
+// when that task finishes. Web Lock promises alone do not cross a task boundary:
+// a queued tab can otherwise acquire the lock before seeing its predecessor's
+// write. MessageChannel schedules a new task without a guessed delay or retry.
+function nextStorageTask(): Promise<void> {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      channel.port2.close();
+      resolve();
+    };
+    channel.port2.postMessage(null);
+  });
+}
+
 export async function withAuthLock<T>(
   name: string,
   action: () => Promise<T> | T,
 ): Promise<T> {
-  if (!navigator.locks) {
+  if (!navigator.locks || typeof MessageChannel === "undefined") {
     throw new Error(
       "Secure session coordination is unavailable. Please use a current browser over HTTPS.",
     );
   }
-  return navigator.locks.request(name, action);
+  return navigator.locks.request(name, async () => {
+    // Discard any snapshot read by the caller before acquiring this lock.
+    await nextStorageTask();
+    try {
+      return await action();
+    } finally {
+      // Publish this task's writes before another tab can acquire the lock,
+      // including when the action throws after changing the session.
+      await nextStorageTask();
+    }
+  });
 }
 
 function writeSession(session: AuthSession): void {

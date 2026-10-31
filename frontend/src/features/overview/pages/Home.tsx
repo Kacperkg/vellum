@@ -6,21 +6,33 @@ import Icon from "@/components/ui/Icon";
 import PageHeader from "@/components/shared/PageHeader";
 import Progress from "@/components/ui/Progress";
 import { useFinanceData } from "@/contexts/FinanceDataContext";
-import { formatMoney, isCurrentMonth, netAmount } from "@/utils/finance";
+import {
+  formatMoney,
+  isCurrentMonth,
+  netAmount,
+  moneyInteger,
+  moneyRatio,
+  maxMoney,
+  compareMoney,
+  calendarDate,
+  localCalendarDate,
+} from "@/utils/finance";
 import {
   financialActivity,
   formatActivityAmount,
 } from "@/features/transactions";
 
-function sparkline(values: number[]): string {
+function sparkline(values: bigint[]): string {
   if (values.length === 0) return "0,70 700,70";
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = Math.max(max - min, 1);
+  const min = values.reduce((smallest, value) =>
+    value < smallest ? value : smallest,
+  );
+  const max = maxMoney(...values);
+  const range = maxMoney(max - min, 1n);
   return values
     .map((value, index) => {
       const x = (index / Math.max(values.length - 1, 1)) * 700;
-      const y = 20 + ((max - value) / range) * 85;
+      const y = 20 + moneyRatio(max - value, range) * 85;
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
@@ -54,13 +66,13 @@ export default function Home() {
   const currentMonth = transactions.filter((item) => isCurrentMonth(item.date));
   const income = currentMonth
     .filter((item) => item.type === "income")
-    .reduce((sum, item) => sum + item.amount, 0);
+    .reduce((sum, item) => sum + moneyInteger(item.amount), 0n);
   const expenses = currentMonth
     .filter((item) => item.type === "expense")
-    .reduce((sum, item) => sum + item.amount, 0);
+    .reduce((sum, item) => sum + moneyInteger(item.amount), 0n);
   const allocated = budgets.reduce(
-    (sum, item) => sum + item.allocated_amount,
-    0,
+    (sum, item) => sum + moneyInteger(item.allocated_amount),
+    0n,
   );
   const budgetCategoryIds = new Set(budgets.map((item) => item.category_id));
   const budgetedExpenses = currentMonth
@@ -68,8 +80,8 @@ export default function Home() {
       (item) =>
         item.type === "expense" && budgetCategoryIds.has(item.category_id),
     )
-    .reduce((sum, item) => sum + item.amount, 0);
-  const remaining = Math.max(allocated - budgetedExpenses, 0);
+    .reduce((sum, item) => sum + moneyInteger(item.amount), 0n);
+  const remaining = maxMoney(allocated - budgetedExpenses, 0n);
   const daysInMonth = new Date(
     now.getFullYear(),
     now.getMonth() + 1,
@@ -77,34 +89,43 @@ export default function Home() {
   ).getDate();
   const projectedSpend =
     now.getDate() > 0
-      ? Math.round((budgetedExpenses / now.getDate()) * daysInMonth)
+      ? (budgetedExpenses * BigInt(daysInMonth) +
+          BigInt(Math.floor(now.getDate() / 2))) /
+        BigInt(now.getDate())
       : budgetedExpenses;
-  const underBudget = Math.max(allocated - projectedSpend, 0);
-  const utilisation = allocated > 0 ? (budgetedExpenses / allocated) * 100 : 0;
-  const weekStart = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+  const underBudget = maxMoney(allocated - projectedSpend, 0n);
+  const utilisation =
+    allocated > 0 ? moneyRatio(budgetedExpenses, allocated) * 100 : 0;
+  const weekStart = new Date(now);
+  weekStart.setDate(weekStart.getDate() - 7);
   const weeklyChange = netAmount(
-    transactions.filter((item) => new Date(item.date).getTime() >= weekStart),
+    transactions.filter(
+      (item) =>
+        calendarDate(item.date) >= localCalendarDate(weekStart) &&
+        calendarDate(item.date) <= localCalendarDate(now),
+    ),
   );
   const recent = financialActivity(transactions, transfers).slice(0, 6);
-  const spendByCategory = new Map<string, number>();
+  const spendByCategory = new Map<string, bigint>();
   currentMonth
     .filter((item) => item.type === "expense")
     .forEach((item) =>
       spendByCategory.set(
         item.category_id,
-        (spendByCategory.get(item.category_id) ?? 0) + item.amount,
+        (spendByCategory.get(item.category_id) ?? 0n) +
+          moneyInteger(item.amount),
       ),
     );
   const budgetRows = budgets
     .map((budget) => ({
       ...budget,
       name: categoryById.get(budget.category_id) ?? "Uncategorised",
-      spent: spendByCategory.get(budget.category_id) ?? 0,
+      spent: spendByCategory.get(budget.category_id) ?? 0n,
     }))
-    .sort((a, b) => b.spent - a.spent)
+    .sort((a, b) => compareMoney(b.spent, a.spent))
     .slice(0, 4);
-  const topCategory = [...spendByCategory.entries()].sort(
-    (a, b) => b[1] - a[1],
+  const topCategory = [...spendByCategory.entries()].sort((a, b) =>
+    compareMoney(b[1], a[1]),
   )[0];
   const recurring = transactions.filter(
     (item) => item.type === "expense" && item.frequency !== "one-off",
@@ -114,14 +135,17 @@ export default function Home() {
     year: "numeric",
   }).format(now);
   const balanceValues = [...currentMonth]
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    .reduce<{ total: number; values: number[] }>(
+    .sort((a, b) => calendarDate(a.date).localeCompare(calendarDate(b.date)))
+    .reduce<{ total: bigint; values: bigint[] }>(
       (result, item) => {
         const total =
-          result.total + (item.type === "income" ? item.amount : -item.amount);
+          result.total +
+          (item.type === "income"
+            ? moneyInteger(item.amount)
+            : -moneyInteger(item.amount));
         return { total, values: [...result.values, total] };
       },
-      { total: 0, values: [] },
+      { total: 0n, values: [] },
     ).values;
   const balancePoints = sparkline(balanceValues);
 
@@ -269,7 +293,10 @@ export default function Home() {
               <p>
                 {recurring.length
                   ? `${formatMoney(
-                      recurring.reduce((sum, item) => sum + item.amount, 0),
+                      recurring.reduce(
+                        (sum, item) => sum + moneyInteger(item.amount),
+                        0n,
+                      ),
                       settings,
                     )} across recorded recurring expenses.`
                   : "Mark a transaction as recurring to see it here."}
@@ -339,7 +366,10 @@ export default function Home() {
                       <Progress
                         value={
                           budget.allocated_amount > 0
-                            ? (budget.spent / budget.allocated_amount) * 100
+                            ? moneyRatio(
+                                budget.spent,
+                                budget.allocated_amount,
+                              ) * 100
                             : 0
                         }
                         tone="neutral"
