@@ -5,7 +5,9 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/kacperkg/vellum/internal/calendar"
 	"github.com/kacperkg/vellum/internal/models"
+	"github.com/kacperkg/vellum/internal/money"
 	"github.com/kacperkg/vellum/internal/repository"
 )
 
@@ -23,11 +25,11 @@ func (s *TransferService) Create(userID uuid.UUID, req CreateTransferRequest) (*
 	if err := s.validate(userID, req); err != nil {
 		return nil, err
 	}
-	transfer := &models.Transfer{UserID: userID, Name: strings.TrimSpace(req.Name), Amount: req.Amount, FromAccountID: req.FromAccountID, ToAccountID: req.ToAccountID, Date: req.Date, Frequency: req.Frequency}
+	transfer := &models.Transfer{UserID: userID, Name: strings.TrimSpace(req.Name), Amount: req.Amount, FromAccountID: req.FromAccountID, ToAccountID: req.ToAccountID, Date: calendar.Day(req.Date), Frequency: req.Frequency}
 	if err := s.transferRepository.Create(transfer); err != nil {
 		return nil, err
 	}
-	return transferResponse(transfer), nil
+	return transferResponse(transfer)
 }
 
 func (s *TransferService) GetByID(userID, transferID uuid.UUID) (*TransferResponse, error) {
@@ -35,7 +37,7 @@ func (s *TransferService) GetByID(userID, transferID uuid.UUID) (*TransferRespon
 	if err != nil {
 		return nil, err
 	}
-	return transferResponse(transfer), nil
+	return transferResponse(transfer)
 }
 
 func (s *TransferService) FindByUserID(userID uuid.UUID) ([]*TransferResponse, error) {
@@ -45,7 +47,11 @@ func (s *TransferService) FindByUserID(userID uuid.UUID) ([]*TransferResponse, e
 	}
 	responses := make([]*TransferResponse, 0, len(transfers))
 	for _, transfer := range transfers {
-		responses = append(responses, transferResponse(transfer))
+		response, err := transferResponse(transfer)
+		if err != nil {
+			return nil, err
+		}
+		responses = append(responses, response)
 	}
 	return responses, nil
 }
@@ -63,7 +69,7 @@ func (s *TransferService) Update(userID, transferID uuid.UUID, req UpdateTransfe
 	transfer.Amount = req.Amount
 	transfer.FromAccountID = req.FromAccountID
 	transfer.ToAccountID = req.ToAccountID
-	transfer.Date = req.Date
+	transfer.Date = calendar.Day(req.Date)
 	transfer.Frequency = req.Frequency
 	if err := s.transferRepository.Update(userID, transfer); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -71,7 +77,7 @@ func (s *TransferService) Update(userID, transferID uuid.UUID, req UpdateTransfe
 		}
 		return nil, err
 	}
-	return transferResponse(transfer), nil
+	return transferResponse(transfer)
 }
 
 func (s *TransferService) Delete(userID, transferID uuid.UUID) error {
@@ -103,6 +109,9 @@ func (s *TransferService) validate(userID uuid.UUID, req CreateTransferRequest) 
 	if strings.TrimSpace(req.Name) == "" {
 		return ErrTransferNameRequired
 	}
+	if !money.Valid(req.Amount) {
+		return money.ErrRange
+	}
 	if req.Amount <= 0 {
 		return ErrTransferAmountPositive
 	}
@@ -112,7 +121,7 @@ func (s *TransferService) validate(userID uuid.UUID, req CreateTransferRequest) 
 	if req.FromAccountID == req.ToAccountID {
 		return ErrTransferAccountsDistinct
 	}
-	if req.Date.IsZero() {
+	if !calendar.Valid(req.Date) {
 		return ErrTransferDateRequired
 	}
 	if !validFrequency(req.Frequency) {
@@ -120,6 +129,12 @@ func (s *TransferService) validate(userID uuid.UUID, req CreateTransferRequest) 
 	}
 	for _, id := range []uuid.UUID{req.FromAccountID, req.ToAccountID} {
 		account, err := s.accountRepository.GetByID(id)
+		if errors.Is(err, money.ErrRange) && account != nil {
+			if account.UserID != userID {
+				return ErrAccountNotFound
+			}
+			err = nil
+		}
 		if err != nil {
 			if errors.Is(err, repository.ErrNotFound) {
 				return ErrAccountNotFound
@@ -133,8 +148,11 @@ func (s *TransferService) validate(userID uuid.UUID, req CreateTransferRequest) 
 	return nil
 }
 
-func transferResponse(transfer *models.Transfer) *TransferResponse {
-	return &TransferResponse{ID: transfer.ID, Name: transfer.Name, Amount: transfer.Amount, FromAccountID: transfer.FromAccountID, ToAccountID: transfer.ToAccountID, Date: transfer.Date, Frequency: transferFrequency(transfer.Frequency)}
+func transferResponse(transfer *models.Transfer) (*TransferResponse, error) {
+	if !money.Valid(transfer.Amount) {
+		return nil, money.ErrRange
+	}
+	return &TransferResponse{ID: transfer.ID, Name: transfer.Name, Amount: transfer.Amount, FromAccountID: transfer.FromAccountID, ToAccountID: transfer.ToAccountID, Date: calendar.Day(transfer.Date.UTC()), Frequency: transferFrequency(transfer.Frequency)}, nil
 }
 
 func transferFrequency(frequency models.Frequency) models.Frequency {

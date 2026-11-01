@@ -10,7 +10,13 @@ import DeleteDialog from "@/components/shared/DeleteDialog";
 import { deleteBudget } from "@/api/endpoints/budgets";
 import type { Budget } from "@/api/types";
 import { useFinanceData } from "@/contexts/FinanceDataContext";
-import { formatMoney, isCurrentMonth } from "@/utils/finance";
+import {
+  formatMoney,
+  isCurrentMonth,
+  moneyInteger,
+  moneyRatio,
+  maxMoney,
+} from "@/utils/finance";
 
 export default function Budgets() {
   const {
@@ -35,26 +41,26 @@ export default function Budgets() {
     [categories],
   );
   const spentByCategory = useMemo(() => {
-    const totals = new Map<string, number>();
+    const totals = new Map<string, bigint>();
     transactions
       .filter((item) => item.type === "expense" && isCurrentMonth(item.date))
       .forEach((item) =>
         totals.set(
           item.category_id,
-          (totals.get(item.category_id) ?? 0) + item.amount,
+          (totals.get(item.category_id) ?? 0n) + moneyInteger(item.amount),
         ),
       );
     return totals;
   }, [transactions]);
   const allocated = budgets.reduce(
-    (sum, item) => sum + item.allocated_amount,
-    0,
+    (sum, item) => sum + moneyInteger(item.allocated_amount),
+    0n,
   );
   const budgetCategoryIds = new Set(budgets.map((item) => item.category_id));
   const spent = [...spentByCategory.entries()]
     .filter(([categoryId]) => budgetCategoryIds.has(categoryId))
-    .reduce((sum, [, amount]) => sum + amount, 0);
-  const utilisation = allocated > 0 ? (spent / allocated) * 100 : 0;
+    .reduce((sum, [, amount]) => sum + amount, 0n);
+  const utilisation = allocated > 0 ? moneyRatio(spent, allocated) * 100 : 0;
   const monthLabel = new Intl.DateTimeFormat("en", {
     month: "long",
     year: "numeric",
@@ -140,10 +146,10 @@ export default function Budgets() {
             <section className="budget-grid">
               {budgets.map((budget) => {
                 const budgetSpent =
-                  spentByCategory.get(budget.category_id) ?? 0;
+                  spentByCategory.get(budget.category_id) ?? 0n;
                 const used =
                   budget.allocated_amount > 0
-                    ? (budgetSpent / budget.allocated_amount) * 100
+                    ? moneyRatio(budgetSpent, budget.allocated_amount) * 100
                     : 0;
                 return (
                   <Card className="budget-card" key={budget.id}>
@@ -191,7 +197,10 @@ export default function Budgets() {
                       <span>{Math.round(used)}% used</span>
                       <span>
                         {formatMoney(
-                          Math.max(budget.allocated_amount - budgetSpent, 0),
+                          maxMoney(
+                            moneyInteger(budget.allocated_amount) - budgetSpent,
+                            0n,
+                          ),
                           settings,
                         )}{" "}
                         left

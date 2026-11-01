@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/models"
+	"github.com/kacperkg/vellum/internal/money"
 	"gorm.io/gorm"
 )
 
@@ -15,7 +16,10 @@ func NewTransferRepository(db *gorm.DB) TransferRepository {
 }
 
 func (r *transferRepository) Create(transfer *models.Transfer) error {
-	return r.db.Create(transfer).Error
+	if !money.Valid(transfer.Amount) {
+		return money.ErrRange
+	}
+	return financialMutation(r.db, transfer.UserID, func(tx *gorm.DB) error { return tx.Create(transfer).Error })
 }
 
 func (r *transferRepository) FindByID(id uuid.UUID) (*models.Transfer, error) {
@@ -36,17 +40,26 @@ func (r *transferRepository) FindByUserID(userID uuid.UUID) ([]*models.Transfer,
 }
 
 func (r *transferRepository) Update(userID uuid.UUID, transfer *models.Transfer) error {
-	result := r.db.Model(&models.Transfer{}).Where("id = ? AND user_id = ?", transfer.ID, userID).Updates(map[string]any{
-		"name":            transfer.Name,
-		"amount":          transfer.Amount,
-		"from_account_id": transfer.FromAccountID,
-		"to_account_id":   transfer.ToAccountID,
-		"date":            transfer.Date,
-		"frequency":       transfer.Frequency,
+	if !money.Valid(transfer.Amount) {
+		return money.ErrRange
+	}
+	return financialMutation(r.db, userID, func(tx *gorm.DB) error {
+		result := tx.Model(&models.Transfer{}).Where("id = ? AND user_id = ?", transfer.ID, userID).Updates(map[string]any{
+			"name":            transfer.Name,
+			"amount":          transfer.Amount,
+			"from_account_id": transfer.FromAccountID,
+			"to_account_id":   transfer.ToAccountID,
+			"date":            transfer.Date,
+			"frequency":       transfer.Frequency,
+		})
+		return mutationError(result)
+
 	})
-	return mutationError(result)
 }
 
 func (r *transferRepository) Delete(userID, id uuid.UUID) error {
-	return mutationError(r.db.Delete(&models.Transfer{}, "id = ? AND user_id = ?", id, userID))
+	return financialMutation(r.db, userID, func(tx *gorm.DB) error {
+		return mutationError(tx.Delete(&models.Transfer{}, "id = ? AND user_id = ?", id, userID))
+
+	})
 }

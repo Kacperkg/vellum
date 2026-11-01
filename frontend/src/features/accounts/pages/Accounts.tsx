@@ -12,7 +12,7 @@ import NewAccountDialog from "../components/NewAccountDialog";
 import { NewGoalDialog } from "@/features/goals";
 import { NewTransferDialog } from "@/features/transactions";
 import { useFinanceData } from "@/contexts/FinanceDataContext";
-import { formatMoney } from "@/utils/finance";
+import { formatMoney, moneyInteger } from "@/utils/finance";
 
 export default function Accounts() {
   const { accounts, goals, settings, loading, errors, refresh } =
@@ -25,16 +25,16 @@ export default function Accounts() {
   const [goalAccountId, setGoalAccountId] = useState<string | null>(null);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const totalBalance = accounts.reduce(
-    (sum, account) => sum + account.balance,
-    0,
+    (sum, account) => sum + moneyInteger(account.balance),
+    0n,
   );
   const totalAllocated = accounts.reduce(
-    (sum, account) => sum + account.allocated_amount,
-    0,
+    (sum, account) => sum + moneyInteger(account.allocated_amount),
+    0n,
   );
   const totalUnallocated = accounts.reduce(
-    (sum, account) => sum + account.unallocated_amount,
-    0,
+    (sum, account) => sum + moneyInteger(account.unallocated_amount),
+    0n,
   );
 
   return (
@@ -140,7 +140,12 @@ export default function Accounts() {
                 <strong
                   className={totalUnallocated < 0 ? "text-destructive" : ""}
                 >
-                  {formatMoney(Math.abs(totalUnallocated), settings)}
+                  {formatMoney(
+                    totalUnallocated < 0n
+                      ? -totalUnallocated
+                      : totalUnallocated,
+                    settings,
+                  )}
                 </strong>
               </div>
             </Card>

@@ -145,6 +145,17 @@ print(config.read_text().replace('"15"', '"30"') if os.environ.get('OVERRIDE_TIM
         self.sources.write_text(SOURCE.replace("Suites: noble-security", "Enabled: no\nSuites: noble-security"))
         self.assert_unchanged_failure()
 
+    def test_source_diagnostics_exclude_uri_credentials_and_queries(self):
+        self.sources.write_text(SOURCE.replace(
+            "mirror+file:/etc/apt/apt-mirrors.txt",
+            "https://private-user:private-password@example.invalid/ubuntu/?private-query#private-fragment"))
+        result = self.prepare()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("example.invalid", result.stderr)
+        self.assertIn("/ubuntu/", result.stderr)
+        self.assertNotIn("private-", result.stderr)
+        self.assertFalse((self.fixture / "commands").exists())
+
     def test_write_or_effective_configuration_failure_is_fatal(self):
         for key, value in (("FAIL_WRITE", "/etc/apt/apt-mirrors.txt"),
                            ("FAIL_WRITE", "/etc/apt/apt.conf.d/zz-vellum-playwright"),

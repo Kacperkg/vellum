@@ -49,6 +49,15 @@ export async function signUpAPI(request: APIRequestContext) {
 
 export async function enterSession(page: Page, session: Session) {
   await page.goto("/login");
+  // The load event can precede the lazy login route's initial auth check. Seed
+  // only after it has rendered, so that check cannot race the next navigation.
+  await expect(
+    page.getByRole("heading", {
+      name: "Welcome back.",
+      exact: true,
+      level: 1,
+    }),
+  ).toBeVisible();
   await page.evaluate((value) => {
     localStorage.setItem(
       "vellum:session",
@@ -58,6 +67,7 @@ export async function enterSession(page: Page, session: Session) {
         credentials: value,
       }),
     );
+    window.dispatchEvent(new Event("vellum:session-change"));
   }, session);
 }
 

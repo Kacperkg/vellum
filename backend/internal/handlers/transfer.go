@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/kacperkg/vellum/internal/calendar"
 	"github.com/kacperkg/vellum/internal/models"
 	"github.com/kacperkg/vellum/internal/services"
 )
@@ -17,7 +17,7 @@ type transferRequest struct {
 	Amount        int64             `json:"amount" binding:"required,gt=0"`
 	FromAccountID uuid.UUID         `json:"from_account_id" binding:"required"`
 	ToAccountID   uuid.UUID         `json:"to_account_id" binding:"required"`
-	Date          time.Time         `json:"date" binding:"required"`
+	Date          calendar.Date     `json:"date" binding:"required"`
 	Frequency     *models.Frequency `json:"frequency" binding:"omitempty,oneof=one-off daily weekly monthly yearly"`
 }
 
@@ -26,7 +26,7 @@ func (r transferRequest) serviceRequest() services.CreateTransferRequest {
 	if r.Frequency != nil {
 		frequency = *r.Frequency
 	}
-	return services.CreateTransferRequest{Name: r.Name, Amount: r.Amount, FromAccountID: r.FromAccountID, ToAccountID: r.ToAccountID, Date: r.Date, Frequency: frequency}
+	return services.CreateTransferRequest{Name: r.Name, Amount: r.Amount, FromAccountID: r.FromAccountID, ToAccountID: r.ToAccountID, Date: r.Date.Time, Frequency: frequency}
 }
 
 func NewTransferHandler(service *services.TransferService) *TransferHandler {

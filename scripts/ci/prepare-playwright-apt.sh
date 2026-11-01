@@ -7,6 +7,7 @@ set -euo pipefail
 python3 - /etc/os-release /etc/apt/sources.list.d/ubuntu.sources <<'PY'
 from pathlib import Path
 import sys
+from urllib.parse import urlsplit
 
 os_release = dict(
     line.split('=', 1) for line in Path(sys.argv[1]).read_text().splitlines()
@@ -43,7 +44,13 @@ for fields in stanzas:
             or set(fields.get('components', '').split()) != {'main', 'restricted', 'universe', 'multiverse'}
             or not set(fields.get('types', '').split()) <= {'deb', 'deb-src'}
             or 'deb' not in fields.get('types', '').split()):
-        raise SystemExit('Unsupported Ubuntu source trust/mirror configuration; no changes made.')
+        # Report only public package-source metadata, never URI credentials or
+        # queries, so runner-image changes can be diagnosed without guessing.
+        locations = [(uri.scheme, uri.hostname, uri.path) for uri in
+                     map(urlsplit, fields.get('uris', '').split())]
+        raise SystemExit('Unsupported Ubuntu source trust/mirror configuration; no changes made. '
+                         f'Locations={locations!r}; types={fields.get("types")!r}; '
+                         f'components={fields.get("components")!r}; signed-by={fields.get("signed-by")!r}')
     suites.update(fields.get('suites', '').split())
 if suites != {'noble', 'noble-updates', 'noble-backports', 'noble-security'}:
     raise SystemExit('Expected complete Noble suites including security; no changes made.')
