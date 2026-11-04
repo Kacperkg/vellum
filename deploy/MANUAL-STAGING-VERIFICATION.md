@@ -84,7 +84,7 @@ mismatch still requires separately approved installation and fails closed.
   only `release.json`, retained immutably for 90 days. It is **not eligible for
   production promotion**: the existing resolver still requires a successful
   staging `push` and the `vellum-release-*` artifact namespace. Normal release
-  artifacts, source comparisons and staging-to-production promotion are unchanged.
+  artifacts are discovered automatically; see [Production activation](PRODUCTION-ACTIVATION.md).
 
 This verifies the managed staging deployment path, including actual replacement
 and startup smoke. It does not test recovery/rollback against live data, all

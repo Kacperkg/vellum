@@ -26,27 +26,62 @@ The development server runs at `http://localhost:5173`. API requests default to
 
 ## Authentication flow
 
-1. Register or login returns an access token, rotating refresh token, and user.
-2. `tokenStorage.ts` stores both tokens and the returned user in browser
-   `localStorage`.
-3. The request interceptor attaches the access token as a Bearer token.
-4. A `401` from a protected `/api/...` request starts one shared refresh request.
-5. Successful refresh stores the replacement pair and retries the original
-   request once.
-6. Failed refresh clears local authentication and returns to `/login`.
-7. Logout clears local tokens and asks the backend to revoke the refresh token.
+1. Register or login starts a new browser session generation, then stores the
+   access token, rotating refresh token and user together in one `localStorage`
+   record (`vellum:session`). Older sign-in responses cannot replace that generation.
+2. The request interceptor binds protected requests to their session generation
+   before sending them. It attaches the current access token as a Bearer token.
+3. A protected `401` takes a Web Lock shared by tabs for that generation. The
+   first tab rotates the refresh token; waiting tabs reuse the replacement.
+   Protected requests retry at most once, within the same generation. A request
+   from an old login is never replayed with another login's credentials.
+4. Credential writes and clears use a separate, short Web Lock and compare the
+   stored generation and revision. Neither stale success nor stale failure can
+   overwrite a newer login. Successful responses from obsolete protected requests
+   are also rejected.
+5. Logout immediately replaces the record with a credential-free tombstone under
+   the short lock. Storage subscriptions remove protected pages in every tab and
+   reset their finance state; the originating tab uses SPA navigation so its
+   revocation request can continue. Logout never waits for an in-flight refresh
+   lock. Reload reads the tombstone and stays signed out.
+6. The backend logout request revokes the token's entire rotation family, including
+   descendants already issued before logout. A late discarded response also gets
+   a best-effort revocation request. Failed refresh attempts revoke their captured
+   predecessor because a lost response may already have rotated on the server.
+   Other login families remain separate.
 
-Refresh requests are shared because backend refresh tokens are single-use; this
-prevents simultaneous `401` responses from trying to rotate the same token more
-than once.
+Logout is immediately final in local state. Server revocation requires a successful
+request: offline/network failure cannot prove that the server received logout.
+The client bounds refresh and logout requests and never automatically retries auth
+mutations. Existing server expiry and password-reset revocation remain in force.
 
-The local storage keys are:
+Firefox can retain a localStorage snapshot for the current JavaScript task and
+publish writes only when that task ends. Each authentication lock callback starts
+after a `MessageChannel` task boundary and waits for another boundary before
+releasing the lock, including when the callback throws. This lets a queued tab
+observe the preceding holder's credential changes. These are explicit scheduling
+boundaries, without guessed delays or retries; the short credential-state lock
+still performs no network operation.
+
+The browser requires Web Locks in a secure context (HTTPS, or loopback during
+local development) and `MessageChannel`. Authentication fails closed when those APIs are unavailable;
+there is no unsafe storage-only coordination fallback. Legacy three-key credentials
+are deliberately ignored and removed on the next authentication state change, so
+users must sign in again after this client upgrade. Existing old client tabs need
+reloading to gain the new UI coordination; backend family revocation still applies.
+
+The session record has this shape:
 
 ```text
-vellum:access_token
-vellum:refresh_token
-vellum:user
+{ generation, revision, credentials: { access_token, refresh_token, user } | null }
 ```
+
+A fresh generation starts on explicit sign-in and logout; rotation changes only
+the revision. The credential-free tombstone is intentionally retained rather than
+removing the key, preventing pending sign-in responses from passing an empty-state
+comparison after logout. Password-reset completion clears only its original
+browser generation under the state lock, including any rotation queued before
+cleanup while preserving a later successful sign-in.
 
 ## Key pieces
 
@@ -256,7 +291,7 @@ Install frontend dependencies, Go, Docker, and the browser engines before the fi
 ```sh
 pnpm exec playwright install --with-deps chromium firefox webkit
 pnpm test:e2e
-pnpm test:e2e:csp # report-only followed by the same policy in enforcing mode
+pnpm test:e2e:csp # each browser in report-only and enforcing modes, in fresh stacks
 ```
 
 `scripts/run-e2e.mjs` creates a private disposable Docker network with PostgreSQL,
@@ -266,6 +301,22 @@ a random direct-Nginx port are published only to loopback; occupied fixed ports
 are rejected. The API receives only synthetic configuration, no developer dotenv
 files or SES delivery settings. Processes, temporary files, containers and the
 private network are removed after the run.
+
+Both browser commands discover the selected projects from Playwright and run
+each project in a fresh disposable stack. `test:e2e` uses the production policy;
+`test:e2e:csp` runs every project in both report-only and enforcing modes. The production
+registration limiter permits 100 attempts per network per hour (five per identity,
+with a shared-network multiplier of 20). All synthetic users behind one test Caddy
+share that network bucket, so a single stack for the entire growing browser matrix
+incorrectly made later tests depend on earlier registrations. Project isolation
+preserves the production limiter values and keeps each browser population
+independent; it does not bypass throttling, add retries or weaken assertions.
+Project filters and test-file arguments may be passed to either command;
+`test:e2e --csp-report-only` or `--csp-enforce` selects one explicit policy.
+Every selected project and requested mode runs even when an earlier project fails;
+any failing child makes the command fail.
+`--shard` and `--last-failed` are rejected because applying their global selection
+again inside each isolated project could silently omit tests.
 
 The desktop Chromium, Firefox and WebKit suites cover authentication, transfer balances,
 linked goal availability, duplicate budgets, activity editing/filter/sort/export,
@@ -283,6 +334,8 @@ separately authorised enforcement/deployment requirements.
 
 Failures retain traces, screenshots, and video under ignored `test-results/` and
 `playwright-report/` directories. CI uploads failure diagnostics for review.
+The browser runner separates these directories by policy mode and browser project,
+including service logs, so later runs cannot replace an earlier failure's evidence.
 
 `pnpm screenshots` explicitly opts into the screenshot fixture, seeds synthetic
 records through the real API, and updates `docs/screenshots/`. It does not
@@ -292,3 +345,48 @@ Playwright setup follows its official [fixtures](https://playwright.dev/docs/tes
 and [CI](https://playwright.dev/docs/ci-intro) documentation. The custom runner
 owns the database and process lifecycle so tests cannot silently reuse a local
 application server.
+
+## Monetary and calendar-date contracts
+
+GBP, USD and EUR use integer minor units, with 100 minor units per major unit.
+Every API money field is bounded by JavaScript's largest exact integer:
+`9007199254740991` minor units (`90071992547409.91` major units). Transactions,
+transfers, budget allocations and goal targets start at one minor unit; goal
+saved amounts and monthly contributions may be zero. Signed account summaries
+use the same absolute bound. The bound follows the existing JSON-number API and
+browser representation rather than a presumed personal-finance spending limit.
+
+Forms parse decimal text into integer minor units before converting to a JSON
+number. They accept at most two decimal places, reject extra precision and
+unsupported ranges, and never round an input to fit. Edit fields, CSV exports
+and currency labels preserve the final penny at the upper boundary. Whole-unit
+summary labels still round for presentation. Derived totals (including totals
+across accounts, category/month totals, net history and projected spending) use
+native `BigInt`; conversion to floating point is limited to chart proportions.
+Projections round to the nearest minor unit, with exact half units rounded up.
+The API rejects mutations that would put an account summary outside its supported
+range, without partial writes. The form shows that rejection. Legacy API values
+outside the exact range produce an explicit data error instead of rounded totals;
+existing records are never changed automatically.
+
+Ledger `date` values represent calendar days selected by the user, separately
+from timestamp fields such as authentication expiry and creation times. Forms
+submit `YYYY-MM-DD` from `0001-01-02` through `9999-12-31` (the backend's zero-time sentinel `0001-01-01` is rejected). The API also accepts RFC3339 input and preserves its written
+calendar day: `2026-10-31T23:30:00-12:00` records 31 October, regardless of the UTC
+instant it describes. Responses retain the existing RFC3339 string shape, with
+newly written ledger dates normalised to UTC midnight. Display, edit, CSV,
+filtering, sorting and monthly budgets/analytics all use that same calendar day.
+Numeric date preferences render exactly `DD/MM/YYYY`, `MM/DD/YYYY` or `YYYY-MM-DD`.
+The current month and today's default date follow the viewer's local calendar;
+viewers actually in different local months may therefore select different
+current-month windows, while each record's month remains stable.
+
+Existing database timestamps keep their persisted UTC calendar day. Their
+original input timezone was not retained, so it cannot be reconstructed. This
+change does not migrate historical records or infer historical timezone data;
+any correction to ambiguous records requires a separate reviewed data decision.
+Authentication and other genuine timestamp behaviour is unchanged.
+
+`pnpm test:finance` includes monetary/date contract regressions. The browser
+financial contract scenarios exercise the real API in UTC−12, UTC+14 and London,
+including list/filter/edit/CSV, budgets and monthly summary agreement.

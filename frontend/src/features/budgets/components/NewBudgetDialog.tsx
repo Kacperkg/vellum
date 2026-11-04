@@ -37,7 +37,7 @@ export default function NewBudgetDialog({
     try {
       const request = {
         category_id: categoryId,
-        allocated_amount: majorToMinor(Number(amount)),
+        allocated_amount: majorToMinor(amount),
       };
       if (budget) await updateBudget(budget.id, request);
       else await createBudget(request);
@@ -46,7 +46,11 @@ export default function NewBudgetDialog({
       setCategoryId("");
       setDialogOpen(false);
     } catch (error) {
-      setError(apiErrorMessage(error, "The budget could not be saved."));
+      setError(
+        error instanceof RangeError
+          ? error.message
+          : apiErrorMessage(error, "The budget could not be saved."),
+      );
     } finally {
       setSaving(false);
     }
@@ -120,9 +124,9 @@ export default function NewBudgetDialog({
           <Input
             id={`${formId}-amount`}
             required
-            min="0.01"
-            step="0.01"
             variant="number"
+            type="text"
+            inputMode="decimal"
             placeholder="500"
             value={amount}
             onChange={(event) => setAmount(event.target.value)}

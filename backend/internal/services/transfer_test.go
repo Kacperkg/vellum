@@ -1,6 +1,7 @@
 package services_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -200,3 +201,5 @@ func TestAccountDeleteReferencedLedgerIsConflict(t *testing.T) {
 		t.Fatalf("error=%v", err)
 	}
 }
+
+func (r *fakeTransferRepository) WithContext(context.Context) repository.TransferRepository { return r }

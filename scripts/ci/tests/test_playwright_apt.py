@@ -22,6 +22,10 @@ Suites: noble-security
 Components: main restricted universe multiverse
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 """
+SPLIT_SOURCE = SOURCE.replace(
+    "URIs: mirror+file:/etc/apt/apt-mirrors.txt\nSuites: noble-security",
+    "URIs: http://security.ubuntu.com/ubuntu\nSuites: noble-security",
+).replace("main restricted universe multiverse", "main universe restricted multiverse")
 MIRRORS = ("https://archive.ubuntu.com/ubuntu/\tpriority:1\n"
            "https://security.ubuntu.com/ubuntu/\tpriority:2\n")
 CONFIG = ('Acquire::Retries "1";\nAcquire::http::Timeout "15";\n'
@@ -62,7 +66,8 @@ args = sys.argv[1:]
 with (root / 'commands').open('a') as log:
     log.write(json.dumps(args) + '\\n')
 assert len(args) == 2 and args[0] == 'tee', args
-assert args[1] in ['/etc/apt/apt-mirrors.txt', '/etc/apt/apt.conf.d/zz-vellum-playwright'], args
+assert args[1] in ['/etc/apt/sources.list.d/ubuntu.sources', '/etc/apt/apt-mirrors.txt',
+                   '/etc/apt/apt.conf.d/zz-vellum-playwright'], args
 if os.environ.get('FAIL_WRITE') == args[1]:
     raise SystemExit(9)
 (root / args[1].lstrip('/')).write_text(sys.stdin.read())
@@ -86,9 +91,11 @@ print(config.read_text().replace('"15"', '"30"') if os.environ.get('OVERRIDE_TIM
 
     def assert_unchanged_failure(self):
         before = self.mirrors.read_bytes()
+        sources = self.sources.read_bytes() if self.sources.exists() else None
         result = self.prepare()
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(self.mirrors.read_bytes(), before)
+        self.assertEqual(self.sources.read_bytes() if self.sources.exists() else None, sources)
         self.assertFalse(self.config.exists())
         self.assertFalse((self.fixture / "commands").exists())
 
@@ -114,6 +121,47 @@ print(config.read_text().replace('"15"', '"30"') if os.environ.get('OVERRIDE_TIM
         original = self.sources.read_bytes()
         self.assertEqual(self.prepare().returncode, 0)
         self.assertEqual(self.sources.read_bytes(), original)
+
+    def test_hosted_split_security_source_upgrades_only_its_transport(self):
+        original = SPLIT_SOURCE.encode()
+        self.sources.write_bytes(original)
+        extra = self.extra.read_bytes()
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.sources.read_bytes(), original.replace(
+            b"URIs: http://security.ubuntu.com/ubuntu", b"URIs: https://security.ubuntu.com/ubuntu"))
+        self.assertEqual(self.extra.read_bytes(), extra)
+        self.assertEqual(self.mirrors.read_text(), MIRRORS)
+        self.assertEqual(self.config.read_text(), CONFIG)
+        commands = self.fixture / "commands"
+        self.assertEqual(commands.read_text().count("/etc/apt/sources.list.d/ubuntu.sources"), 1)
+        self.assertEqual(self.prepare().returncode, 0)
+        self.assertEqual(commands.read_text().count("/etc/apt/sources.list.d/ubuntu.sources"), 1)
+
+    def test_direct_security_does_not_allow_other_endpoints_or_suites(self):
+        direct = "http://security.ubuntu.com/ubuntu"
+        for uri in (
+            "http://security.ubuntu.com.evil/ubuntu", "http://user@security.ubuntu.com/ubuntu",
+            "http://security.ubuntu.com:80/ubuntu", direct + "?query", direct + "#fragment",
+            direct + " https://example.invalid/ubuntu", "http://security.ubuntu.com/other",
+        ):
+            with self.subTest(uri=uri):
+                self.sources.write_text(SPLIT_SOURCE.replace(direct, uri))
+                self.assert_unchanged_failure()
+        for suite in ("noble", "noble-updates noble-security", "noble-proposed"):
+            with self.subTest(suite=suite):
+                self.sources.write_text(SPLIT_SOURCE.replace("Suites: noble-security", "Suites: " + suite))
+                self.assert_unchanged_failure()
+
+    def test_unsafe_trust_overrides_fail_even_with_the_ubuntu_keyring(self):
+        for source in (SOURCE, SPLIT_SOURCE):
+            for option in (
+                "Trusted: yes", "Allow-Insecure: yes", "Allow-Weak: yes",
+                "Allow-Downgrade-To-Insecure: yes", "Check-Valid-Until: no",
+            ):
+                with self.subTest(option=option, split=source == SPLIT_SOURCE):
+                    self.sources.write_text(source + option + "\n")
+                    self.assert_unchanged_failure()
 
     def test_unsupported_distro_or_missing_source_fails_before_privileged_writes(self):
         for value in ('ID=debian\nVERSION_ID="24.04"\n', 'ID=ubuntu\nVERSION_ID="22.04"\n'):
@@ -145,6 +193,26 @@ print(config.read_text().replace('"15"', '"30"') if os.environ.get('OVERRIDE_TIM
         self.sources.write_text(SOURCE.replace("Suites: noble-security", "Enabled: no\nSuites: noble-security"))
         self.assert_unchanged_failure()
 
+    def test_malformed_enabled_cannot_hide_an_unknown_source(self):
+        for enabled in (
+            "no\u00a0\n", "no\n # not a DEB822 comment\n", "\n no\n", "no\nEnabled : yes\n",
+        ):
+            with self.subTest(enabled=enabled):
+                self.sources.write_text(SPLIT_SOURCE + "\nEnabled: " + enabled
+                                        + "URIs: https://example.invalid/ubuntu\n")
+                self.assert_unchanged_failure()
+
+    def test_source_diagnostics_exclude_uri_credentials_and_queries(self):
+        self.sources.write_text(SOURCE.replace(
+            "mirror+file:/etc/apt/apt-mirrors.txt",
+            "https://private-user:private-password@example.invalid/ubuntu/?private-query#private-fragment"))
+        result = self.prepare()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("example.invalid", result.stderr)
+        self.assertIn("/ubuntu/", result.stderr)
+        self.assertNotIn("private-", result.stderr)
+        self.assertFalse((self.fixture / "commands").exists())
+
     def test_write_or_effective_configuration_failure_is_fatal(self):
         for key, value in (("FAIL_WRITE", "/etc/apt/apt-mirrors.txt"),
                            ("FAIL_WRITE", "/etc/apt/apt.conf.d/zz-vellum-playwright"),
@@ -154,6 +222,14 @@ print(config.read_text().replace('"15"', '"30"') if os.environ.get('OVERRIDE_TIM
                 result = self.prepare()
                 self.assertNotEqual(result.returncode, 0)
                 del self.env[key]
+
+    def test_failed_direct_source_write_stops_before_other_changes(self):
+        self.sources.write_text(SPLIT_SOURCE)
+        self.env["FAIL_WRITE"] = "/etc/apt/sources.list.d/ubuntu.sources"
+        original_mirrors = self.mirrors.read_bytes()
+        self.assertEqual(self.prepare().returncode, 9)
+        self.assertEqual(self.mirrors.read_bytes(), original_mirrors)
+        self.assertFalse(self.config.exists())
 
     def test_installer_and_package_audit_failures_are_not_masked(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()

@@ -14,7 +14,13 @@ import type {
 } from "@/api/types";
 import { useFinanceData } from "@/contexts/FinanceDataContext";
 import { recordedAccountBalance } from "../utils/activity";
-import { formatMoney, majorToMinor, minorToMajor } from "@/utils/finance";
+import {
+  formatMoney,
+  majorToMinor,
+  minorToMajor,
+  calendarDate,
+  localCalendarDate,
+} from "@/utils/finance";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import Dialog from "@/components/ui/Dialog";
@@ -60,11 +66,9 @@ export default function NewTransactionDialog({
   const [amount, setAmount] = useState(
     original ? String(minorToMajor(original.amount)) : "",
   );
-  const [date, setDate] = useState(() => {
-    if (original) return original.date.slice(0, 10);
-    const today = new Date();
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-  });
+  const [date, setDate] = useState(() =>
+    original ? calendarDate(original.date) : localCalendarDate(),
+  );
   const [categoryId, setCategoryId] = useState(transaction?.category_id ?? "");
   const [accountId, setAccountId] = useState(
     transfer?.from_account_id ?? transaction?.account_id ?? "",
@@ -96,11 +100,8 @@ export default function NewTransactionDialog({
     try {
       const common = {
         name: name.trim(),
-        amount: majorToMinor(Number(amount)),
-        date:
-          original && date === original.date.slice(0, 10)
-            ? original.date
-            : new Date(`${date}T12:00:00Z`).toISOString(),
+        amount: majorToMinor(amount),
+        date: calendarDate(date),
         frequency,
       };
       if (type === "transfer") {
@@ -125,10 +126,12 @@ export default function NewTransactionDialog({
       setDialogOpen(false);
     } catch (error) {
       setError(
-        apiErrorMessage(
-          error,
-          `The ${isTransfer ? "transfer" : "transaction"} could not be saved. Please try again.`,
-        ),
+        error instanceof RangeError
+          ? error.message
+          : apiErrorMessage(
+              error,
+              `The ${isTransfer ? "transfer" : "transaction"} could not be saved. Please try again.`,
+            ),
       );
     } finally {
       setSaving(false);
@@ -261,9 +264,9 @@ export default function NewTransactionDialog({
             <Input
               id={fieldId("amount")}
               required
-              min="0.01"
-              step="0.01"
               variant="number"
+              type="text"
+              inputMode="decimal"
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
             />
@@ -274,6 +277,8 @@ export default function NewTransactionDialog({
               id={fieldId("date")}
               required
               variant="date"
+              min="0001-01-02"
+              max="9999-12-31"
               value={date}
               onChange={(event) => setDate(event.target.value)}
             />

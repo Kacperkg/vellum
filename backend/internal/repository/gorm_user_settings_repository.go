@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 
 	"github.com/google/uuid"
@@ -44,4 +45,9 @@ func (r *userSettingsRepository) Update(userID uuid.UUID, settings *models.UserS
 
 func (r *userSettingsRepository) Create(settings *models.UserSettings) error {
 	return r.db.Create(settings).Error
+}
+
+// WithContext returns a request-scoped clone; the shared repository is never mutated.
+func (r *userSettingsRepository) WithContext(ctx context.Context) UserSettingsRepository {
+	return &userSettingsRepository{db: r.db.WithContext(ctx)}
 }

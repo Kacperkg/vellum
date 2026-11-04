@@ -1,7 +1,9 @@
 package handlers_test
 
 import (
+	"context"
 	"encoding/json"
+	"github.com/kacperkg/vellum/internal/repository"
 	"net/http"
 	"strings"
 	"testing"
@@ -78,7 +80,7 @@ func TestTransferHandler(t *testing.T) {
 	if repo.transfer.Frequency != models.OneOff {
 		t.Fatalf("null update frequency=%q, want one-off", repo.transfer.Frequency)
 	}
-	if repo.transfer.Amount != 12599 || !repo.transfer.Date.Equal(time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)) {
+	if repo.transfer.Amount != 12599 || !repo.transfer.Date.Equal(time.Date(2026, 10, 24, 0, 0, 0, 0, time.UTC)) {
 		t.Fatalf("transfer=%#v", repo.transfer)
 	}
 	requireStatus(t, perform(router, http.MethodPost, "/transfers", `{"amount":1}`), http.StatusBadRequest)
@@ -92,3 +94,5 @@ func TestTransferHandler(t *testing.T) {
 	requireStatus(t, perform(router, http.MethodDelete, "/transfers/"+id, ""), http.StatusNoContent)
 	requireStatus(t, perform(router, http.MethodGet, "/transfers/"+id, ""), http.StatusNotFound)
 }
+
+func (r *fakeTransferRepository) WithContext(context.Context) repository.TransferRepository { return r }

@@ -1,5 +1,5 @@
 import type { Account, Category, UserSettings } from "@/api/types";
-import { minorToMajor } from "@/utils/finance";
+import { minorToMajor, calendarDate } from "@/utils/finance";
 import { activityImpact, type FinancialActivity } from "./activity";
 
 function csvText(value: string): string {
@@ -46,13 +46,11 @@ export function exportTransactions(
                 ?.name ?? "")
             : "",
         ),
-        csvText(item.date),
+        csvText(calendarDate(item.date)),
         csvText(item.frequency),
         csvText(item.type),
-        (
-          minorToMajor(item.amount) * (item.type === "expense" ? -1 : 1)
-        ).toFixed(2),
-        minorToMajor(activityImpact(item, accountId)).toFixed(2),
+        minorToMajor(item.amount * (item.type === "expense" ? -1 : 1)),
+        minorToMajor(activityImpact(item, accountId)),
         csvText(settings.currency),
       ].join(","),
     ),

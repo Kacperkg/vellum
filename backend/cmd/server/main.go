@@ -19,12 +19,17 @@ import (
 func main() {
 	cfg := config.Load()
 
+	// Startup schema work has a separate bounded pool so runtime query limits
+	// cannot accidentally turn a larger existing-table migration into a 5s job.
+	migrationCtx, cancelMigration := context.WithTimeout(context.Background(), 3*time.Minute)
+	err := database.MigrateConfigured(migrationCtx, cfg)
+	cancelMigration()
+	if err != nil {
+		log.Fatalf("failed to run migrations: %v", err)
+	}
 	db, err := database.Connect(cfg)
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
-	}
-	if err := database.Migrate(db); err != nil {
-		log.Fatalf("failed to run migrations: %v", err)
+		log.Fatal("failed to connect to database")
 	}
 
 	jwtExpiry, err := time.ParseDuration(cfg.JWTExpiry)

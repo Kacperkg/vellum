@@ -308,6 +308,17 @@ try {
       ),
   );
   if (capture) testArgs.push("--project=screenshots");
+  const outputIndex = testArgs.findLastIndex(
+    (arg) => arg === "--output" || arg.startsWith("--output="),
+  );
+  const diagnostics = resolve(
+    frontend,
+    outputIndex < 0
+      ? "test-results"
+      : testArgs[outputIndex] === "--output"
+        ? testArgs[outputIndex + 1]
+        : testArgs[outputIndex].slice("--output=".length),
+  );
   const tests = spawn(
     process.execPath,
     ["node_modules/@playwright/test/cli.js", "test", ...testArgs],
@@ -340,8 +351,8 @@ try {
         /* startup failure */
       }
     }
-    await mkdir(join(frontend, "test-results"), { recursive: true });
-    await writeFile(join(frontend, "test-results/services.log"), logs);
+    await mkdir(diagnostics, { recursive: true });
+    await writeFile(join(diagnostics, "services.log"), logs);
   }
   process.exitCode = result;
 } catch (error) {

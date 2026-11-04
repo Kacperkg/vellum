@@ -89,6 +89,32 @@ class ChangeTests(unittest.TestCase):
             self.assertFalse(changes.guard("success", json.dumps(dict.fromkeys(changes.KEYS, False)), key))
             self.assertTrue(changes.guard("success", json.dumps(dict.fromkeys(changes.KEYS, True)), key))
 
+    def test_release_needed_staging_push_runs_full_validation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "event").write_text("{}")
+            for ref, path, full, deploy in (
+                ("refs/heads/staging", "backend/cmd/server/main.go", True, True),
+                ("refs/heads/staging", "deploy/compose.yml", True, True),
+                ("refs/heads/staging", "README.md", False, False),
+                ("refs/heads/feature", "backend/cmd/server/main.go", False, True),
+            ):
+                with self.subTest(ref=ref, path=path):
+                    output = root / "output"
+                    output.write_text("")
+                    env = {
+                        "GITHUB_EVENT_NAME": "push", "GITHUB_REF": ref,
+                        "GITHUB_EVENT_PATH": str(root / "event"), "GITHUB_OUTPUT": str(output),
+                        "GITHUB_STEP_SUMMARY": str(root / "summary"),
+                    }
+                    with patch.dict(os.environ, env, clear=True), patch.object(
+                        changes, "changed_paths", return_value=[path]
+                    ), patch.object(changes.sys, "argv", ["changes.py", "detect"]):
+                        changes.main()
+                    result = dict(line.split("=", 1) for line in output.read_text().splitlines())
+                    self.assertEqual(all(json.loads(result["plan"]).values()), full)
+                    self.assertEqual(result["deploy"], str(deploy).lower())
+
     def test_failed_diff_and_initial_push_fall_back_to_full_plan(self):
         for event in ({}, {"before": "0" * 40, "after": "a" * 40}, {"before": "a" * 40, "after": "b" * 40}):
             with tempfile.TemporaryDirectory() as temp:

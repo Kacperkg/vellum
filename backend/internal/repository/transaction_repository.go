@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -8,6 +9,7 @@ import (
 )
 
 type TransactionRepository interface {
+	WithContext(context.Context) TransactionRepository
 	Create(transaction *models.Transaction) error
 	FindByID(id uuid.UUID) (*models.Transaction, error)
 	FindByUserID(userID uuid.UUID) ([]*models.Transaction, error)
