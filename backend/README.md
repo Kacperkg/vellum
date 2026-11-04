@@ -173,6 +173,14 @@ honour family revocation, even though the additive schema remains readable.
 Rollback requires a reviewed compatible recovery release, not an old auth image.
 No environment variable, IAM change or new dependency is required.
 
+## Authenticated resource limits
+
+Protected APIs enforce bounded request bodies, names, filters, date ranges,
+rate/concurrency admission, request cancellation and PostgreSQL work. See
+[the resource policy](RESOURCE_LIMITS.md) for exact limits, retry behaviour and
+compatibility with the current collection contract (Issue #25).
+Complete transaction/transfer arrays and financial totals remain unchanged.
+
 ## Environment variables
 
 Every variable is required. Expiry values use Go duration syntax.

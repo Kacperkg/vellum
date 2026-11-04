@@ -21,8 +21,8 @@ func TestLegacyTokenOnlyValidBeforeVersionChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := gin.New()
-	router.Use(middleware.AuthMiddleware("secret", func(ctx context.Context, userID uuid.UUID, claimVersion int64, _ *uuid.UUID) bool {
-		return ctx != nil && id == userID && version == claimVersion
+	router.Use(middleware.AuthMiddleware("secret", func(ctx context.Context, userID uuid.UUID, claimVersion int64, _ *uuid.UUID) (bool, error) {
+		return ctx != nil && id == userID && version == claimVersion, nil
 	}))
 	router.GET("/api", func(c *gin.Context) { c.Status(204) })
 	for _, want := range []int{204, 401} {

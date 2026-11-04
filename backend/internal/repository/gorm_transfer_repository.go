@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 
 	"github.com/google/uuid"
@@ -62,4 +63,9 @@ func (r *transferRepository) Delete(userID, id uuid.UUID) error {
 		return mutationError(tx.Delete(&models.Transfer{}, "id = ? AND user_id = ?", id, userID))
 
 	})
+}
+
+// WithContext returns a request-scoped clone; the shared repository is never mutated.
+func (r *transferRepository) WithContext(ctx context.Context) TransferRepository {
+	return &transferRepository{db: r.db.WithContext(ctx)}
 }

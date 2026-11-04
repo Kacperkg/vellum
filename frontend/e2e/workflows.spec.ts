@@ -504,20 +504,38 @@ test("failed account creation stays in setup and can be retried", async ({
   await expect(
     page.getByRole("button", { name: "Add account and continue", exact: true }),
   ).toBeDisabled();
+  const failures = [
+    { status: 400, error: "invalid request body" },
+    { status: 408, error: "request canceled" },
+    { status: 413, error: "request body too large" },
+    { status: 429, error: "rate limit exceeded" },
+    { status: 500, error: "internal server error" },
+    { status: 503, error: "session validation unavailable" },
+    { status: 504, error: "request timed out" },
+  ];
+  let submissions = 0;
+  let failure = failures[0];
   await page.route(`${apiURL}/api/accounts`, async (route) => {
-    if (route.request().method() === "POST")
-      await route.fulfill({
-        status: 500,
-        json: { error: "Please retry creation" },
-      });
-    else await route.continue();
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    submissions++;
+    await route.fulfill({
+      status: failure.status,
+      json: { error: failure.error },
+    });
   });
   await page.getByLabel("Account name", { exact: true }).fill("Retry account");
-  await page
-    .getByRole("button", { name: "Add account and continue", exact: true })
-    .click();
-  await expect(page.getByRole("alert")).toHaveText("Please retry creation");
-  await expect(page.locator(".app-frame")).toHaveCount(0);
+  for (const [index, response] of failures.entries()) {
+    failure = response;
+    await page
+      .getByRole("button", { name: "Add account and continue", exact: true })
+      .click();
+    await expect(page.getByRole("alert")).toHaveText(response.error);
+    await expect(page.locator(".app-frame")).toHaveCount(0);
+    expect(submissions).toBe(index + 1);
+  }
   await page.unroute(`${apiURL}/api/accounts`);
   await page
     .getByRole("button", { name: "Add account and continue", exact: true })

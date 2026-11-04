@@ -206,24 +206,27 @@ func hashRefreshToken(rawToken string) string {
 func (s *UserService) ValidateAuthVersion(ctx context.Context, userID uuid.UUID, version int64) bool {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
+	valid, err := s.validateAuthVersion(ctx, userID, version)
+	return err == nil && valid
+}
+
+func (s *UserService) validateAuthVersion(ctx context.Context, userID uuid.UUID, version int64) (bool, error) {
 	user, err := s.userRepository.FindByIDContext(ctx, userID)
-	return err == nil && user != nil && version >= 0 && user.AuthVersion == version
+	if errors.Is(err, repository.ErrNotFound) {
+		return false, nil
+	}
+	return err == nil && user != nil && version >= 0 && user.AuthVersion == version, err
 }
 
 // ValidateSession preserves pre-upgrade JWTs until their existing expiry (or a
 // password reset), while new JWTs also require their own live refresh family.
-func (s *UserService) ValidateSession(ctx context.Context, userID uuid.UUID, version int64, familyID *uuid.UUID) bool {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	if !s.ValidateAuthVersion(ctx, userID, version) {
-		return false
-	}
-	if familyID == nil {
-		return true
+func (s *UserService) ValidateSession(ctx context.Context, userID uuid.UUID, version int64, familyID *uuid.UUID) (bool, error) {
+	valid, err := s.validateAuthVersion(ctx, userID, version)
+	if err != nil || !valid || familyID == nil {
+		return valid, err
 	}
 	if *familyID == uuid.Nil {
-		return false
+		return false, nil
 	}
-	active, err := s.refreshTokenRepository.HasActiveFamily(ctx, userID, version, *familyID, time.Now())
-	return err == nil && active
+	return s.refreshTokenRepository.HasActiveFamily(ctx, userID, version, *familyID, time.Now())
 }

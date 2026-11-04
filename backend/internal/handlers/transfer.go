@@ -13,7 +13,7 @@ import (
 type TransferHandler struct{ transferService *services.TransferService }
 
 type transferRequest struct {
-	Name          string            `json:"name" binding:"required"`
+	Name          string            `json:"name" binding:"required,max=200"`
 	Amount        int64             `json:"amount" binding:"required,gt=0"`
 	FromAccountID uuid.UUID         `json:"from_account_id" binding:"required"`
 	ToAccountID   uuid.UUID         `json:"to_account_id" binding:"required"`
@@ -36,14 +36,14 @@ func NewTransferHandler(service *services.TransferService) *TransferHandler {
 func (h *TransferHandler) Create(c *gin.Context) {
 	var req transferRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithBindingError(c, err)
 		return
 	}
 	userID, ok := getUserID(c)
 	if !ok {
 		return
 	}
-	response, err := h.transferService.Create(userID, req.serviceRequest())
+	response, err := h.transferService.WithContext(c.Request.Context()).Create(userID, req.serviceRequest())
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -60,7 +60,7 @@ func (h *TransferHandler) GetByID(c *gin.Context) {
 	if !ok {
 		return
 	}
-	response, err := h.transferService.GetByID(userID, id)
+	response, err := h.transferService.WithContext(c.Request.Context()).GetByID(userID, id)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -73,7 +73,7 @@ func (h *TransferHandler) ListByUser(c *gin.Context) {
 	if !ok {
 		return
 	}
-	response, err := h.transferService.FindByUserID(userID)
+	response, err := h.transferService.WithContext(c.Request.Context()).FindByUserID(userID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -88,14 +88,14 @@ func (h *TransferHandler) Update(c *gin.Context) {
 	}
 	var req transferRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithBindingError(c, err)
 		return
 	}
 	userID, ok := getUserID(c)
 	if !ok {
 		return
 	}
-	response, err := h.transferService.Update(userID, id, req.serviceRequest())
+	response, err := h.transferService.WithContext(c.Request.Context()).Update(userID, id, req.serviceRequest())
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -112,7 +112,7 @@ func (h *TransferHandler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.transferService.Delete(userID, id); err != nil {
+	if err := h.transferService.WithContext(c.Request.Context()).Delete(userID, id); err != nil {
 		respondWithServiceError(c, err)
 		return
 	}

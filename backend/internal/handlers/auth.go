@@ -108,6 +108,6 @@ func (h *AuthHandler) ValidateAuthVersion(ctx context.Context, id uuid.UUID, ver
 	return h.userService.ValidateAuthVersion(ctx, id, version)
 }
 
-func (h *AuthHandler) ValidateSession(ctx context.Context, id uuid.UUID, version int64, familyID *uuid.UUID) bool {
+func (h *AuthHandler) ValidateSession(ctx context.Context, id uuid.UUID, version int64, familyID *uuid.UUID) (bool, error) {
 	return h.userService.ValidateSession(ctx, id, version, familyID)
 }

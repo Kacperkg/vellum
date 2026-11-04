@@ -14,7 +14,7 @@ type GoalHandler struct {
 
 type goalRequest struct {
 	AccountID           *uuid.UUID `json:"account_id"`
-	Name                string     `json:"name" binding:"required"`
+	Name                string     `json:"name" binding:"required,max=200"`
 	TargetAmount        int64      `json:"target_amount" binding:"required,gt=0"`
 	SavedAmount         int64      `json:"saved_amount" binding:"gte=0"`
 	MonthlyContribution int64      `json:"monthly_contribution" binding:"gte=0"`
@@ -29,7 +29,7 @@ func NewGoalHandler(goalService *services.GoalService) *GoalHandler {
 func (h *GoalHandler) Create(c *gin.Context) {
 	var req goalRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithBindingError(c, err)
 		return
 	}
 
@@ -38,7 +38,7 @@ func (h *GoalHandler) Create(c *gin.Context) {
 		return
 	}
 
-	response, err := h.goalService.Create(userID, services.CreateGoalRequest(req))
+	response, err := h.goalService.WithContext(c.Request.Context()).Create(userID, services.CreateGoalRequest(req))
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -58,7 +58,7 @@ func (h *GoalHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	response, err := h.goalService.GetByID(userID, goalID)
+	response, err := h.goalService.WithContext(c.Request.Context()).GetByID(userID, goalID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -73,7 +73,7 @@ func (h *GoalHandler) ListByUser(c *gin.Context) {
 		return
 	}
 
-	response, err := h.goalService.FindByUserID(userID)
+	response, err := h.goalService.WithContext(c.Request.Context()).FindByUserID(userID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -90,7 +90,7 @@ func (h *GoalHandler) Update(c *gin.Context) {
 
 	var req goalRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithBindingError(c, err)
 		return
 	}
 
@@ -99,7 +99,7 @@ func (h *GoalHandler) Update(c *gin.Context) {
 		return
 	}
 
-	response, err := h.goalService.Update(userID, goalID, services.UpdateGoalRequest(req))
+	response, err := h.goalService.WithContext(c.Request.Context()).Update(userID, goalID, services.UpdateGoalRequest(req))
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -119,7 +119,7 @@ func (h *GoalHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.goalService.Delete(userID, goalID); err != nil {
+	if err := h.goalService.WithContext(c.Request.Context()).Delete(userID, goalID); err != nil {
 		respondWithServiceError(c, err)
 		return
 	}

@@ -288,6 +288,24 @@ func (r *fakeUserRepository) FindByIDContext(context.Context, uuid.UUID) (*model
 	return r.User, r.Err
 }
 
+func (r *fakeAccountRepository) WithContext(context.Context) repository.AccountRepository { return r }
+
+func (r *fakeBudgetRepository) WithContext(context.Context) repository.BudgetRepository { return r }
+
+func (r *fakeCategoryRepository) WithContext(context.Context) repository.CategoryRepository { return r }
+
+func (r *fakeGoalRepository) WithContext(context.Context) repository.GoalRepository { return r }
+
+func (r *fakeTransactionRepository) WithContext(context.Context) repository.TransactionRepository {
+	return r
+}
+
+func (r *fakeTransferRepository) WithContext(context.Context) repository.TransferRepository { return r }
+
+func (r *fakeUserSettingsRepository) WithContext(context.Context) repository.UserSettingsRepository {
+	return r
+}
+
 func (r *fakeRefreshTokenRepository) HasActiveFamily(_ context.Context, userID uuid.UUID, version int64, familyID uuid.UUID, now time.Time) (bool, error) {
 	if r.Err != nil {
 		return false, r.Err

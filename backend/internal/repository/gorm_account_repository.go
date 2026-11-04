@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 
 	"github.com/google/uuid"
@@ -97,4 +98,9 @@ func (r *accountRepository) Delete(userID, id uuid.UUID) error {
 		return ErrConflict
 	}
 	return mutationError(result)
+}
+
+// WithContext returns a request-scoped clone; the shared repository is never mutated.
+func (r *accountRepository) WithContext(ctx context.Context) AccountRepository {
+	return &accountRepository{db: r.db.WithContext(ctx)}
 }
