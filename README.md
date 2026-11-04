@@ -247,7 +247,9 @@ Promote production → Run workflow** on `main` and tick the deployment
 confirmation. The workflow finds the single successful staging release whose
 tested files match `main` and deploys its existing image digests. A merge alone
 cannot deploy production. See the [production runbook](deploy/PRODUCTION-ACTIVATION.md)
-for approval, merge compatibility and missing-release troubleshooting.
+for approval, merge compatibility and missing-release troubleshooting. The
+[signed readiness design](deploy/PRODUCTION-READINESS.md) describes the opt-in
+controller verifier and the prerequisites that block activation.
 
 ## Security and operational limits
 

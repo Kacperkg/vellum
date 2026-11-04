@@ -327,9 +327,9 @@ def mark_verified(args):
 
 def dispatch(args):
     approval_mode = getattr(args, "approval_mode", "standard")
-    require(approval_mode in ("standard", "prelaunch"), "unknown approval mode")
+    require(approval_mode in ("standard", "prelaunch", "automated"), "unknown approval mode")
     require(args.environment == "production" or approval_mode == "standard",
-            "prelaunch approval is production-only")
+            "nonstandard approval is production-only")
     value = read_json(args.manifest)
     validate_manifest(
         value,
@@ -355,59 +355,72 @@ def dispatch(args):
         "unexpected SSM document",
     )
     require(
-        re.fullmatch(r"[1-9][0-9]*", version) and re.fullmatch(HEX, digest),
+        re.fullmatch(r"[1-9][0-9]{0,8}", version) and re.fullmatch(HEX, digest)
+        and (approval_mode != "automated" or int(version) > 2),
         "SSM document version/hash must be pinned",
     )
     parameters = {"Manifest": [base64.b64encode(canonical(value)).decode()]}
     if args.environment == "production":
         parameters["ApprovalMode"] = [approval_mode]
     parameters = json.dumps(parameters)
-    command = subprocess.check_output(
-        [
-            "aws",
-            "ssm",
-            "send-command",
-            "--instance-ids",
-            instance,
-            "--document-name",
-            document,
-            "--document-version",
-            version,
-            "--document-hash",
-            digest,
-            "--document-hash-type",
-            "Sha256",
-            "--parameters",
-            parameters,
-            "--timeout-seconds",
-            "900",
-            "--query",
-            "Command.CommandId",
-            "--output",
-            "text",
-        ],
-        text=True,
-    ).strip()
-    require(str(uuid.UUID(command)) == command, "invalid command ID")
-    deadline = time.monotonic() + 900
-    while time.monotonic() < deadline:
-        result = subprocess.run(
+    try:
+        sent = subprocess.run(
             [
                 "aws",
                 "ssm",
-                "get-command-invocation",
-                "--command-id",
-                command,
-                "--instance-id",
+                "send-command",
+                "--instance-ids",
                 instance,
+                "--document-name",
+                document,
+                "--document-version",
+                version,
+                "--document-hash",
+                digest,
+                "--document-hash-type",
+                "Sha256",
+                "--parameters",
+                parameters,
+                "--timeout-seconds",
+                "900",
                 "--query",
-                "Status",
+                "Command.CommandId",
                 "--output",
                 "text",
             ],
-            capture_output=True,
             text=True,
+            capture_output=True,
+            timeout=30,
         )
+    except (OSError, subprocess.TimeoutExpired):
+        raise ValueError("SSM dispatch could not be confirmed; check for remote work privately") from None
+    require(sent.returncode == 0, "SSM dispatch failed; inspect AWS diagnostics privately")
+    command = sent.stdout.strip()
+    require(re.fullmatch(r"[0-9a-f-]{36}", command)
+            and str(uuid.UUID(command)) == command, "invalid command ID")
+    deadline = time.monotonic() + 900
+    while time.monotonic() < deadline:
+        try:
+            result = subprocess.run(
+                [
+                    "aws",
+                    "ssm",
+                    "get-command-invocation",
+                    "--command-id",
+                    command,
+                    "--instance-id",
+                    instance,
+                    "--query",
+                    "Status",
+                    "--output",
+                    "text",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            raise ValueError("SSM status lookup failed; remote command may still be running") from None
         status = result.stdout.strip()
         if result.returncode != 0 and "InvocationDoesNotExist" not in result.stderr:
             raise ValueError(
@@ -423,7 +436,9 @@ def dispatch(args):
             "Delayed",
         }:
             raise ValueError(
-                f"SSM deployment failed ({status}); inspect secret-redacted service diagnostics privately"
+                ("SSM deployment failed; inspect service diagnostics privately"
+                 if status not in {"Cancelled", "TimedOut", "Failed", "Cancelling"}
+                 else f"SSM deployment failed ({status}); inspect service diagnostics privately")
             )
         time.sleep(5)
     raise ValueError(

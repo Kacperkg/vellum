@@ -5,7 +5,9 @@ A release-needed staging push runs full CI, publishes and deploys both images
 when CD is enabled, and records the verified release. Production finds the single
 eligible release for the reviewed `main` tree and promotes those same digests.
 The existing standard production backup, isolated restore, schema and proxy
-approval still applies. The [pre-launch exception](PRELAUNCH-PRODUCTION.md)
+approval still applies by default. [Signed readiness](PRODUCTION-READINESS.md)
+documents an opt-in verifier and the prerequisites that block its activation.
+The [pre-launch exception](PRELAUNCH-PRODUCTION.md)
 expired on 4 November 2026 UTC and is no longer exposed by this workflow.
 
 ## 1. GitHub configuration and verified current state
@@ -197,6 +199,9 @@ ordinary staging run 40587847468/1 using the legacy selector. That release
 predates this artifact contract; its historical evidence remains in Git.
 
 ## 9. Backup, isolated restore and release-specific approval
+
+This section covers standard approval. Use [signed readiness](PRODUCTION-READINESS.md)
+for the separately gated automation design and activation blockers.
 
 Two-day S3 retention is accepted, but is not restore proof. **Never set
 `restore_verified=true` without an actual isolated verified restore.** Missing

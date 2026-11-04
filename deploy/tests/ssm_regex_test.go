@@ -43,8 +43,8 @@ func TestManifestParameterValidation(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				for _, value := range []string{"standard", "prelaunch", "", "Prelaunch", "prelaunch\n", "$(id)"} {
-					if pattern.MatchString(value) != (value == "standard" || value == "prelaunch") {
+				for _, value := range []string{"automated", "standard", "prelaunch", "", "Automated", "automated\n", "$(id)"} {
+					if pattern.MatchString(value) != (value == "automated") {
 						t.Fatalf("unsafe ApprovalMode pattern result for %q", value)
 					}
 				}

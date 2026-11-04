@@ -42,14 +42,13 @@ def invocation(results, ticks, target):
         }
         with (
             patch.dict(os.environ, environment, clear=True),
-            patch.object(release.subprocess, "check_output", return_value=COMMAND_ID) as send,
-            patch.object(release.subprocess, "run", side_effect=results) as poll,
+            patch.object(release.subprocess, "run", side_effect=[status(COMMAND_ID), *results]) as aws,
             patch.object(release.time, "monotonic", side_effect=ticks),
             patch.object(release.time, "sleep") as sleep,
         ):
             yield types.SimpleNamespace(
                 args=types.SimpleNamespace(manifest=source, environment=target),
-                output=output, send=send, poll=poll, sleep=sleep,
+                output=output, aws=aws, sleep=sleep,
             )
 
 
@@ -60,8 +59,7 @@ class DispatchFailureTests(unittest.TestCase):
         return invocation(results, ticks, self.environment)
 
     def assert_single_pinned_send(self, fixture):
-        fixture.send.assert_called_once()
-        command = fixture.send.call_args.args[0]
+        command = fixture.aws.call_args_list[0].args[0]
         self.assertEqual(command[:3], ["aws", "ssm", "send-command"])
         for option, expected in (
             ("--instance-ids", INSTANCE),
@@ -71,8 +69,8 @@ class DispatchFailureTests(unittest.TestCase):
             ("--document-hash-type", "Sha256"),
         ):
             self.assertEqual(command[command.index(option) + 1], expected)
-        self.assertFalse(fixture.send.call_args.kwargs.get("shell", False))
-        for call in fixture.poll.call_args_list:
+        self.assertFalse(fixture.aws.call_args_list[0].kwargs.get("shell", False))
+        for call in fixture.aws.call_args_list[1:]:
             command = call.args[0]
             self.assertEqual(command[:3], ["aws", "ssm", "get-command-invocation"])
             self.assertEqual(command[command.index("--command-id") + 1], COMMAND_ID)
@@ -87,9 +85,22 @@ class DispatchFailureTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "timed out; remote command may still be running"):
                 release.dispatch(fixture.args)
             self.assertEqual(fixture.output.read_text(), "")
-            self.assertEqual(fixture.poll.call_count, 3)
+            self.assertEqual(fixture.aws.call_count - 1, 3)
             self.assertEqual(fixture.sleep.call_count, 3)
             self.assert_single_pinned_send(fixture)
+
+    def test_send_timeout_and_aws_stderr_do_not_expose_raw_details(self):
+        with self.invocation([], []) as f:
+            f.aws.side_effect = subprocess.TimeoutExpired(["private-value"], 30)
+            with self.assertRaisesRegex(ValueError, "SSM dispatch could not be confirmed") as error:
+                release.dispatch(f.args)
+            self.assertNotIn("private-value", str(error.exception))
+        with self.invocation([], []) as f:
+            f.aws.side_effect = [status("private-value", 1, "private-stderr")]
+            with self.assertRaisesRegex(ValueError, "SSM dispatch failed") as error:
+                release.dispatch(f.args)
+            self.assertNotIn("private-value", str(error.exception))
+            self.assertNotIn("private-stderr", str(error.exception))
 
     def test_terminal_failure_statuses_never_write_success(self):
         for value in ("Cancelled", "Cancelling", "TimedOut", "Failed", "Undeliverable", "Unknown"):
@@ -115,7 +126,7 @@ class DispatchFailureTests(unittest.TestCase):
         ) as fixture:
             release.dispatch(fixture.args)
             self.assertEqual(fixture.output.read_text(), "command_id=" + COMMAND_ID + "\n")
-            self.assertEqual(fixture.poll.call_count, 3)
+            self.assertEqual(fixture.aws.call_count - 1, 3)
             self.assertEqual(fixture.sleep.call_count, 2)
             self.assert_single_pinned_send(fixture)
 
@@ -135,11 +146,11 @@ class ProductionDispatchFailureTests(DispatchFailureTests):
 class ApprovalModeDispatchTests(unittest.TestCase):
     def test_modes_arrive_as_production_only_data_under_existing_ssm_pins(self):
         for target, mode in (("staging", "standard"), ("production", "standard"),
-                             ("production", "prelaunch")):
+                             ("production", "prelaunch"), ("production", "automated")):
             with self.subTest(target=target, mode=mode), invocation([status("Success")], [100, 101], target) as f:
                 f.args.approval_mode = mode
                 release.dispatch(f.args)
-                command = f.send.call_args.args[0]
+                command = f.aws.call_args_list[0].args[0]
                 parameters = json.loads(command[command.index("--parameters") + 1])
                 if target == "production":
                     self.assertEqual(parameters["ApprovalMode"], [mode])
@@ -148,14 +159,21 @@ class ApprovalModeDispatchTests(unittest.TestCase):
                 self.assertEqual(command[command.index("--document-version") + 1], "3")
                 self.assertEqual(command[command.index("--document-hash") + 1], "e" * 64)
 
+    def test_automated_refuses_legacy_document_pin(self):
+        with invocation([], [], "production") as f, patch.dict(os.environ, SSM_DOCUMENT_VERSION="2"):
+            f.args.approval_mode = "automated"
+            with self.assertRaisesRegex(ValueError, "must be pinned"):
+                release.dispatch(f.args)
+            f.aws.assert_not_called()
+
     def test_staging_and_invalid_mode_fail_before_aws(self):
-        for target, mode in (("staging", "prelaunch"), ("production", ""),
+        for target, mode in (("staging", "prelaunch"), ("staging", "automated"), ("production", ""),
                              ("production", "$(id)"), ("production", None)):
             with self.subTest(target=target, mode=mode), invocation([], [], target) as f:
                 f.args.approval_mode = mode
                 with self.assertRaises(ValueError):
                     release.dispatch(f.args)
-                f.send.assert_not_called()
+                f.aws.assert_not_called()
 
 
 if __name__ == "__main__":

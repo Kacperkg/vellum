@@ -74,11 +74,15 @@ def host_locks(state):
 
 
 @contextmanager
-def operation(state, kind, environment):
+def operation(state, kind, environment, preflight=None):
     require(kind in ('backup', 'deployment', 'maintenance'), 'unknown host operation')
     require(environment in ('staging', 'production'), 'unknown operation environment')
     with host_locks(state):
         pending = state / PENDING
+        if preflight is not None:
+            require(not os.path.lexists(pending),
+                    'unfinished host operation; operator recovery required')
+            preflight()
         # O_EXCL rejects any existing entry, including dangling symlinks. No PID,
         # timestamp, reboot or unlocked flock is sufficient evidence to recover it.
         try:

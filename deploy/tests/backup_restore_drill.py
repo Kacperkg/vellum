@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 from unittest.mock import patch
@@ -19,12 +20,15 @@ ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('backup', ROOT / 'deploy/backup.py')
 backup = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(backup)
+sys.path.insert(0, str(ROOT / "deploy/cd"))
+from controller import Commands
+
 DOCKER = ['docker', '--context', 'desktop-linux']
 
 
-def command(args, **kwargs):
+def command(args, timeout=600, **kwargs):
     return subprocess.run(args, check=True, stdout=subprocess.PIPE,
-                          stderr=subprocess.PIPE, timeout=600, **kwargs).stdout
+                          stderr=subprocess.PIPE, timeout=timeout, **kwargs).stdout
 
 
 def main():
@@ -97,6 +101,11 @@ def main():
             command(compose + ['stop', 'backend'])
             expected = sql('source', 'SELECT count(*) FROM users; SELECT count(*) FROM accounts; '
                                     'SELECT count(*) FROM categories;')
+            commands = object.__new__(Commands)
+            commands.compose = compose
+            commands.run = lambda label, args, timeout=20: command(args, timeout=timeout).decode()
+            source_fingerprint = commands.postgres_baseline()
+            assert commands.postgres_baseline() == source_fingerprint
             archive = root / 'synthetic.dump'
             clean = {'PATH': os.environ['PATH'], 'HOME': os.environ['HOME']}
             # Only host paths/ownership/disk gates are bypassed for this non-root fixture.
@@ -119,6 +128,10 @@ def main():
             assert sql('restored', 'SELECT count(*) FROM accounts a LEFT JOIN users u ON u.id=a.user_id '
                                    'WHERE u.id IS NULL;') == '0'
             assert sql('restored', 'SELECT count(*) FROM pg_constraint WHERE NOT convalidated;') == '0'
+            sql('source', 'CREATE TABLE readiness_schema_change (id bigint PRIMARY KEY);')
+            changed_fingerprint = commands.postgres_baseline()
+            assert changed_fingerprint[:2] == source_fingerprint[:2]
+            assert changed_fingerprint[2] != source_fingerprint[2]
             command(compose + ['up', '-d', '--no-deps', 'restored'])
             wait_app('restored')
             login = request('restored', '/login', {'email': user['email'], 'password': user['password']})
@@ -139,7 +152,7 @@ def main():
                               'archive_bytes': archive.stat().st_size, 'archive_sha256': digest,
                               'checks': ['real pg_dump', 'archive list', 'SHA256', 'transactional restore',
                                          'counts and constraints before startup', 'login and accounts after startup',
-                                         'corrupt restore rejected'],
+                                         'corrupt restore rejected', 'stable schema and source fingerprints detect DDL'],
                               'elapsed_seconds': round(time.monotonic() - started, 1),
                               's3_round_trip': False}, indent=2))
         finally:

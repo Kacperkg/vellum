@@ -10,15 +10,15 @@ import release
 
 
 class ManifestParameterTests(unittest.TestCase):
-    def test_production_mode_is_bounded_default_standard_and_never_shell_interpolated(self):
+    def test_new_production_document_requires_automated_and_never_shell_interpolates(self):
         root = Path(__file__).resolve().parents[1] / "ssm"
         production = json.loads((root / "production.json").read_bytes())
         staging = json.loads((root / "staging.json").read_bytes())
         parameter = production["parameters"]["ApprovalMode"]
         self.assertEqual(parameter["type"], "String")
-        self.assertEqual(parameter["default"], "standard")
-        self.assertEqual(parameter["allowedValues"], ["standard", "prelaunch"])
-        self.assertEqual(parameter["allowedPattern"], "^(standard|prelaunch)$")
+        self.assertEqual(parameter["default"], "automated")
+        self.assertEqual(parameter["allowedValues"], ["automated"])
+        self.assertEqual(parameter["allowedPattern"], "^automated$")
         self.assertEqual(parameter["interpolationType"], "ENV_VAR")
         self.assertNotIn("ApprovalMode", staging["parameters"])
         commands = production["mainSteps"][0]["inputs"]["runCommand"]

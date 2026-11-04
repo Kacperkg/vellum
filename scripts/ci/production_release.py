@@ -39,7 +39,14 @@ REQUIRED_JOBS = (
 )
 
 
+def recovery_mode():
+    mode = os.environ.get("PRODUCTION_READINESS_MODE", "") or "standard"
+    release.require(mode in ("standard", "automated"), "invalid production readiness mode")
+    return mode
+
+
 def guard():
+    recovery_mode()
     release.require(
         os.environ.get("GITHUB_REPOSITORY") == "Kacperkg/vellum"
         and os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
@@ -275,8 +282,13 @@ def dispatch(args):
     current_staging()
     exact_run(release.api(f"{API}/actions/runs/{run_id}"), int(run_id), int(attempt), source)
     current_main(sha)
+    mode = recovery_mode()
+    if mode == "automated":
+        # Deliberately do not fall back to the v2/manual pin.
+        os.environ["SSM_DOCUMENT_VERSION"] = os.environ.get("SSM_READINESS_DOCUMENT_VERSION", "")
+        os.environ["SSM_DOCUMENT_SHA256"] = os.environ.get("SSM_READINESS_DOCUMENT_SHA256", "")
     release.dispatch(argparse.Namespace(environment="production", manifest=args.manifest,
-                                        approval_mode="standard"))
+                                        approval_mode=mode))
 
 
 def main():

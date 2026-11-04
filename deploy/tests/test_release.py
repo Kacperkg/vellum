@@ -148,26 +148,24 @@ class ManifestTests(unittest.TestCase):
                 patch.dict(os.environ, env),
                 patch.object(
                     release.subprocess,
-                    "check_output",
-                    return_value="12345678-1234-1234-1234-123456789abc\n",
-                ) as send,
-                patch.object(
-                    release.subprocess,
                     "run",
-                    return_value=subprocess.CompletedProcess([], 0, "Success\n", ""),
-                ),
+                    side_effect=[
+                        subprocess.CompletedProcess([], 0, "12345678-1234-1234-1234-123456789abc\n", ""),
+                        subprocess.CompletedProcess([], 0, "Success\n", ""),
+                    ],
+                ) as aws,
             ):
                 release.dispatch(
                     types.SimpleNamespace(manifest=source, environment="production")
                 )
-                argv = send.call_args.args[0]
+                argv = aws.call_args_list[0].args[0]
                 self.assertIn("--document-hash", argv)
                 self.assertEqual(argv[argv.index("--document-version") + 1], "3")
                 parameters = json.loads(argv[argv.index("--parameters") + 1])
                 self.assertEqual(
                     json.loads(base64.b64decode(parameters["Manifest"][0])), manifest()
                 )
-                self.assertFalse(send.call_args.kwargs.get("shell", False))
+                self.assertFalse(aws.call_args_list[0].kwargs.get("shell", False))
                 self.assertIn("command_id=", output.read_text())
             with (
                 patch.dict(
@@ -177,7 +175,7 @@ class ManifestTests(unittest.TestCase):
                         "SSM_DOCUMENT_ARN": "arn:aws:ssm:eu-west-2:123456789012:document/AWS-RunShellScript",
                     },
                 ),
-                patch.object(release.subprocess, "check_output") as send,
+                patch.object(release.subprocess, "run") as send,
             ):
                 with self.assertRaisesRegex(ValueError, "unexpected SSM document"):
                     release.dispatch(

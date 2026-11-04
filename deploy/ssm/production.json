@@ -1,14 +1,14 @@
 {
   "schemaVersion": "2.2",
-  "description": "Deploy only Vellum production after its release-specific backup approval",
+  "description": "Deploy only Vellum production after its signed release-specific recovery approval",
   "parameters": {
     "ApprovalMode": {
       "type": "String",
-      "description": "Explicit recovery approval; normal deployments require verified restore",
+      "description": "Automated release-bound recovery evidence is required",
       "interpolationType": "ENV_VAR",
-      "default": "standard",
-      "allowedValues": ["standard", "prelaunch"],
-      "allowedPattern": "^(standard|prelaunch)$"
+      "default": "automated",
+      "allowedValues": ["automated"],
+      "allowedPattern": "^automated$"
     },
     "Manifest": {
       "type": "String",
@@ -28,7 +28,7 @@
         "runCommand": [
           "set -eu",
           "test -n \"${SSM_Manifest:-}\" || { echo 'SSM Agent ENV_VAR support required' >&2; exit 1; }",
-          "test -n \"${SSM_ApprovalMode:-}\" || { echo 'SSM Agent ApprovalMode ENV_VAR support required' >&2; exit 1; }",
+          "test \"${SSM_ApprovalMode:-}\" = automated || { echo 'SSM Agent ApprovalMode ENV_VAR support required' >&2; exit 1; }",
           "exec /usr/bin/python3 -I /usr/local/lib/vellum-cd/cd/controller.py production"
         ]
       }

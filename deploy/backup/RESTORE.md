@@ -1,5 +1,9 @@
 # Isolated S3 restore drill
 
+This is the manual recovery procedure for existing backups. The
+[signed readiness design](../PRODUCTION-READINESS.md) requires independent
+source-bound backup evidence and isolated worker validation before activation.
+
 This procedure is for a future separately approved drill on a private disposable
 host. It must not target either live Compose project or their PostgreSQL volumes.
 A local synthetic-data restore tests dump/restore mechanics; it does not prove

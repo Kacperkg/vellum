@@ -331,6 +331,23 @@ class DispatchTests(unittest.TestCase):
                 current.side_effect = None
                 production.dispatch(args)
                 self.assertEqual(dispatch.call_args.args[0].approval_mode, "standard")
+                with patch.dict(os.environ, {
+                    "PRODUCTION_READINESS_MODE": "automated",
+                    "SSM_DOCUMENT_VERSION": "2",
+                    "SSM_DOCUMENT_SHA256": "e" * 64,
+                    "SSM_READINESS_DOCUMENT_VERSION": "3",
+                    "SSM_READINESS_DOCUMENT_SHA256": "f" * 64,
+                }):
+                    production.dispatch(args)
+                    self.assertEqual(dispatch.call_args.args[0].approval_mode, "automated")
+                    self.assertEqual(os.environ["SSM_DOCUMENT_VERSION"], "3")
+                    self.assertEqual(os.environ["SSM_DOCUMENT_SHA256"], "f" * 64)
+                with patch.dict(os.environ, {"PRODUCTION_READINESS_MODE": "automated",
+                                             "SSM_READINESS_DOCUMENT_VERSION": "",
+                                             "SSM_READINESS_DOCUMENT_SHA256": ""}):
+                    production.dispatch(args)
+                    self.assertEqual(os.environ["SSM_DOCUMENT_VERSION"], "")
+                    self.assertEqual(os.environ["SSM_DOCUMENT_SHA256"], "")
                 dispatch.reset_mock()
                 discover.return_value = (identity.replace(":987:", ":988:"), data, manifest())
                 with self.assertRaisesRegex(ValueError, "artifact changed"):
@@ -400,6 +417,9 @@ class WorkflowTests(unittest.TestCase):
         discover = self.workflow.split("  discover:\n", 1)[1].split("  promote:", 1)[0]
         self.assertNotIn("environment:", discover)
         self.assertNotIn("id-token:", discover)
+        for name in ("PRODUCTION_READINESS_MODE", "SSM_READINESS_DOCUMENT_VERSION",
+                     "SSM_READINESS_DOCUMENT_SHA256"):
+            self.assertIn("${{ vars." + name + " }}", self.promote)
         self.assertIn("SSM_DOCUMENT_VERSION: '2'", self.promote)
         self.assertIn("SSM_DOCUMENT_SHA256: 8d43e90f07c95456d7f781b591cc187eaf448e0c80b3a87d0433b9665297f83a", self.promote)
         self.assertIn("role-session-name: vellum-production-${{ github.run_id }}", self.promote)
