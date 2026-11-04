@@ -16,6 +16,7 @@ func TestFinanceRepositoriesPropagateCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	userID := uuid.New()
+	categories := repository.NewCategoryRepository(db)
 	checks := map[string]func() error{
 		"accounts": func() error {
 			_, err := repository.NewAccountRepository(db).WithContext(ctx).FindByUserID(userID)
@@ -25,7 +26,7 @@ func TestFinanceRepositoriesPropagateCancellation(t *testing.T) {
 			_, err := repository.NewBudgetRepository(db).WithContext(ctx).FindByUserID(userID)
 			return err
 		},
-		"categories": func() error { _, err := repository.NewCategoryRepository(db).WithContext(ctx).ListAll(); return err },
+		"categories": func() error { _, err := categories.WithContext(ctx).ListAll(); return err },
 		"goals": func() error {
 			_, err := repository.NewGoalRepository(db).WithContext(ctx).FindByUserID(userID)
 			return err
@@ -50,7 +51,7 @@ func TestFinanceRepositoriesPropagateCancellation(t *testing.T) {
 			}
 		})
 	}
-	if _, err := repository.NewCategoryRepository(db).ListAll(); err != nil {
+	if _, err := categories.ListAll(); err != nil {
 		t.Fatalf("shared repository poisoned: %v", err)
 	}
 }
@@ -134,6 +135,11 @@ func TestConcurrentTransfersWithCanceledMutationsPreserveLedger(t *testing.T) {
 	unchanged, err := repo.FindByID(changed.ID)
 	if err != nil || unchanged.Amount != 100 {
 		t.Fatalf("canceled update persisted: value=%#v err=%v", unchanged, err)
+	}
+	retryCtx, retryCancel := context.WithTimeout(context.Background(), time.Second)
+	defer retryCancel()
+	if err := repo.WithContext(retryCtx).Update(user.ID, unchanged); err != nil {
+		t.Fatalf("cancelled mutation retained a transaction lock: %v", err)
 	}
 }
 

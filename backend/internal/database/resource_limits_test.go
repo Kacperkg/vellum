@@ -85,8 +85,8 @@ func TestPostgresMigrateConfiguredPreservesRuntimePolicy(t *testing.T) {
 	}
 	canceled, stop := context.WithCancel(context.Background())
 	stop()
-	if err := MigrateConfigured(canceled, cfg); err == nil {
-		t.Fatal("canceled migration unexpectedly succeeded")
+	if err := MigrateConfigured(canceled, cfg); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled migration: %v", err)
 	}
 	if err := db.Exec("SELECT 1").Error; err != nil {
 		t.Fatalf("failed startup migration affected runtime pool: %v", err)
@@ -130,6 +130,48 @@ func TestPostgresSessionResourceLimits(t *testing.T) {
 	}
 }
 
+func TestPostgresLockTimeoutAndRollback(t *testing.T) {
+	db := resourceDB(t)
+	table := "resource_lock_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := db.Exec("CREATE TABLE " + table + " (id INTEGER PRIMARY KEY, amount INTEGER)").Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Exec("DROP TABLE " + table) })
+	if err := db.Exec("INSERT INTO " + table + " VALUES (1, 100), (2, 0)").Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	holder := db.WithContext(ctx).Begin()
+	if holder.Error != nil {
+		t.Fatal(holder.Error)
+	}
+	defer holder.Rollback()
+	if err := holder.Exec("SELECT id FROM " + table + " WHERE id = 2 FOR UPDATE").Error; err != nil {
+		t.Fatal(err)
+	}
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("UPDATE " + table + " SET amount = 0 WHERE id = 1").Error; err != nil {
+			return err
+		}
+		return tx.Exec("UPDATE " + table + " SET amount = 100 WHERE id = 2").Error
+	})
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "55P03" || ctx.Err() != nil {
+		t.Fatalf("expected PostgreSQL lock timeout before context deadline: %v", err)
+	}
+	if err := holder.Rollback().Error; err != nil {
+		t.Fatal(err)
+	}
+	var amounts []int
+	if err := db.Table(table).Order("id").Pluck("amount", &amounts).Error; err != nil || len(amounts) != 2 || amounts[0] != 100 || amounts[1] != 0 {
+		t.Fatalf("failed transaction left amounts %v: %v", amounts, err)
+	}
+	if err := db.WithContext(ctx).Exec("UPDATE " + table + " SET amount = amount + 1").Error; err != nil {
+		t.Fatalf("transaction locks were not released: %v", err)
+	}
+}
+
 func TestPostgresDeadlineRollbackAndPoolCleanup(t *testing.T) {
 	db := resourceDB(t)
 	// A dedicated temporary table exercises rollback without touching application data.
@@ -167,8 +209,10 @@ func TestPostgresDeadlineRollbackAndPoolCleanup(t *testing.T) {
 			_ = c.Close()
 		}
 	}()
+	acquireCtx, acquireCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer acquireCancel()
 	for range MaxOpenConnections {
-		c, err := pool.Conn(context.Background())
+		c, err := pool.Conn(acquireCtx)
 		if err != nil {
 			t.Fatal(err)
 		}

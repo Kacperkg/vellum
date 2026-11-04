@@ -9,6 +9,9 @@ import {
   openPage,
   addAccount,
   currentDate,
+  signOut,
+  expireSession,
+  storedSession,
 } from "./fixtures";
 
 test("registration, logout, login and protected-route redirects", async ({
@@ -48,7 +51,7 @@ test("registration, logout, login and protected-route redirects", async ({
     ).toBeVisible();
     await expect(page.locator(".app-frame")).toHaveCount(0);
   }
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -65,7 +68,7 @@ test("registration, logout, login and protected-route redirects", async ({
   await expect(
     page.getByRole("heading", { name: /Good .*Alex/ }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await signOut(page);
   await expect(page).toHaveURL(/\/login$/);
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
@@ -361,9 +364,7 @@ test("concurrent expired-session requests share a successful refresh", async ({
   finance,
 }) => {
   await finance.create("accounts", { name: "Everyday" });
-  await page.evaluate(() =>
-    localStorage.setItem("vellum:access_token", "expired-test-access"),
-  );
+  await expireSession(page);
   let refreshes = 0;
   page.on("request", (request) => {
     if (request.url() === `${apiURL}/refresh`) refreshes++;
@@ -380,18 +381,13 @@ test("a rejected refresh clears the session and returns to sign in", async ({
   finance,
 }) => {
   void finance;
-  await page.evaluate(() => {
-    localStorage.setItem("vellum:access_token", "expired-test-access");
-    localStorage.setItem("vellum:refresh_token", "revoked-test-refresh");
-  });
+  await expireSession(page, true);
   await page.goto("/accounts");
   await expect(page).toHaveURL(/\/login$/);
   await expect(
     page.getByRole("heading", { name: "Welcome back.", exact: true }),
   ).toBeVisible();
-  expect(
-    await page.evaluate(() => localStorage.getItem("vellum:access_token")),
-  ).toBeNull();
+  expect((await storedSession(page)) === null).toBe(true);
 });
 
 test("a late stale-token 401 retries without a second refresh", async ({
@@ -399,9 +395,7 @@ test("a late stale-token 401 retries without a second refresh", async ({
   finance,
 }) => {
   await finance.create("accounts", { name: "Everyday" });
-  await page.evaluate(() =>
-    localStorage.setItem("vellum:access_token", "expired-test-access"),
-  );
+  await expireSession(page);
   let refreshes = 0;
   let releaseLateResponse!: () => void;
   const release = new Promise<void>((resolve) => {
@@ -420,8 +414,9 @@ test("a late stale-token 401 retries without a second refresh", async ({
   try {
     await page.goto("/accounts");
     await page.waitForFunction(() => {
-      const token = localStorage.getItem("vellum:access_token");
-      return token !== null && token !== "expired-test-access";
+      const token = JSON.parse(localStorage.getItem("vellum:session") ?? "null")
+        ?.credentials?.access_token;
+      return !!token && token !== "expired-test-access";
     });
     releaseLateResponse();
     await expect(
@@ -509,20 +504,38 @@ test("failed account creation stays in setup and can be retried", async ({
   await expect(
     page.getByRole("button", { name: "Add account and continue", exact: true }),
   ).toBeDisabled();
+  const failures = [
+    { status: 400, error: "invalid request body" },
+    { status: 408, error: "request canceled" },
+    { status: 413, error: "request body too large" },
+    { status: 429, error: "rate limit exceeded" },
+    { status: 500, error: "internal server error" },
+    { status: 503, error: "session validation unavailable" },
+    { status: 504, error: "request timed out" },
+  ];
+  let submissions = 0;
+  let failure = failures[0];
   await page.route(`${apiURL}/api/accounts`, async (route) => {
-    if (route.request().method() === "POST")
-      await route.fulfill({
-        status: 500,
-        json: { error: "Please retry creation" },
-      });
-    else await route.continue();
+    if (route.request().method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    submissions++;
+    await route.fulfill({
+      status: failure.status,
+      json: { error: failure.error },
+    });
   });
   await page.getByLabel("Account name", { exact: true }).fill("Retry account");
-  await page
-    .getByRole("button", { name: "Add account and continue", exact: true })
-    .click();
-  await expect(page.getByRole("alert")).toHaveText("Please retry creation");
-  await expect(page.locator(".app-frame")).toHaveCount(0);
+  for (const [index, response] of failures.entries()) {
+    failure = response;
+    await page
+      .getByRole("button", { name: "Add account and continue", exact: true })
+      .click();
+    await expect(page.getByRole("alert")).toHaveText(response.error);
+    await expect(page.locator(".app-frame")).toHaveCount(0);
+    expect(submissions).toBe(index + 1);
+  }
   await page.unroute(`${apiURL}/api/accounts`);
   await page
     .getByRole("button", { name: "Add account and continue", exact: true })
@@ -566,9 +579,7 @@ test("an expired access token refreshes back into unfinished account setup", asy
   finance,
 }) => {
   void finance;
-  await page.evaluate(() =>
-    localStorage.setItem("vellum:access_token", "expired-test-access"),
-  );
+  await expireSession(page);
   await page.goto("/transactions");
   await expect(
     page.getByRole("heading", {

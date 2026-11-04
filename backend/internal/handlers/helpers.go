@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 
@@ -43,6 +44,11 @@ func getUUIDParam(c *gin.Context, name string) (id uuid.UUID, ok bool) {
 }
 
 func respondWithServiceError(c *gin.Context, err error) {
+	// database/sql may finish its automatic rollback before a cancelled query
+	// or commit observes the context error.
+	if errors.Is(err, sql.ErrTxDone) && c.Request.Context().Err() != nil {
+		err = c.Request.Context().Err()
+	}
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "request timed out"})

@@ -35,6 +35,22 @@ func TestManifestParameterValidation(t *testing.T) {
 			if err := json.Unmarshal(data, &document); err != nil {
 				t.Fatal(err)
 			}
+			if mode, exists := document.Parameters["ApprovalMode"]; environment == "production" {
+				if !exists || mode.Type != "String" || mode.InterpolationType != "ENV_VAR" {
+					t.Fatal("production ApprovalMode requires safe ENV_VAR interpolation")
+				}
+				pattern, err := regexp.Compile(mode.AllowedPattern)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, value := range []string{"standard", "prelaunch", "", "Prelaunch", "prelaunch\n", "$(id)"} {
+					if pattern.MatchString(value) != (value == "standard" || value == "prelaunch") {
+						t.Fatalf("unsafe ApprovalMode pattern result for %q", value)
+					}
+				}
+			} else if exists {
+				t.Fatal("staging must not accept production ApprovalMode")
+			}
 			parameter, exists := document.Parameters["Manifest"]
 			if !exists {
 				t.Fatal("missing Manifest parameter")

@@ -60,7 +60,8 @@ staging owns staging push validation, including when CD is disabled. Publication
 requires a successful reusable CI result, an explicit non-documentation release
 plan, the existing CD flag, protected staging ref, repository allowlist and
 staging Environment. There is no standalone main push CI: the promotion PR is
-checked; the inactive production workflow retains its existing provenance gates.
+checked; the dispatch-only production workflow retains its provenance gates.
+See [PRODUCTION-ACTIVATION.md](PRODUCTION-ACTIVATION.md) for its manual operator gates.
 
 PR updates cancel superseded PR CI. Staging releases remain serialized and
 non-cancelling. No `workflow_run` bridge or privileged PR execution is added.

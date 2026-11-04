@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/kacperkg/vellum/internal/models"
+	"github.com/kacperkg/vellum/internal/money"
 	"gorm.io/gorm"
 )
 
@@ -21,6 +22,9 @@ func NewBudgetRepository(db *gorm.DB) BudgetRepository {
 }
 
 func (r *budgetRepository) Create(budget *models.Budget) error {
+	if !money.Valid(budget.AllocatedAmount) {
+		return money.ErrRange
+	}
 	return budgetWriteError(r.db.Create(budget).Error)
 }
 
@@ -46,6 +50,9 @@ func (r *budgetRepository) FindByUserID(userID uuid.UUID) ([]*models.Budget, err
 }
 
 func (r *budgetRepository) Update(userID uuid.UUID, budget *models.Budget) error {
+	if !money.Valid(budget.AllocatedAmount) {
+		return money.ErrRange
+	}
 	result := r.db.Model(&models.Budget{}).
 		Where("id = ? AND user_id = ?", budget.ID, userID).
 		Updates(map[string]any{

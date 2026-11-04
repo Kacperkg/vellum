@@ -291,3 +291,10 @@ func (r *fakeTransactionRepository) WithContext(context.Context) repository.Tran
 func (r *fakeUserSettingsRepository) WithContext(context.Context) repository.UserSettingsRepository {
 	return r
 }
+
+func (r *fakeRefreshTokenRepository) HasActiveFamily(_ context.Context, userID uuid.UUID, version int64, familyID uuid.UUID, now time.Time) (bool, error) {
+	if r.Err != nil {
+		return false, r.Err
+	}
+	return r.Token != nil && r.Token.UserID == userID && r.Token.AuthVersion == version && r.Token.SessionFamilyID() == familyID && r.Token.RevokedAt == nil && r.Token.ExpiresAt.After(now), nil
+}

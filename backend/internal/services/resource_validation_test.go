@@ -82,7 +82,7 @@ func TestTransactionDateRangeBounds(t *testing.T) {
 			t.Fatalf("boundary range: rows=%#v err=%v", rows, err)
 		}
 	}
-	for _, end := range []time.Time{start.Add(-time.Nanosecond), start.Add(services.MaxTransactionDateRange + time.Nanosecond), start.AddDate(100, 0, 0)} {
+	for _, end := range []time.Time{start.AddDate(0, 0, -1), start.Add(services.MaxTransactionDateRange).AddDate(0, 0, 1), start.AddDate(100, 0, 0)} {
 		if _, err := service.FindByDateRange(uuid.New(), start, end); !errors.Is(err, services.ErrTransactionDateRange) {
 			t.Fatalf("invalid range end=%v: %v", end, err)
 		}

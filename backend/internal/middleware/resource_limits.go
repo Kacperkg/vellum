@@ -3,7 +3,9 @@ package middleware
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"time"
@@ -59,7 +61,7 @@ func (l *ResourceLimiter) SourceHandler() gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), l.timeout)
 		defer cancel()
 		c.Request = c.Request.WithContext(ctx)
-		if !resourceContextActive(c) {
+		if !resourceContextActive(c, c.Request.Context()) {
 			return
 		}
 		c.Next()
@@ -86,7 +88,7 @@ func (l *ResourceLimiter) UserHandler() gin.HandlerFunc {
 			return
 		}
 		defer l.users.release(key)
-		if !resourceContextActive(c) {
+		if !resourceContextActive(c, c.Request.Context()) {
 			return
 		}
 		if len(c.Request.URL.RawQuery) > MaxResourceQueryBytes {
@@ -114,12 +116,23 @@ func (l *ResourceLimiter) UserHandler() gin.HandlerFunc {
 				c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large"})
 				return
 			}
-			if !resourceContextActive(c) {
+			if !resourceContextActive(c, c.Request.Context()) {
 				return
 			}
 			if err != nil {
 				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "bad request"})
 				return
+			}
+			if len(body) > 0 && (c.Request.Method == http.MethodPost || c.Request.Method == http.MethodPut) {
+				mediaType, _, err := mime.ParseMediaType(c.GetHeader("Content-Type"))
+				if err != nil || mediaType != "application/json" {
+					c.AbortWithStatusJSON(http.StatusUnsupportedMediaType, gin.H{"error": "content type must be application/json"})
+					return
+				}
+				if !json.Valid(body) {
+					c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+					return
+				}
 			}
 			c.Request.Body = io.NopCloser(bytes.NewReader(body))
 		}
@@ -127,8 +140,8 @@ func (l *ResourceLimiter) UserHandler() gin.HandlerFunc {
 	}
 }
 
-func resourceContextActive(c *gin.Context) bool {
-	switch c.Request.Context().Err() {
+func resourceContextActive(c *gin.Context, ctx context.Context) bool {
+	switch ctx.Err() {
 	case context.DeadlineExceeded:
 		c.AbortWithStatusJSON(http.StatusGatewayTimeout, gin.H{"error": "request timed out"})
 		return false

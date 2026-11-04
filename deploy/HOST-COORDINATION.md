@@ -179,9 +179,9 @@ application-level migration coordination for autonomous restart paths would be a
 separate change. This fix guarantees exclusion for the managed paths above and
 guarded operator work; it does not claim to serialize every possible schema writer.
 
-## Staging authentication replacement and recovery
+## Staging and production authentication replacement and recovery
 
-For PR #28, follow [STAGING-AUTH-ROLLOUT.md](STAGING-AUTH-ROLLOUT.md). The entire
+For PR #28 and its production transition, follow [STAGING-AUTH-ROLLOUT.md](STAGING-AUTH-ROLLOUT.md). The entire
 stop/termination/removal/session-drain/start/health/smoke/receipt sequence stays
 inside the existing operation context. The lock order, lock inodes, pending
 format and recovery rules are unchanged. Only a successful operation clears the
@@ -190,8 +190,13 @@ keeps the record and requires review.
 
 After cancellation, do not infer quiescence from a dead controller or unchanged
 receipts. A Docker daemon request or new backend restart can still be executing
-AutoMigrate. Privately inspect all staging backend instances (including one-offs),
-actual digests, startup health and staging DB client sessions/transactions. Drain
+AutoMigrate. Privately inspect all target-environment backend instances (including one-offs),
+actual digests, startup health and that environment's DB client sessions/transactions.
+Production uses the same barrier as staging; preserve its verified manifest and
+release-specific approval gate. The six-file membership is unchanged from PR #28,
+but all installed hashes must match the newly approved release before either
+environment resumes deployments. See the production installation prerequisites
+in the authentication rollout runbook, including daily backup timer coordination. Drain
 all relevant Docker/SSM work before authorized recovery; stop and remove failed
 candidate writers through a reviewed maintenance operation if needed. Confirm
 that no old restartable container remains before clearing a pending marker under

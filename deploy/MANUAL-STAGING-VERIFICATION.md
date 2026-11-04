@@ -166,7 +166,9 @@ intercept arbitrary root/Docker commands or independent backend restart work.
 
 Readiness: **Ready with caveats** for reviewed operator execution after the
 prerequisites above. Live OIDC/SSM/host behavior remains unverified until that
-separately approved run; production remains disabled.
+separately approved run. Production now has a dispatch-only workflow; its
+release/restore gates remain blocked until the separate
+[production activation procedure](PRODUCTION-ACTIVATION.md) is completed.
 
 ## Local implementation validation
 

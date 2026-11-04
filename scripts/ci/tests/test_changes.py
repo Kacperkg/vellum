@@ -178,13 +178,35 @@ class WorkflowContractTests(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
         self.assertEqual(workflow.count('cache: false'), 3)
         self.assertEqual(workflow.count("${{ github.job }}-${{ hashFiles('backend/go.mod', 'backend/go.sum') }}"), 6)
-        self.assertIn("key: playwright-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}", workflow)
-        self.assertIn('pnpm exec playwright install --with-deps chromium', workflow)
+        self.assertIn("key: playwright-csp-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}", workflow)
+        self.assertIn("restore-keys: playwright-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}", workflow)
         self.assertIn('pnpm install --frozen-lockfile', workflow)
         self.assertIn("github.event_name == 'push' && github.ref == 'refs/heads/staging'", workflow)
         self.assertIn('type=gha,scope=release-${{ matrix.component }}', workflow)
         self.assertNotIn('id-token:', workflow)
         self.assertNotIn('packages:', workflow)
+
+    def test_csp_browsers_and_dependencies_are_installed_even_with_a_cache_hit(self):
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        jobs = dict(re.findall(r'^  ([a-z-]+):\n(.*?)(?=^  [a-z-]+:|\Z)', workflow.split('jobs:\n', 1)[1], re.M | re.S))
+        browser = jobs.pop('browser')
+        install = 'pnpm exec playwright install --with-deps chromium firefox webkit'
+        self.assertEqual(workflow.count(install), 1)
+        for block in jobs.values():
+            self.assertNotIn('playwright install', block)
+            self.assertNotIn('prepare-playwright-apt.sh', block)
+            self.assertNotIn('~/.cache/ms-playwright', block)
+        ordered = ['pnpm install --frozen-lockfile', '~/.cache/ms-playwright',
+                   'bash scripts/ci/prepare-playwright-apt.sh', install,
+                   'dpkg --audit', 'pnpm test:e2e:csp']
+        positions = [browser.index(command) for command in ordered]
+        self.assertEqual(positions, sorted(positions))
+        steps = re.split(r'^      - ', browser, flags=re.M)[1:]
+        for command in ('prepare-playwright-apt.sh', install):
+            step = next(step for step in steps if command in step)
+            conditions = re.findall(r'^        if: (.+)$', step, re.M)
+            self.assertEqual(conditions, ["steps.scope.outputs.run == 'true'"])
+        self.assertNotIn('cache-hit', browser)
 
     def test_staging_requires_successful_ci_and_non_docs_plan_before_credentials(self):
         workflow = (ROOT / '.github/workflows/release-staging.yml').read_text()

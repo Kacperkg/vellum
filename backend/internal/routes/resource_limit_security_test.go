@@ -1,6 +1,7 @@
 package routes_test
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/kacperkg/vellum/internal/auth"
 	"github.com/kacperkg/vellum/internal/handlers"
 	"github.com/kacperkg/vellum/internal/middleware"
@@ -199,34 +201,181 @@ func TestResourceMutationBodiesAreRejectedBeforeSideEffects(t *testing.T) {
 		t.Fatalf("oversized query status=%d", response.Code)
 	}
 }
-func TestAuthVersionTimeoutUsesRequestDeadlineWithoutInvalidatingSession(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	id := uuid.New()
-	limiter := middleware.NewResourceLimiter()
-	router := gin.New()
-	var handled atomic.Bool
-	var validations atomic.Int32
-	router.GET("/api/test", limiter.SourceHandler(), middleware.AuthMiddleware("test-secret", func(ctx context.Context, _ uuid.UUID, _ int64) bool {
-		if validations.Add(1) == 1 {
-			<-ctx.Done()
-			return false
-		}
-		return true
-	}), limiter.UserHandler(), func(c *gin.Context) { handled.Store(true); c.Status(200) })
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer cancel()
-	request := httptest.NewRequest(http.MethodGet, "/api/test", nil).WithContext(ctx)
-	request.Header.Set("Authorization", resourceToken(t, id))
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
-	if response.Code != 504 || handled.Load() || response.Body.String() != `{"error":"request timed out"}` {
-		t.Fatalf("deadline status=%d handled=%v body=%s", response.Code, handled.Load(), response.Body)
+
+type resourceFamilyRepository struct {
+	*fakeRefreshTokenRepository
+	block   bool
+	entered chan time.Duration
+}
+
+func (r *resourceFamilyRepository) HasActiveFamily(ctx context.Context, userID uuid.UUID, version int64, familyID uuid.UUID, now time.Time) (bool, error) {
+	if r.block {
+		deadline, _ := ctx.Deadline()
+		r.entered <- time.Until(deadline)
+		<-ctx.Done()
+		return false, ctx.Err()
 	}
-	response = chainRequest(router, http.MethodGet, "/api/test", "", "192.0.2.1:1", http.Header{"Authorization": {resourceToken(t, id)}})
-	if response.Code != http.StatusOK || !handled.Load() {
-		t.Fatalf("session after timeout status=%d handled=%v", response.Code, handled.Load())
+	return r.fakeRefreshTokenRepository.HasActiveFamily(ctx, userID, version, familyID, now)
+}
+
+func TestResourceSessionFamilyValidationUsesRequestBudget(t *testing.T) {
+	id, family := uuid.New(), uuid.New()
+	const version = 2
+	refresh := &resourceFamilyRepository{
+		fakeRefreshTokenRepository: &fakeRefreshTokenRepository{Token: &models.RefreshToken{
+			UserID: id, AuthVersion: version, FamilyID: &family, ExpiresAt: time.Now().Add(time.Hour),
+		}},
+		entered: make(chan time.Duration, 1),
+	}
+	user := &models.User{BaseModel: models.BaseModel{ID: id}, AuthVersion: version}
+	set := testHandlerSet(id)
+	set.Auth = handlers.NewAuthHandler(services.NewUserService(&fakeUserRepository{User: user}, refresh, "test-secret", time.Hour, time.Hour))
+	router, err := routes.NewRouter(securityConfig(), set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := auth.GenerateSessionToken(id, "test-secret", time.Hour, version, family)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/accounts", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	for _, tc := range []struct {
+		name   string
+		cancel bool
+		want   int
+	}{
+		{"client cancellation", true, 408},
+		{"session validation deadline", false, 504},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			refresh.block = true
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			response := httptest.NewRecorder()
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				router.ServeHTTP(response, request.Clone(ctx))
+			}()
+			select {
+			case remaining := <-refresh.entered:
+				if remaining <= 0 || remaining > 3*time.Second {
+					cancel()
+					<-done
+					t.Fatalf("session validation budget=%v", remaining)
+				}
+			case <-done:
+				t.Fatalf("session lookup was skipped: status %d", response.Code)
+			case <-time.After(5 * time.Second):
+				t.Fatal("session lookup did not start")
+			}
+			if tc.cancel {
+				cancel()
+			}
+			<-done
+			if response.Code != tc.want {
+				t.Fatalf("session validation status=%d body=%s", response.Code, response.Body)
+			}
+		})
+	}
+	refresh.block = false
+	check := func(want int) {
+		t.Helper()
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request.Clone(context.Background()))
+		if response.Code != want {
+			t.Fatalf("session status=%d want=%d body=%s", response.Code, want, response.Body)
+		}
+	}
+	check(200)
+	refresh.Err = &pgconn.PgError{Code: "55P03", Message: "private database detail"}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request.Clone(context.Background()))
+	if response.Code != 503 || response.Body.String() != `{"error":"session validation unavailable"}` {
+		t.Fatalf("session lookup failure status=%d body=%s", response.Code, response.Body)
+	}
+	refresh.Err = nil
+	check(200)
+	revoked := time.Now()
+	refresh.Token.RevokedAt = &revoked
+	check(401)
+	refresh.Token.RevokedAt = nil
+	user.AuthVersion++
+	check(401)
+}
+
+func TestResourceWriteBodyBoundaries(t *testing.T) {
+	id := uuid.New()
+	accounts := &fakeAccountRepository{}
+	set := testHandlerSet(id)
+	set.Accounts = handlers.NewAccountHandler(services.NewAccountService(accounts))
+	router, err := routes.NewRouter(securityConfig(), set)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const valid = `{"name":"Savings"}`
+	padded := func(size int) string { return valid + strings.Repeat(" ", size-len(valid)) }
+	for _, tc := range []struct {
+		name, method, body, mediaType string
+		chunked                       bool
+		want                          int
+	}{
+		{"below limit", http.MethodPost, padded(middleware.MaxResourceBodyBytes - 1), "application/json", false, 201},
+		{"at limit", http.MethodPost, padded(middleware.MaxResourceBodyBytes), "application/json; charset=utf-8", true, 201},
+		{"above limit", http.MethodPost, padded(middleware.MaxResourceBodyBytes + 1), "application/json", true, 413},
+		{"extra JSON", http.MethodPost, valid + `{}`, "application/json", true, 400},
+		{"trailing junk", http.MethodPost, valid + "invalid", "application/json", false, 400},
+		{"unsupported content type", http.MethodPost, valid, "text/plain", false, 415},
+		{"unsupported method", http.MethodPatch, valid, "application/json", false, 404},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			accounts.Created = nil
+			request := httptest.NewRequest(tc.method, "/api/accounts", strings.NewReader(tc.body))
+			if tc.chunked {
+				raw := fmt.Sprintf("%s /api/accounts HTTP/1.1\r\nHost: example.test\r\nTransfer-Encoding: chunked\r\n\r\n%x\r\n%s\r\n0\r\n\r\n", tc.method, len(tc.body), tc.body)
+				request, err = http.ReadRequest(bufio.NewReader(strings.NewReader(raw)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer request.Body.Close()
+			}
+			request.Header.Set("Authorization", resourceToken(t, id))
+			request.Header.Set("Content-Type", tc.mediaType)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != tc.want || (accounts.Created != nil) != (tc.want == 201) {
+				t.Fatalf("status=%d created=%t body=%s", response.Code, accounts.Created != nil, response.Body)
+			}
+		})
 	}
 }
+
+func TestResourceCalendarRangeLimits(t *testing.T) {
+	id := uuid.New()
+	router, err := routes.NewRouter(securityConfig(), testHandlerSet(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	headers := http.Header{"Authorization": {resourceToken(t, id)}}
+	for _, tc := range []struct {
+		query string
+		want  int
+	}{
+		{"start_date=2024-01-01&end_date=2025-01-01", 200},
+		{"start_date=2024-01-01T00:00:00%2B14:00&end_date=2025-01-01T23:59:59-12:00", 200},
+		{"start_date=2024-01-01&end_date=2025-01-02", 400},
+		{"start_date=2025-01-02&end_date=2025-01-01", 400},
+		{"start_date=2024-02-30&end_date=2024-03-01", 400},
+		{"start_date=2024-01-01&start_date=2024-02-01&end_date=2024-03-01", 400},
+	} {
+		response := chainRequest(router, http.MethodGet, "/api/transactions/date-range?"+tc.query, "", "192.0.2.1:1", headers)
+		if response.Code != tc.want {
+			t.Errorf("%s: status=%d want=%d body=%s", tc.query, response.Code, tc.want, response.Body)
+		}
+	}
+}
+
 func TestResourceDatabaseFailureDoesNotExposeInternals(t *testing.T) {
 	id := uuid.New()
 	set := testHandlerSet(id)

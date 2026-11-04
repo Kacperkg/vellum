@@ -41,7 +41,7 @@ func Register(router *gin.Engine, jwtSecret string, handlerSet HandlerSet, authR
 	}
 	api := router.Group("/api")
 	resourceLimiter := middleware.NewResourceLimiter()
-	api.Use(resourceLimiter.SourceHandler(), middleware.AuthMiddleware(jwtSecret, handlerSet.Auth.ValidateAuthVersion), resourceLimiter.UserHandler())
+	api.Use(resourceLimiter.SourceHandler(), middleware.AuthMiddleware(jwtSecret, handlerSet.Auth.ValidateSession), resourceLimiter.UserHandler())
 
 	api.POST("/accounts", handlerSet.Accounts.Create)
 	api.GET("/accounts", handlerSet.Accounts.ListByUser)

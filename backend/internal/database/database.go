@@ -18,6 +18,7 @@ import (
 )
 
 const (
+	databaseConnectTimeout    = 5 * time.Second
 	MaxOpenConnections        = 16
 	MaxIdleConnections        = 8
 	StatementTimeout          = 5 * time.Second
@@ -44,7 +45,7 @@ func connectionConfigWithTimeout(cfg *config.Config, statementTimeout time.Durat
 	if err != nil {
 		return nil, err
 	}
-	conn.ConnectTimeout = 5 * time.Second
+	conn.ConnectTimeout = databaseConnectTimeout
 	conn.RuntimeParams["statement_timeout"] = strconv.FormatInt(statementTimeout.Milliseconds(), 10)
 	conn.RuntimeParams["lock_timeout"] = strconv.FormatInt(LockTimeout.Milliseconds(), 10)
 	conn.RuntimeParams["idle_in_transaction_session_timeout"] = strconv.FormatInt(IdleTransactionTimeout.Milliseconds(), 10)
@@ -52,14 +53,19 @@ func connectionConfigWithTimeout(cfg *config.Config, statementTimeout time.Durat
 }
 
 func Connect(cfg *config.Config) (*gorm.DB, error) {
-	return connectWithPolicy(cfg, StatementTimeout, MaxOpenConnections, MaxIdleConnections)
+	ctx, cancel := context.WithTimeout(context.Background(), databaseConnectTimeout)
+	defer cancel()
+	return connectWithPolicy(ctx, cfg, StatementTimeout, MaxOpenConnections, MaxIdleConnections)
 }
 
 // MigrateConfigured uses a separate, short-lived startup pool. Slow schema work
 // never relaxes runtime session limits or occupies runtime connections.
 func MigrateConfigured(ctx context.Context, cfg *config.Config) error {
-	db, err := connectWithPolicy(cfg, MigrationStatementTimeout, 1, 1)
+	db, err := connectWithPolicy(ctx, cfg, MigrationStatementTimeout, 1, 1)
 	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		// Driver parse errors may include the original credential-bearing URL.
 		return errors.New("failed to connect to migration database")
 	}
@@ -71,7 +77,10 @@ func MigrateConfigured(ctx context.Context, cfg *config.Config) error {
 	return Migrate(db.WithContext(ctx))
 }
 
-func connectWithPolicy(cfg *config.Config, statementTimeout time.Duration, maxOpen, maxIdle int) (*gorm.DB, error) {
+func connectWithPolicy(ctx context.Context, cfg *config.Config, statementTimeout time.Duration, maxOpen, maxIdle int) (*gorm.DB, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	conn, err := connectionConfigWithTimeout(cfg, statementTimeout)
 	if err != nil {
 		return nil, err
@@ -85,8 +94,11 @@ func connectWithPolicy(cfg *config.Config, statementTimeout time.Duration, maxOp
 		postgres.New(postgres.Config{Conn: sqlDB}),
 		// SQL errors can contain credentials, password hashes or recipient data.
 		// Services and workers emit fixed operational messages instead.
-		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)},
+		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent), DisableAutomaticPing: true},
 	)
+	if err == nil {
+		err = sqlDB.PingContext(ctx)
+	}
 	if err != nil {
 		_ = sqlDB.Close()
 		return nil, err

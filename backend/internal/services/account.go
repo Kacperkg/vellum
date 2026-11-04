@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/models"
+	"github.com/kacperkg/vellum/internal/money"
 	"github.com/kacperkg/vellum/internal/repository"
 )
 
@@ -43,14 +44,7 @@ func (s *AccountService) Create(userID uuid.UUID, req CreateAccountRequest) (*Ac
 	}
 
 	// return to frontend the newly created account information
-	return &AccountResponse{
-		ID:                account.ID,
-		Name:              account.Name,
-		Balance:           account.Balance,
-		AllocatedAmount:   account.AllocatedAmount,
-		UnallocatedAmount: account.Balance - account.AllocatedAmount,
-		GoalCount:         account.GoalCount,
-	}, nil
+	return accountResponse(account)
 }
 
 func (s *AccountService) GetByID(userID uuid.UUID, accountID uuid.UUID) (*AccountResponse, error) {
@@ -60,6 +54,9 @@ func (s *AccountService) GetByID(userID uuid.UUID, accountID uuid.UUID) (*Accoun
 	// s.accountRepository.GetByID(accountID) -> try block
 	// if err != nil -> catch block
 	account, err := s.accountRepository.GetByID(accountID)
+	if errors.Is(err, money.ErrRange) && account != nil && account.UserID != userID {
+		return nil, ErrAccountNotFound
+	}
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrAccountNotFound
@@ -77,14 +74,7 @@ func (s *AccountService) GetByID(userID uuid.UUID, accountID uuid.UUID) (*Accoun
 		return nil, ErrAccountNotFound
 	}
 
-	return &AccountResponse{
-		ID:                account.ID,
-		Name:              account.Name,
-		Balance:           account.Balance,
-		AllocatedAmount:   account.AllocatedAmount,
-		UnallocatedAmount: account.Balance - account.AllocatedAmount,
-		GoalCount:         account.GoalCount,
-	}, nil
+	return accountResponse(account)
 }
 
 func (s *AccountService) FindByUserID(userID uuid.UUID) ([]*AccountResponse, error) {
@@ -100,14 +90,11 @@ func (s *AccountService) FindByUserID(userID uuid.UUID) ([]*AccountResponse, err
 
 	// for each account append AccountResponse into responses
 	for _, account := range accounts {
-		responses = append(responses, &AccountResponse{
-			ID:                account.ID,
-			Name:              account.Name,
-			Balance:           account.Balance,
-			AllocatedAmount:   account.AllocatedAmount,
-			UnallocatedAmount: account.Balance - account.AllocatedAmount,
-			GoalCount:         account.GoalCount,
-		})
+		response, err := accountResponse(account)
+		if err != nil {
+			return nil, err
+		}
+		responses = append(responses, response)
 	}
 
 	return responses, nil
@@ -116,6 +103,9 @@ func (s *AccountService) FindByUserID(userID uuid.UUID) ([]*AccountResponse, err
 func (s *AccountService) Update(userID uuid.UUID, accountID uuid.UUID, req UpdateAccountRequest) (*AccountResponse, error) {
 	// Fetch the account
 	account, err := s.accountRepository.GetByID(accountID)
+	if errors.Is(err, money.ErrRange) && account != nil && account.UserID != userID {
+		return nil, ErrAccountNotFound
+	}
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrAccountNotFound
@@ -155,18 +145,14 @@ func (s *AccountService) Update(userID uuid.UUID, accountID uuid.UUID, req Updat
 	}
 
 	// return to frontend the newly updated account information
-	return &AccountResponse{
-		ID:                account.ID,
-		Name:              account.Name,
-		Balance:           account.Balance,
-		AllocatedAmount:   account.AllocatedAmount,
-		UnallocatedAmount: account.Balance - account.AllocatedAmount,
-		GoalCount:         account.GoalCount,
-	}, nil
+	return accountResponse(account)
 }
 
 func (s *AccountService) Delete(userID uuid.UUID, accountID uuid.UUID) error {
 	account, err := s.accountRepository.GetByID(accountID)
+	if errors.Is(err, money.ErrRange) && account != nil && account.UserID != userID {
+		return ErrAccountNotFound
+	}
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return ErrAccountNotFound
@@ -204,4 +190,12 @@ func (s *AccountService) WithContext(ctx context.Context) *AccountService {
 	clone := *s
 	clone.accountRepository = s.accountRepository.WithContext(ctx)
 	return &clone
+}
+
+func accountResponse(account *models.Account) (*AccountResponse, error) {
+	available, err := money.Subtract(account.Balance, account.AllocatedAmount)
+	if err != nil {
+		return nil, err
+	}
+	return &AccountResponse{ID: account.ID, Name: account.Name, Balance: account.Balance, AllocatedAmount: account.AllocatedAmount, UnallocatedAmount: available, GoalCount: account.GoalCount}, nil
 }

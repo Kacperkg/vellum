@@ -1,0 +1,15 @@
+{
+  "manifest_sha256": "REPLACE_WITH_NEW_EXACT_TESTED_MANIFEST_SHA256",
+  "verified_at": "REPLACE_WITH_CURRENT_UTC_ISO8601_TIMESTAMP",
+  "backup_created_at": "REPLACE_WITH_RECENT_BACKUP_UTC_ISO8601_TIMESTAMP",
+  "backup_reference": "REPLACE_WITH_PRIVATE_VERIFIED_BACKUP_AND_OFF_HOST_COPY_REFERENCE",
+  "off_host_copy_verified": false,
+  "restore_verified": false,
+  "schema_compatible": false,
+  "trusted_proxy_reviewed": false,
+  "approval_mode": "prelaunch",
+  "no_public_users": false,
+  "accept_data_loss": false,
+  "acknowledgement": "REPLACE_ONLY_AFTER_EXPLICIT_OPERATOR_APPROVAL",
+  "expires_at": "REPLACE_WITH_UTC_EXPIRY_WITHIN_24_HOURS_AND_BY_2026_11_04"
+}

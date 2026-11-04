@@ -65,9 +65,19 @@ from release import (  # noqa: E402 - import only after validating the installed
     validate_manifest,
 )
 from smoke import smoke  # noqa: E402
-from coordination import operation  # noqa: E402
+from coordination import operation, sync_state  # noqa: E402
 
 MAX_ENCODED_MANIFEST_CHARS = 45000
+# Deliberately fixed in reviewed source; extending this needs a new release.
+PRELAUNCH_SUNSET = datetime(2026, 11, 4, tzinfo=timezone.utc)
+PRELAUNCH_ACKNOWLEDGEMENT = "I_ACCEPT_PRELAUNCH_DATA_LOSS_WITHOUT_RESTORE_VERIFICATION"
+PRELAUNCH_CLOSED = "production-prelaunch-closed.json"
+
+
+def validate_approval_mode(environment, approval_mode):
+    require(approval_mode in ("standard", "prelaunch"), "unknown production approval mode")
+    require(environment == "production" or approval_mode == "standard",
+            "prelaunch approval is production-only")
 
 
 def decode_manifest_parameter(encoded):
@@ -121,21 +131,19 @@ def validate_environment_file(environment):
     return path
 
 
-def validate_approval(approval, manifest, now=None):
+def validate_approval(approval, manifest, now=None, approval_mode="standard"):
     now = now or datetime.now(timezone.utc)
+    validate_approval_mode("production", approval_mode)
+    fields = {
+        "manifest_sha256", "verified_at", "backup_created_at", "backup_reference",
+        "off_host_copy_verified", "restore_verified", "schema_compatible",
+        "trusted_proxy_reviewed",
+    }
+    if approval_mode == "prelaunch":
+        fields |= {"approval_mode", "no_public_users", "accept_data_loss",
+                   "acknowledgement", "expires_at"}
     require(
-        isinstance(approval, dict)
-        and set(approval)
-        == {
-            "manifest_sha256",
-            "verified_at",
-            "backup_created_at",
-            "backup_reference",
-            "off_host_copy_verified",
-            "restore_verified",
-            "schema_compatible",
-            "trusted_proxy_reviewed",
-        },
+        isinstance(approval, dict) and set(approval) == fields,
         "invalid operator approval record",
     )
     require(
@@ -165,7 +173,6 @@ def validate_approval(approval, manifest, now=None):
     )
     for field in (
         "off_host_copy_verified",
-        "restore_verified",
         "schema_compatible",
         "trusted_proxy_reviewed",
     ):
@@ -173,6 +180,39 @@ def validate_approval(approval, manifest, now=None):
             approval[field] is True,
             "production requires explicit backup, restore, schema and proxy review",
         )
+    if approval_mode == "standard":
+        require(approval["restore_verified"] is True,
+                "production requires genuine restore verification")
+        return
+    require(approval["approval_mode"] == "prelaunch"
+            and approval["restore_verified"] is False
+            and approval["no_public_users"] is True
+            and approval["accept_data_loss"] is True
+            and approval["acknowledgement"] == PRELAUNCH_ACKNOWLEDGEMENT,
+            "prelaunch requires explicit no-public-users and data-loss acknowledgement; restore remains unverified")
+    expires_at = datetime.fromisoformat(approval["expires_at"].replace("Z", "+00:00"))
+    require(expires_at.tzinfo is not None
+            and now < expires_at <= min(verified_at + timedelta(hours=24), PRELAUNCH_SUNSET),
+            "prelaunch approval expired or exceeds the fixed sunset/24-hour limit")
+
+
+def close_prelaunch(approval, manifest, approval_mode):
+    """Called under host locks; closure survives failure and is never reset here."""
+    path = STATE / PRELAUNCH_CLOSED
+    if approval_mode == "prelaunch":
+        require(not os.path.lexists(path), "prelaunch exception already consumed or retired")
+        require(not os.path.lexists(STATE / "production-current.json"),
+                "prelaunch exception is only for the first managed production deployment")
+    if not os.path.lexists(path):
+        atomic_json(path, {
+            "schema": 1,
+            "reason": "consumed" if approval_mode == "prelaunch" else "standard-mode-retirement",
+            "closed_at": datetime.now(timezone.utc).isoformat(),
+            "manifest_sha256": hashlib.sha256(canonical(manifest)).hexdigest(),
+            "approval": approval,
+        })
+        # File fsync alone cannot guarantee persistence of the directory entry.
+        sync_state(STATE)
 
 
 def atomic_json(path, value):
@@ -189,9 +229,11 @@ def atomic_json(path, value):
 
 
 class Commands:
-    def __init__(self, environment, manifest):
+    def __init__(self, environment, manifest, approval_mode="standard"):
         require(environment in ORIGINS, "unknown deployment environment")
+        validate_approval_mode(environment, approval_mode)
         self.environment = environment
+        self.approval_mode = approval_mode
         self.project = "vellum-" + environment
         self.env = {
             "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -234,10 +276,9 @@ class Commands:
         )
         return result.stdout
 
-    def staging_backend_ids(self):
-        require(self.environment == "staging", "backend barrier is staging-only")
+    def backend_ids(self):
         output = self.run(
-            "Staging backend inventory",
+            f"{self.environment} backend inventory",
             ["docker", "ps", "--all", "--no-trunc", "--filter",
              f"label=com.docker.compose.project={self.project}", "--filter",
              "label=com.docker.compose.service=backend", "--format", "{{.ID}}"],
@@ -246,10 +287,10 @@ class Commands:
         ids = output.split()
         require(len(ids) <= 64 and len(ids) == len(set(ids))
                 and all(re.fullmatch(r"[0-9a-f]{64}", item) for item in ids),
-                "invalid staging backend inventory; operator recovery required")
+                f"invalid {self.environment} backend inventory; operator recovery required")
         return sorted(ids)
 
-    def inspect_staging_backend(self, container):
+    def inspect_backend(self, container):
         # Inspect only identity/state, never environment variables or app logs.
         template = ('{"id":{{json .Id}},"project":'
                     '{{json (index .Config.Labels "com.docker.compose.project")}},'
@@ -257,7 +298,7 @@ class Commands:
                     '"oneoff":{{json (index .Config.Labels "com.docker.compose.oneoff")}},'
                     '"image":{{json .Config.Image}},"state":{{json .State}}}')
         info = json.loads(self.run(
-            "Staging backend state",
+            f"{self.environment} backend state",
             ["docker", "container", "inspect", "--format", template, container],
             timeout=15,
         ))
@@ -265,41 +306,40 @@ class Commands:
                 and info.get("project") == self.project
                 and info.get("service") == "backend"
                 and isinstance(info.get("state"), dict),
-                "unexpected staging backend identity; operator recovery required")
+                f"unexpected {self.environment} backend identity; operator recovery required")
         return info
 
-    def stop_staging_backend(self):
+    def stop_backend(self):
         # All old instances, including one-offs and stopped/restarting replicas,
         # must lose their restart path before AutoMigrate/new auth code runs.
-        ids = self.staging_backend_ids()
+        ids = self.backend_ids()
         for container in ids:
-            info = self.inspect_staging_backend(container)
+            info = self.inspect_backend(container)
             state = info["state"]
             require(state.get("Status") in ("created", "running", "restarting", "exited")
                     and state.get("Paused") is False and state.get("Dead") is False,
-                    "ambiguous staging backend state; operator recovery required")
+                    f"ambiguous {self.environment} backend state; operator recovery required")
         if ids:
-            self.run("Staging backend stop",
+            self.run(f"{self.environment} backend stop",
                      ["docker", "container", "stop", "--time", "30", *ids], timeout=60)
             for container in ids:
-                state = self.inspect_staging_backend(container)["state"]
+                state = self.inspect_backend(container)["state"]
                 require(state.get("Status") in ("created", "exited")
                         and state.get("Running") is False
                         and state.get("Restarting") is False
                         and state.get("Paused") is False and state.get("Dead") is False
                         and state.get("Pid") == 0,
-                        "old staging backend has not terminated; operator recovery required")
+                        f"old {self.environment} backend has not terminated; operator recovery required")
             # No --force and no --volumes: Engine must refuse a running target.
             # Images, receipts, PostgreSQL and every volume remain intact.
-            self.run("Stopped staging backend removal",
+            self.run(f"Stopped {self.environment} backend removal",
                      ["docker", "container", "rm", *ids], timeout=30)
-        require(not self.staging_backend_ids(),
-                "staging backend inventory changed; operator recovery required")
+        require(not self.backend_ids(),
+                f"{self.environment} backend inventory changed; operator recovery required")
 
-    def wait_staging_database(self):
-        require(self.environment == "staging", "database barrier is staging-only")
+    def wait_database(self):
         # An already submitted PostgreSQL statement can outlive its client.
-        # Count only this staging database's client sessions; never kill sessions
+        # Count only the target database's client sessions; never kill sessions
         # or inspect query text. Maintenance clients must also have disconnected.
         query = ("SELECT count(*) FROM pg_stat_activity "
                  "WHERE datname = current_database() AND pid <> pg_backend_pid() "
@@ -309,22 +349,22 @@ class Commands:
         deadline = time.monotonic() + 15
         while True:
             result = self.run(
-                "Staging database session drain",
+                f"{self.environment} database session drain",
                 self.compose + ["exec", "-T", "postgres", "sh", "-ec", script,
-                                "staging-session-check", query], timeout=5,
+                                f"{self.environment}-session-check", query], timeout=5,
             ).strip()
             require(re.fullmatch(r"0|[1-9][0-9]*", result),
-                    "invalid staging database session state")
+                    f"invalid {self.environment} database session state")
             if result == "0":
                 return
             require(time.monotonic() < deadline,
-                    "staging database sessions remain; operator recovery required")
+                    f"{self.environment} database sessions remain; operator recovery required")
             time.sleep(0.25)
 
-    def verify_staging_backend(self, manifest):
-        ids = self.staging_backend_ids()
-        require(len(ids) == 1, "staging requires one backend; operator recovery required")
-        info = self.inspect_staging_backend(ids[0])
+    def verify_backend(self, manifest):
+        ids = self.backend_ids()
+        require(len(ids) == 1, f"{self.environment} requires one backend; operator recovery required")
+        info = self.inspect_backend(ids[0])
         state = info["state"]
         require(info.get("oneoff") == "False"
                 and info.get("image") == manifest["images"]["backend"]
@@ -332,7 +372,7 @@ class Commands:
                 and state.get("Restarting") is False and state.get("Paused") is False
                 and state.get("Dead") is False and type(state.get("Pid")) is int
                 and state["Pid"] > 0 and state.get("Health", {}).get("Status") == "healthy",
-                "unexpected staging backend after startup; operator recovery required")
+                f"unexpected {self.environment} backend after startup; operator recovery required")
 
     def apply(self, manifest):
         validate_environment_file(self.environment)
@@ -358,6 +398,10 @@ class Commands:
             "unexpected application origin",
         )
         backend_env = resolved["services"]["backend"]["environment"]
+        if self.approval_mode == "prelaunch":
+            require(backend_env.get("APP_ENV") == "production"
+                    and backend_env.get("PASSWORD_RESET_EMAIL_MODE") == "disabled",
+                    "prelaunch requires production runtime with SES sending disabled")
         require(
             backend_env.get("TRUSTED_PROXY_CIDRS") == TRUSTED_PROXY_CIDRS,
             "trusted proxy must match the reviewed fixed Caddy address",
@@ -418,13 +462,12 @@ class Commands:
                 == manifest["source_sha"],
                 "image revision label mismatch",
             )
-        if self.environment == "staging":
-            self.stop_staging_backend()
-            self.wait_staging_database()
+        self.stop_backend()
+        self.wait_database()
         self.run(
             "Application update",
             self.compose
-            + (["up", "--scale", "backend=1"] if self.environment == "staging" else ["up"])
+            + ["up", "--scale", "backend=1"]
             + [
                 "-d",
                 "--no-deps",
@@ -439,8 +482,7 @@ class Commands:
             ],
             timeout=210,
         )
-        if self.environment == "staging":
-            self.verify_staging_backend(manifest)
+        self.verify_backend(manifest)
         smoke(
             ORIGINS[self.environment],
             staging=self.environment == "staging",
@@ -469,8 +511,9 @@ class Commands:
             print("Service diagnostics unavailable", file=sys.stderr)
 
 
-def deploy(environment, manifest, commands=None):
+def deploy(environment, manifest, commands=None, approval_mode="standard"):
     require(environment in ORIGINS, "unknown deployment environment")
+    validate_approval_mode(environment, approval_mode)
     validate_manifest(manifest, REPOSITORY, verified=environment == "production")
     require(
         bundle_hashes(BASE) == manifest["deployment_files"],
@@ -479,9 +522,17 @@ def deploy(environment, manifest, commands=None):
     if environment == "production":
         approval_path = STATE / "production-approval.json"
         protected(approval_path, private=True)
-        validate_approval(read_json(approval_path), manifest)
-    commands = commands or Commands(environment, manifest)
+        validate_approval(read_json(approval_path), manifest, approval_mode=approval_mode)
+    commands = commands or Commands(environment, manifest, approval_mode=approval_mode)
     with operation(STATE, "deployment", environment):
+        if environment == "production":
+            # Re-read/freshness-check after locking; do not consume a pending operation.
+            protected(approval_path, private=True)
+            approval = read_json(approval_path)
+            validate_approval(approval, manifest, approval_mode=approval_mode)
+            close_prelaunch(approval, manifest, approval_mode)
+            if approval_mode == "prelaunch":
+                print("production: PRELAUNCH data-loss exception; restore verification NOT performed; exception consumed")
         try:
             commands.apply(manifest)
         except Exception:
@@ -524,7 +575,7 @@ def main():
         "unsafe deployment state directory",
     )
     manifest = decode_manifest_parameter(os.environ["SSM_Manifest"])
-    deploy(environment, manifest)
+    deploy(environment, manifest, approval_mode=os.environ.get("SSM_ApprovalMode", "standard"))
 
 
 if __name__ == "__main__":

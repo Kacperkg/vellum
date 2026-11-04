@@ -50,7 +50,7 @@ func TestResourceBodyAndQueryBounds(t *testing.T) {
 		length            int64
 		want              int
 	}{
-		{"boundary", strings.Repeat(" ", MaxResourceBodyBytes), "", MaxResourceBodyBytes, 204},
+		{"boundary", `{}` + strings.Repeat(" ", MaxResourceBodyBytes-2), "", MaxResourceBodyBytes, 204},
 		{"declared oversize", "", "", MaxResourceBodyBytes + 1, 413},
 		{"chunked oversize", strings.Repeat("x", MaxResourceBodyBytes+1), "", -1, 413},
 		{"trailing oversize", `{}` + strings.Repeat(" ", MaxResourceBodyBytes), "", -1, 413},
@@ -66,6 +66,7 @@ func TestResourceBodyAndQueryBounds(t *testing.T) {
 			r := resourceRouter(NewResourceLimiter(), func(c *gin.Context) { called = true; c.Status(204) })
 			req := httptest.NewRequest("POST", "/resource?"+test.query, strings.NewReader(test.body))
 			req.ContentLength = test.length
+			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Test-User", uuid.NewString())
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
@@ -120,7 +121,7 @@ func TestResourceDeadlineAndParentCancellation(t *testing.T) {
 				cancel()
 			}
 			<-c.Request.Context().Done()
-			resourceContextActive(c)
+			resourceContextActive(c, c.Request.Context())
 		})
 		req := httptest.NewRequest("POST", "/resource", nil).WithContext(ctx)
 		req.Header.Set("X-Test-User", uuid.NewString())

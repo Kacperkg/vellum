@@ -326,6 +326,10 @@ def mark_verified(args):
 
 
 def dispatch(args):
+    approval_mode = getattr(args, "approval_mode", "standard")
+    require(approval_mode in ("standard", "prelaunch"), "unknown approval mode")
+    require(args.environment == "production" or approval_mode == "standard",
+            "prelaunch approval is production-only")
     value = read_json(args.manifest)
     validate_manifest(
         value,
@@ -354,7 +358,10 @@ def dispatch(args):
         re.fullmatch(r"[1-9][0-9]*", version) and re.fullmatch(HEX, digest),
         "SSM document version/hash must be pinned",
     )
-    parameters = json.dumps({"Manifest": [base64.b64encode(canonical(value)).decode()]})
+    parameters = {"Manifest": [base64.b64encode(canonical(value)).decode()]}
+    if args.environment == "production":
+        parameters["ApprovalMode"] = [approval_mode]
+    parameters = json.dumps(parameters)
     command = subprocess.check_output(
         [
             "aws",

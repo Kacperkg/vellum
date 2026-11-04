@@ -3,7 +3,6 @@ package email
 import (
 	"context"
 	"fmt"
-	"html"
 	"math"
 	"net/http"
 	"time"
@@ -39,13 +38,23 @@ func NewAWSSESSender(ctx context.Context, region, from string, timeout time.Dura
 func (s *SESSender) SendPasswordReset(ctx context.Context, email services.ResetEmail) error {
 	minutes := int(math.Ceil(email.ExpiresIn.Minutes()))
 	text := fmt.Sprintf("A password reset was requested for your Vellum account.\n\nReset your password: %s\n\nThis link expires in %d minutes and can be used once.\nIf you did not request this, ignore this email. Your password has not changed.\n", email.URL, minutes)
-	body := fmt.Sprintf(`<html><body><p>A password reset was requested for your Vellum account.</p><p><a href="%s">Reset your password</a></p><p>This link expires in %d minutes and can be used once.</p><p>If you did not request this, ignore this email. Your password has not changed.</p></body></html>`, html.EscapeString(email.URL), minutes)
-	_, err := s.client.SendEmail(ctx, &sesv2.SendEmailInput{
+	body, err := renderPasswordResetHTML(email.URL, minutes)
+	if err != nil {
+		return err
+	}
+	_, err = s.client.SendEmail(ctx, &sesv2.SendEmailInput{
 		FromEmailAddress: aws.String(s.from),
 		Destination:      &types.Destination{ToAddresses: []string{email.To}},
 		Content: &types.EmailContent{Simple: &types.Message{
 			Subject: &types.Content{Data: aws.String("Reset your Vellum password"), Charset: aws.String("UTF-8")},
 			Body:    &types.Body{Text: &types.Content{Data: aws.String(text), Charset: aws.String("UTF-8")}, Html: &types.Content{Data: aws.String(body), Charset: aws.String("UTF-8")}},
+			Attachments: []types.Attachment{{
+				FileName: aws.String("vellum-mark.png"), ContentId: aws.String(passwordResetLogoCID),
+				ContentType: aws.String("image/png"), ContentDisposition: types.AttachmentContentDispositionInline,
+				ContentTransferEncoding: types.AttachmentContentTransferEncodingBase64,
+				// Each request owns its bytes; callers/clients cannot mutate the embedded asset.
+				RawContent: append([]byte(nil), passwordResetLogo...),
+			}},
 		}},
 	})
 	return err

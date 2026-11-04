@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/models"
+	"github.com/kacperkg/vellum/internal/money"
 	"github.com/kacperkg/vellum/internal/repository"
 )
 
@@ -38,6 +39,9 @@ func (s *BudgetService) FindByID(userID uuid.UUID, budgetID uuid.UUID) (*BudgetR
 		return nil, ErrBudgetNotFound
 	}
 
+	if !money.Valid(budget.AllocatedAmount) {
+		return nil, money.ErrRange
+	}
 	return &BudgetResponse{
 		ID:              budget.ID,
 		CategoryID:      budget.CategoryID,
@@ -54,6 +58,9 @@ func (s *BudgetService) FindByUserID(userID uuid.UUID) ([]*BudgetResponse, error
 	responses := make([]*BudgetResponse, 0, len(budgets))
 
 	for _, budget := range budgets {
+		if !money.Valid(budget.AllocatedAmount) {
+			return nil, money.ErrRange
+		}
 		responses = append(responses, &BudgetResponse{
 			ID:              budget.ID,
 			CategoryID:      budget.CategoryID,
@@ -100,6 +107,9 @@ func (s *BudgetService) Update(userID uuid.UUID, budgetID uuid.UUID, req UpdateB
 	}
 
 	newAllocation := req.AllocatedAmount
+	if !money.Valid(newAllocation) {
+		return nil, money.ErrRange
+	}
 	if newAllocation <= 0 {
 		return nil, ErrAllocatedAmountPositive
 	}
@@ -122,6 +132,9 @@ func (s *BudgetService) Update(userID uuid.UUID, budgetID uuid.UUID, req UpdateB
 		return nil, err
 	}
 
+	if !money.Valid(budget.AllocatedAmount) {
+		return nil, money.ErrRange
+	}
 	return &BudgetResponse{
 		ID:              budget.ID,
 		CategoryID:      budget.CategoryID,
@@ -180,6 +193,9 @@ func (s *BudgetService) Create(userID uuid.UUID, req CreateBudgetRequest) (*Budg
 
 	allocatedAmount := req.AllocatedAmount
 
+	if !money.Valid(allocatedAmount) {
+		return nil, money.ErrRange
+	}
 	if allocatedAmount <= 0 {
 		return nil, ErrAllocatedAmountPositive
 	}
@@ -202,6 +218,9 @@ func (s *BudgetService) Create(userID uuid.UUID, req CreateBudgetRequest) (*Budg
 		return nil, err
 	}
 
+	if !money.Valid(budget.AllocatedAmount) {
+		return nil, money.ErrRange
+	}
 	return &BudgetResponse{
 		ID:              budget.ID,
 		CategoryID:      budget.CategoryID,

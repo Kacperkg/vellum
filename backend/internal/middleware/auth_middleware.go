@@ -4,15 +4,16 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/auth"
 )
 
-func AuthMiddleware(secret string, validateVersion func(context.Context, uuid.UUID, int64) bool) gin.HandlerFunc {
-	if validateVersion == nil {
-		panic("authentication requires an auth version validator")
+func AuthMiddleware(secret string, validateSession func(context.Context, uuid.UUID, int64, *uuid.UUID) (bool, error)) gin.HandlerFunc {
+	if validateSession == nil {
+		panic("authentication requires a session validator")
 	}
 	return func(c *gin.Context) {
 
@@ -41,14 +42,22 @@ func AuthMiddleware(secret string, validateVersion func(context.Context, uuid.UU
 
 		// Validate token
 		claims, err := auth.ValidateToken(tokenString, secret)
-		validVersion := false
+		validSession := false
 		if err == nil {
-			validVersion = validateVersion(c.Request.Context(), claims.UserID, claims.AuthVersion)
-			if !resourceContextActive(c) {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
+			defer cancel()
+			var lookupErr error
+			validSession, lookupErr = validateSession(ctx, claims.UserID, claims.AuthVersion, claims.SessionID)
+			if !resourceContextActive(c, ctx) {
+				return
+			}
+			cancel()
+			if lookupErr != nil {
+				c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "session validation unavailable"})
 				return
 			}
 		}
-		if err != nil || !validVersion {
+		if err != nil || !validSession {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "invalid or expired token",
 			})

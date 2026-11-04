@@ -1,5 +1,10 @@
 import type { Transaction, Transfer, UserSettings } from "@/api/types";
-import { formatMoney, formatSignedMoney } from "@/utils/finance";
+import {
+  formatMoney,
+  formatSignedMoney,
+  moneyInteger,
+  calendarDate,
+} from "@/utils/finance";
 
 export type TransferActivity = Transfer & {
   type: "transfer";
@@ -31,7 +36,7 @@ export function sortFinancialActivity(
       case "account":
         return `${accounts.get(item.account_id) ?? "Unknown account"}${item.type === "transfer" ? ` → ${accounts.get(item.to_account_id) ?? "Unknown account"}` : ""}`;
       case "date":
-        return new Date(item.date).getTime();
+        return calendarDate(item.date);
       // A global transfer displays its face amount with a neutral arrow, while
       // an account-filtered transfer displays that account's signed movement.
       case "amount":
@@ -52,7 +57,7 @@ export function sortFinancialActivity(
           });
     return (
       comparison * (direction === "asc" ? 1 : -1) ||
-      new Date(b.date).getTime() - new Date(a.date).getTime() ||
+      calendarDate(b.date).localeCompare(calendarDate(a.date)) ||
       `${a.type}:${a.id}`.localeCompare(`${b.type}:${b.id}`)
     );
   });
@@ -71,7 +76,7 @@ export function financialActivity(
       category_id: null,
       frequency: transfer.frequency ?? "one-off",
     })),
-  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  ].sort((a, b) => calendarDate(b.date).localeCompare(calendarDate(a.date)));
 }
 
 export function activityImpact(
@@ -90,10 +95,10 @@ export function activityImpact(
 export function activityNetAmount(
   items: FinancialActivity[],
   accountId = "all",
-): number {
+): bigint {
   return items.reduce(
-    (total, item) => total + activityImpact(item, accountId),
-    0,
+    (total, item) => total + moneyInteger(activityImpact(item, accountId)),
+    0n,
   );
 }
 
@@ -101,16 +106,18 @@ export function recordedAccountBalance(
   accountId: string,
   transactions: Transaction[],
   transfers: Transfer[],
-): number {
+): bigint {
   const recorded = transactions.reduce(
-    (total, item) => total + activityImpact(item, accountId),
-    0,
+    (total, item) => total + moneyInteger(activityImpact(item, accountId)),
+    0n,
   );
   return transfers.reduce(
     (total, transfer) =>
       total -
-      (transfer.from_account_id === accountId ? transfer.amount : 0) +
-      (transfer.to_account_id === accountId ? transfer.amount : 0),
+      moneyInteger(
+        transfer.from_account_id === accountId ? transfer.amount : 0,
+      ) +
+      moneyInteger(transfer.to_account_id === accountId ? transfer.amount : 0),
     recorded,
   );
 }

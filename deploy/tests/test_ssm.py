@@ -10,6 +10,22 @@ import release
 
 
 class ManifestParameterTests(unittest.TestCase):
+    def test_production_mode_is_bounded_default_standard_and_never_shell_interpolated(self):
+        root = Path(__file__).resolve().parents[1] / "ssm"
+        production = json.loads((root / "production.json").read_bytes())
+        staging = json.loads((root / "staging.json").read_bytes())
+        parameter = production["parameters"]["ApprovalMode"]
+        self.assertEqual(parameter["type"], "String")
+        self.assertEqual(parameter["default"], "standard")
+        self.assertEqual(parameter["allowedValues"], ["standard", "prelaunch"])
+        self.assertEqual(parameter["allowedPattern"], "^(standard|prelaunch)$")
+        self.assertEqual(parameter["interpolationType"], "ENV_VAR")
+        self.assertNotIn("ApprovalMode", staging["parameters"])
+        commands = production["mainSteps"][0]["inputs"]["runCommand"]
+        self.assertTrue(any("SSM_ApprovalMode:-" in command for command in commands))
+        self.assertFalse(any("{{" in command for command in commands))
+        self.assertEqual(commands[-1], "exec /usr/bin/python3 -I /usr/local/lib/vellum-cd/cd/controller.py production")
+
     def test_templates_share_native_size_bounds_and_safe_interpolation(self):
         for environment in ("staging", "production"):
             with self.subTest(environment=environment):

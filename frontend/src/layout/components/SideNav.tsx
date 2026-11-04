@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Logo from "@/components/shared/Logo";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import Card, {
   CardContent,
   CardFooter,
@@ -12,7 +12,12 @@ import { logout } from "@/api/endpoints/auth";
 import Icon, { type IconName } from "@/components/ui/Icon";
 import Progress from "@/components/ui/Progress";
 import { useFinanceData } from "@/contexts/FinanceDataContext";
-import { formatMoney, isCurrentMonth } from "@/utils/finance";
+import {
+  formatMoney,
+  isCurrentMonth,
+  moneyInteger,
+  moneyRatio,
+} from "@/utils/finance";
 
 const routes = [
   { label: "Overview", path: "/", icon: "overview" },
@@ -26,12 +31,11 @@ const routes = [
 ] as const;
 
 export default function SideNav() {
-  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { budgets, transactions, settings } = useFinanceData();
   const allocated = budgets.reduce(
-    (sum, budget) => sum + budget.allocated_amount,
-    0,
+    (sum, budget) => sum + moneyInteger(budget.allocated_amount),
+    0n,
   );
   const budgetCategoryIds = new Set(
     budgets.map((budget) => budget.category_id),
@@ -43,18 +47,14 @@ export default function SideNav() {
         isCurrentMonth(transaction.date) &&
         budgetCategoryIds.has(transaction.category_id),
     )
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
-  const utilisation = allocated > 0 ? (spent / allocated) * 100 : 0;
+    .reduce((sum, transaction) => sum + moneyInteger(transaction.amount), 0n);
+  const utilisation = allocated > 0 ? moneyRatio(spent, allocated) * 100 : 0;
   const month = new Intl.DateTimeFormat("en", { month: "long" }).format(
     new Date(),
   );
 
   async function handleLogout(): Promise<void> {
     await logout();
-    await navigate({
-      to: "/login",
-      replace: true,
-    });
   }
 
   return (
