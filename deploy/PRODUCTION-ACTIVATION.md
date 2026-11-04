@@ -1,19 +1,12 @@
 # Guarded production activation
 
-For the specifically approved first-deployment data-loss exception, see
-[PRELAUNCH-PRODUCTION.md](PRELAUNCH-PRODUCTION.md). It waives only isolated restore
-verification, requires a new immutable staging release/matching controller and
-revised pinned production SSM document, and expires by 4 November 2026 UTC. The
-standard procedure below still requires genuine restore evidence. Historical
-release/configuration observations below are dated; PR #36 subsequently promoted
-run 40587847468/1, which cannot use the new exception's changed bundle.
-
-This is the operator runbook for a later, separately approved promotion. The
-workflow is active in source; this pin change does not deploy or change AWS
-resources, GitHub settings, runtime configuration, databases, Caddy or timers.
-**Production deployment is not ready:** current live prerequisites still need
-operator verification. Standard mode requires actual isolated restore evidence;
-the pre-launch exception needs a new compatible release and its separate gates.
+**Feature PR → staging → reviewed PR into main → Run Promote production.**
+A release-needed staging push runs full CI, publishes and deploys both images
+when CD is enabled, and records the verified release. Production finds the single
+eligible release for the reviewed `main` tree and promotes those same digests.
+The existing standard production backup, isolated restore, schema and proxy
+approval still applies. The [pre-launch exception](PRELAUNCH-PRODUCTION.md)
+expired on 4 November 2026 UTC and is no longer exposed by this workflow.
 
 ## 1. GitHub configuration and verified current state
 
@@ -38,7 +31,7 @@ gh variable list --repo Kacperkg/vellum --env production
 
 Keep manual approval mode. Dispatch permission is an operator gate, without
 enforced two-person approval. Recommend at least one independent approving
-review, code-owner approval for workflows/controller/selector, stale approval
+review, code-owner approval for workflows/controller, stale approval
 invalidation, and strict required checks on main. Any settings changes need
 separate approval. Environment reviewers, prevent-self-review and disabled admin
 bypass would strengthen the gate, but adopting another approval mode requires a
@@ -46,23 +39,21 @@ separately reviewed implementation/configuration. This workflow rejects
 `environment` mode and never deploys on push.
 
 Production Environment variables must identify only the production account,
-role, region, instance and document: `AWS_ACCOUNT_ID`, `AWS_REGION`,
-`AWS_DEPLOY_ROLE_ARN`, `SSM_INSTANCE_ID`, `SSM_DOCUMENT_ARN`. The reviewed
-version `2` and AWS metadata SHA-256 are pinned in the workflow. The job gets
-`contents: read`,
+role, region, instance and document ARN: `AWS_ACCOUNT_ID`, `AWS_REGION`,
+`AWS_DEPLOY_ROLE_ARN`, `SSM_INSTANCE_ID`, `SSM_DOCUMENT_ARN`. The production workflow pins version
+`2` and AWS metadata SHA-256
+`8d43e90f07c95456d7f781b591cc187eaf448e0c80b3a87d0433b9665297f83a`, carried
+over from the reviewed main workflow in PR #39. The production job gets `contents: read`,
 `actions: read`, `id-token: write`; no package writes. PR CI receives no AWS
 credentials. The exact case-sensitive repository/workflow identity remains
 `Kacperkg/vellum`, independently of case-insensitive GitHub URLs.
 
 ## 2. Workflow availability
 
-This pin change targets main through a reviewed PR and separate merge approval.
-With staging as default, `.github/workflows/release-production.yml` must exist
-at the same path on both branches for dispatch discovery and execution.
-The only trigger is `workflow_dispatch`. A merge to either branch cannot trigger
-this production workflow, even if the selector changes. A dispatch to staging,
-a feature branch, a tag, another repository or an unprotected main cannot deploy.
-Keep `cancel-in-progress: false` and the single `vellum-deploy-production` group.
+The same workflow path must exist on default `staging` for discovery and on
+`main` for execution. Its only trigger is `workflow_dispatch`. Dispatch to
+staging, a feature branch, a tag, another repository or an unprotected main
+cannot deploy. Keep the production concurrency group and Environment protections.
 
 ## 3. Verify current AWS and controller compatibility
 
@@ -70,11 +61,7 @@ Historical AWS evidence (not current live verification): region `eu-west-2`,
 instance `i-073a8f8cf2abd86c5`, role `vellum-github-production-deploy`, document
 `VellumDeploy-production`, version `1`, metadata SHA-256
 `63e591e39c255a88d9a947474062242124816434eacf0c9c4f6ad8db1b000626`.
-The owner reports that version `2` is Active in `eu-west-2`, with AWS metadata
-SHA-256 `8d43e90f07c95456d7f781b591cc187eaf448e0c80b3a87d0433b9665297f83a`.
-Version `1` remains the default; the workflow selects version `2` explicitly.
-This repository change did not contact AWS. With an authorised read-only
-operator identity:
+This task did not contact AWS. With an authorised read-only operator identity:
 
 ```sh
 aws sts get-caller-identity --query Account --output text
@@ -101,8 +88,8 @@ metadata hash/version to the independently reviewed pin; a local JSON formatting
 hash is not a substitute. The document must execute only the root-installed
 `python3 -I` controller for production using the Manifest ENV_VAR input. The
 revised template also requires bounded `ApprovalMode` ENV_VAR data, defaulting to
-`standard`. For any later document change, separately review its numeric version
-and AWS metadata hash before changing the workflow pin. Verify
+`standard`; separately review a new numeric version and its AWS metadata hash
+before updating production pins, as detailed in the pre-launch runbook. Verify
 SSM Agent ENV_VAR support. Investigate drift; do not update pins blindly.
 
 ## 4. Exact six-file bundle verification
@@ -151,80 +138,63 @@ lock inodes, credentials, volumes and recovery information. Do not downgrade a
 controller or rewrite receipt hashes. Runner helper stays in the Actions
 checkout; never install/execute it as root.
 
-## 5. Obtain a fresh ordinary staging-push release
+## 5. Obtain an eligible staging release
 
-Historical evidence before PR #36: PR #29 push `40565614034/1` succeeded overall but skipped
-`publish-and-deploy` and has no artifact. PR #28 push `40558125941/1` has no
-release artifact. Manual `40560489451/1` produced
-`vellum-staging-verification-40560489451-1`, which is ineligible. The selector
-was therefore exactly three null fields at that time. PR #36 subsequently
-selected real release 40587847468/1 on main. This staging-based policy branch
-retains staging's null selector; a new compatible release/promotion is required
-for the exception. Older receipts cannot substitute for changed controller source.
+Merge a reviewed feature PR to protected `staging` after verifying the existing
+staging delivery prerequisites. Confirm **Release staging** succeeded, including
+`publish-and-deploy`. When delivery is enabled, any release-needed change runs
+full CI and produces the evidence required for production. Docs-only pushes
+can reuse a release with an equivalent tree. A skipped deployment, a manual
+verification, an old-format artifact or an unsuccessful rerun is ineligible.
+The staging job summary gives the canonical manifest SHA-256 needed below.
+There is no need to download the manifest or calculate the hash locally.
 
-After independently approving staging deployment, matching bundle/runtime/proxy
-readiness and required CI, an operator may enable CD through the existing
-staging activation procedure, then approve a genuine new ordinary push/merge to
-protected staging. Its change plan must require a release. This PR changes
-workflows/scripts and therefore selects full validation and publication when CD
-is enabled. A docs-only push, empty commit or rerun of PR #29 can skip publishing;
-none guarantees a usable release. Do not dispatch the manual staging verification
-workflow as a workaround. This task does not enable CD, merge or publish images.
+## 6. Review and merge staging into main
 
-## 6. Inspect production eligibility
+Open a normal staging-to-main PR. The resulting tree must match the tested
+staging commit across all tracked files, including both complete application
+trees, workflows, CI helpers, Compose, SSM and IAM examples, file types and
+modes. Only root `README.md`, `docs/`, top-level `deploy/*.md` runbooks and the
+unused historical `deploy/production-release.json` are excluded. Keep any
+production-only workflow update in the reviewed staging source as well so it
+is covered by release CI. The production SSM version and hash are already
+present there; preserve those exact pins in the merge.
 
-Record the exact new run and attempt, source SHA and artifact ID. Commands below
-are read-only except downloading evidence into a new local directory:
+Squash, rebase and merge commits are all compatible with discovery if branch
+rules allow the merge strategy and the resulting files are equivalent. The
+branches already diverged; the first PR has conflicts in application,
+workflow and documentation files. Resolve them in review so the resulting
+application, deployment and workflow files match the tested staging tree.
+Retain the previous selector in Git history as release evidence. GitHub's
+current linear-history rules allow squash/rebase rather than a merge commit;
+these do not bring staging ancestry into main, so future PRs can also need
+conflict resolution. If a proposed resolution changes release-relevant
+files, land and test it on staging first. A different main tree cannot be
+promoted, regardless of how the PR was merged.
 
-```sh
-run_id=REPLACE_REAL_RUN_ID
-attempt=REPLACE_REAL_ATTEMPT
-gh api "repos/Kacperkg/vellum/actions/runs/$run_id"
-gh api "repos/Kacperkg/vellum/actions/runs/$run_id/attempts/$attempt"
-gh api "repos/Kacperkg/vellum/actions/runs/$run_id/attempts/$attempt/jobs?per_page=100" --paginate
-gh api "repos/Kacperkg/vellum/actions/runs/$run_id/artifacts?per_page=100" --paginate
-artifact_dir=$(mktemp -d)
-gh run download "$run_id" --repo Kacperkg/vellum \
-  --name "vellum-release-$run_id-$attempt" --dir "$artifact_dir"
-shasum -a 256 "$artifact_dir/release.json"
-```
+## 7–8. How discovery verifies the release
 
-Require the latest attempt and the exact selected attempt to be completed,
-successful ordinary `push` runs on staging in the canonical release-staging
-workflow/repository. Require exactly one successful publication job, Change plan
-and all seven named CI jobs for that attempt/source. Skipped, failed, cancelled,
-missing or ambiguous jobs fail. A newer attempt invalidates an older attempt.
-The artifact must be unique, unexpired and named exactly
-`vellum-release-<run>-<attempt>`; its archive contains only `release.json`.
-Manual verification artifacts, Docker build records and host receipts are not
-promotion artifacts. Treat all artifact contents as data, never executable code.
+The read-only job searches ordinary staging-push runs created in the previous
+90 days (the artifact retention period). An incomplete search blocks promotion.
+It requires a source in current staging history, tree equivalence, successful
+CI and publication/deployment for the exact latest attempt, and one matching
+unexpired artifact. A rerun that is running, failed or cancelled invalidates
+earlier attempts of that run. The verified artifact name binds the run, attempt,
+canonical manifest SHA-256, and both staging build output digests. The workflow
+verifies the ZIP checksum and GitHub run metadata, compares the manifest
+checksum and image digests, and checks all six deployment-bundle hashes.
 
-Validate the manifest using `release.validate_manifest(..., 'kacperkg/vellum',
-verified=True)` and compare run/attempt/source, immutable `ghcr.io/...@sha256:`
-images and all six file hashes. The automated resolver repeats these checks,
-checks the raw manifest SHA-256, requires source ancestry in fetched staging and
-identical Git trees for `backend`, `frontend`, both deployment Compose files and
-`deploy/cd` on main. Merge/squash commit IDs may differ; tree equality is required.
-A historical source with identical runtime/deployment trees is acceptable only
-with the exact reviewed successful latest-attempt push artifact; changed runtime
-or bundle source is rejected. There is no arbitrary age-based substitution.
+If no release matches, inspect the intended staging run and check the main
+PR's resulting tree. Fix any differences on staging or obtain a fresh ordinary
+release for the intended source. A full rerun is usable only if the exact new
+attempt runs CI and deploys successfully and remains within the search window.
+If two releases match, the workflow refuses to choose. Review the evidence and
+use a new reviewed staging revision to establish a unique match; do not edit
+historical manifests or remove evidence to force selection.
 
-## 7–8. Configure selection and prepare the promotion PR
-
-Create a descriptive isolated branch from reviewed staging for the promotion PR
-to main. Include the workflow/helper and the selected release's exact runtime
-and deployment trees. Configure only `deploy/production-release.json` with:
-
-- `staging_run_id`: real positive JSON integer.
-- `staging_run_attempt`: real positive JSON integer, latest successful attempt.
-- `manifest_sha256`: actual lowercase 64-hex SHA-256 of the downloaded raw file.
-
-No tags, SHA overrides, artifact names or approval evidence are dispatch inputs.
-Never fill fields with sample numbers/hashes. Independent review must verify
-artifact identity, digest accessibility, bundle compatibility and tree equality;
-all seven PR checks must pass before a separately authorised merge. Freeze
-unrelated promotions while preparing dispatch. A source/bundle change needs a
-new eligible staging release, not a rewritten manifest.
+Historical context: manual run 40560489451/1 was ineligible. PR #36 selected
+ordinary staging run 40587847468/1 using the legacy selector. That release
+predates this artifact contract; its historical evidence remains in Git.
 
 ## 9. Backup, isolated restore and release-specific approval
 
@@ -232,8 +202,7 @@ Two-day S3 retention is accepted, but is not restore proof. **Never set
 `restore_verified=true` without an actual isolated verified restore.** Missing
 restore evidence intentionally blocks production, even after workflow activation.
 
-Minimum procedure for standard production approval (the specifically approved
-pre-launch alternative is described in PRELAUNCH-PRODUCTION.md):
+Minimum procedure for standard production approval:
 
 1. On an authorised private disposable host, follow
    [backup/RESTORE.md](backup/RESTORE.md) using an actual recent **production**
@@ -282,25 +251,21 @@ freeze external production writers before the backend drain gate.
 
 ## 12. Explicit production dispatch — mutating operator action
 
-Only after all prerequisites, approval evidence and an explicitly authorised
-promotion merge, recheck current main and the selected artifact. The following
-command **deploys production** when enabled; it was not executed by this task:
+After the reviewed merge and installation of the standard host approval, open
+**Actions → Promote production → Run workflow**, select `main`, and tick
+`confirm_production_deployment`. The checkbox acknowledges backend replacement,
+brief API downtime, AutoMigrate/seeding and smoke requests. The host record
+separately attests to backup, restore and schema evidence. With no GitHub
+Environment reviewer configured, dispatch does not pause for that record;
+prepare it first from the staging summary hash.
 
-```sh
-main_sha=$(gh api repos/Kacperkg/vellum/git/ref/heads/main --jq .object.sha)
-# Review this exact main commit and its selector before acknowledging:
-gh workflow run release-production.yml --repo Kacperkg/vellum --ref main \
-  -f expected_sha="$main_sha" -f confirm_production_deployment=true
-```
-
-The acknowledgement accepts backend replacement, brief API downtime,
-AutoMigrate/seeding and smoke requests. It is not a restore attestation. The
-helper checks canonical main/protected workflow identity, exact checked-out and
-fetched main revision, CD flag, manual mode and acknowledgement; it rechecks
-current main and release eligibility immediately before dispatch. A changed main
-requires fresh review/dispatch. The reviewed selector stays the sole release
-source. Environment-scoped OIDC assumes only the existing production role and
-sends one immutable manifest through the pinned production SSM document.
+The read-only job reports the exact staging run, artifact, image digests and
+manifest checksum. The production job requires the same unique release before
+obtaining credentials and again before sending the pinned SSM command. It checks
+live `main` just before dispatch and rejects an observed change. GitHub and SSM
+do not provide a shared transaction; avoid concurrent merges or staging reruns
+while production is being dispatched. The controller verifies the same standard,
+release-specific approval before mutation and retains the existing recovery gates.
 
 ## 13–14. Monitoring and post-deployment verification
 
@@ -346,7 +311,7 @@ and fresh release-specific approval. Pre-PR28 authentication code can resurrect
 revoked sessions and is not an automatic rollback option. There is no second
 production deployment path or unreviewed manual Compose fallback in this workflow.
 
-## Implementation validation and independent review (2026-10-27)
+## Historical activation validation and independent review (2026-10-27)
 
 Local results for this activation change: 50 CI helper regression tests and 128
 deployment safety tests passed. These cover production approval, provenance,

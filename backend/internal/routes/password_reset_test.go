@@ -111,7 +111,7 @@ func TestAuthVersionRouteInvalidationAndDatabaseFailures(t *testing.T) {
 		t.Fatal("new access token rejected")
 	}
 	users.Err = context.DeadlineExceeded
-	if request(fresh) != 401 {
-		t.Fatal("database lookup failure did not fail closed")
+	if request(fresh) != http.StatusServiceUnavailable {
+		t.Fatal("database lookup failure did not fail closed with an operational error")
 	}
 }

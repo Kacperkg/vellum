@@ -1,11 +1,13 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/kacperkg/vellum/internal/models"
+	"github.com/kacperkg/vellum/internal/money"
 	"github.com/kacperkg/vellum/internal/repository"
 )
 
@@ -22,17 +24,26 @@ func NewGoalService(goalRepository repository.GoalRepository, accountRepository 
 }
 
 func (s *GoalService) Create(userID uuid.UUID, req CreateGoalRequest) (*GoalResponse, error) {
+	if err := validateResourceName(req.Name); err != nil {
+		return nil, err
+	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return nil, ErrGoalNameRequired
 	}
 
 	targetAmount := req.TargetAmount
+	if !money.Valid(targetAmount) {
+		return nil, money.ErrRange
+	}
 	if targetAmount <= 0 {
 		return nil, ErrGoalTargetPositive
 	}
 
 	savedAmount := req.SavedAmount
+	if !money.Valid(savedAmount) {
+		return nil, money.ErrRange
+	}
 	if savedAmount < 0 {
 		return nil, ErrGoalSavedAmountNegative
 	}
@@ -41,6 +52,9 @@ func (s *GoalService) Create(userID uuid.UUID, req CreateGoalRequest) (*GoalResp
 	}
 
 	monthlyContribution := req.MonthlyContribution
+	if !money.Valid(monthlyContribution) {
+		return nil, money.ErrRange
+	}
 	if monthlyContribution < 0 {
 		return nil, ErrGoalContributionNegative
 	}
@@ -63,6 +77,9 @@ func (s *GoalService) Create(userID uuid.UUID, req CreateGoalRequest) (*GoalResp
 		return nil, err
 	}
 
+	if !money.Valid(goal.TargetAmount) || !money.Valid(goal.SavedAmount) || !money.Valid(goal.MonthlyContribution) {
+		return nil, money.ErrRange
+	}
 	return &GoalResponse{
 		AccountID:           goal.AccountID,
 		ID:                  goal.ID,
@@ -90,6 +107,9 @@ func (s *GoalService) GetByID(userID uuid.UUID, goalID uuid.UUID) (*GoalResponse
 		return nil, ErrGoalNotFound
 	}
 
+	if !money.Valid(goal.TargetAmount) || !money.Valid(goal.SavedAmount) || !money.Valid(goal.MonthlyContribution) {
+		return nil, money.ErrRange
+	}
 	return &GoalResponse{
 		AccountID:           goal.AccountID,
 		ID:                  goal.ID,
@@ -109,6 +129,9 @@ func (s *GoalService) FindByUserID(userID uuid.UUID) ([]*GoalResponse, error) {
 	responses := make([]*GoalResponse, 0, len(goals))
 
 	for _, goal := range goals {
+		if !money.Valid(goal.TargetAmount) || !money.Valid(goal.SavedAmount) || !money.Valid(goal.MonthlyContribution) {
+			return nil, money.ErrRange
+		}
 		responses = append(responses, &GoalResponse{
 			AccountID:           goal.AccountID,
 			ID:                  goal.ID,
@@ -139,17 +162,26 @@ func (s *GoalService) Update(userID uuid.UUID, goalID uuid.UUID, req UpdateGoalR
 		return nil, ErrGoalNotFound
 	}
 
+	if err := validateResourceName(req.Name); err != nil {
+		return nil, err
+	}
 	newName := strings.TrimSpace(req.Name)
 	if newName == "" {
 		return nil, ErrGoalNameRequired
 	}
 
 	newTargetAmount := req.TargetAmount
+	if !money.Valid(newTargetAmount) {
+		return nil, money.ErrRange
+	}
 	if newTargetAmount <= 0 {
 		return nil, ErrGoalTargetPositive
 	}
 
 	newSavedAmount := req.SavedAmount
+	if !money.Valid(newSavedAmount) {
+		return nil, money.ErrRange
+	}
 	if newSavedAmount < 0 {
 		return nil, ErrGoalSavedAmountNegative
 	}
@@ -158,6 +190,9 @@ func (s *GoalService) Update(userID uuid.UUID, goalID uuid.UUID, req UpdateGoalR
 	}
 
 	newMonthlyContribution := req.MonthlyContribution
+	if !money.Valid(newMonthlyContribution) {
+		return nil, money.ErrRange
+	}
 	if newMonthlyContribution < 0 {
 		return nil, ErrGoalContributionNegative
 	}
@@ -179,6 +214,9 @@ func (s *GoalService) Update(userID uuid.UUID, goalID uuid.UUID, req UpdateGoalR
 		return nil, err
 	}
 
+	if !money.Valid(goal.TargetAmount) || !money.Valid(goal.SavedAmount) || !money.Valid(goal.MonthlyContribution) {
+		return nil, money.ErrRange
+	}
 	return &GoalResponse{
 		AccountID:           goal.AccountID,
 		ID:                  goal.ID,
@@ -226,6 +264,12 @@ func (s *GoalService) validateAccount(userID uuid.UUID, accountID *uuid.UUID) er
 		return ErrAccountNotFound
 	}
 	account, err := s.accountRepository.GetByID(*accountID)
+	if errors.Is(err, money.ErrRange) && account != nil {
+		if account.UserID != userID {
+			return ErrAccountNotFound
+		}
+		err = nil
+	}
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return ErrAccountNotFound
@@ -236,4 +280,12 @@ func (s *GoalService) validateAccount(userID uuid.UUID, accountID *uuid.UUID) er
 		return ErrAccountNotFound
 	}
 	return nil
+}
+
+// WithContext returns a request-scoped copy; the shared service is never mutated.
+func (s *GoalService) WithContext(ctx context.Context) *GoalService {
+	clone := *s
+	clone.goalRepository = s.goalRepository.WithContext(ctx)
+	clone.accountRepository = s.accountRepository.WithContext(ctx)
+	return &clone
 }

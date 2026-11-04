@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/kacperkg/vellum/internal/calendar"
 	"github.com/kacperkg/vellum/internal/models"
 	"github.com/kacperkg/vellum/internal/services"
 )
@@ -13,11 +13,11 @@ import (
 type TransferHandler struct{ transferService *services.TransferService }
 
 type transferRequest struct {
-	Name          string            `json:"name" binding:"required"`
+	Name          string            `json:"name" binding:"required,max=200"`
 	Amount        int64             `json:"amount" binding:"required,gt=0"`
 	FromAccountID uuid.UUID         `json:"from_account_id" binding:"required"`
 	ToAccountID   uuid.UUID         `json:"to_account_id" binding:"required"`
-	Date          time.Time         `json:"date" binding:"required"`
+	Date          calendar.Date     `json:"date" binding:"required"`
 	Frequency     *models.Frequency `json:"frequency" binding:"omitempty,oneof=one-off daily weekly monthly yearly"`
 }
 
@@ -26,7 +26,7 @@ func (r transferRequest) serviceRequest() services.CreateTransferRequest {
 	if r.Frequency != nil {
 		frequency = *r.Frequency
 	}
-	return services.CreateTransferRequest{Name: r.Name, Amount: r.Amount, FromAccountID: r.FromAccountID, ToAccountID: r.ToAccountID, Date: r.Date, Frequency: frequency}
+	return services.CreateTransferRequest{Name: r.Name, Amount: r.Amount, FromAccountID: r.FromAccountID, ToAccountID: r.ToAccountID, Date: r.Date.Time, Frequency: frequency}
 }
 
 func NewTransferHandler(service *services.TransferService) *TransferHandler {
@@ -36,14 +36,14 @@ func NewTransferHandler(service *services.TransferService) *TransferHandler {
 func (h *TransferHandler) Create(c *gin.Context) {
 	var req transferRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithBindingError(c, err)
 		return
 	}
 	userID, ok := getUserID(c)
 	if !ok {
 		return
 	}
-	response, err := h.transferService.Create(userID, req.serviceRequest())
+	response, err := h.transferService.WithContext(c.Request.Context()).Create(userID, req.serviceRequest())
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -60,7 +60,7 @@ func (h *TransferHandler) GetByID(c *gin.Context) {
 	if !ok {
 		return
 	}
-	response, err := h.transferService.GetByID(userID, id)
+	response, err := h.transferService.WithContext(c.Request.Context()).GetByID(userID, id)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -73,7 +73,7 @@ func (h *TransferHandler) ListByUser(c *gin.Context) {
 	if !ok {
 		return
 	}
-	response, err := h.transferService.FindByUserID(userID)
+	response, err := h.transferService.WithContext(c.Request.Context()).FindByUserID(userID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -88,14 +88,14 @@ func (h *TransferHandler) Update(c *gin.Context) {
 	}
 	var req transferRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithBindingError(c, err)
 		return
 	}
 	userID, ok := getUserID(c)
 	if !ok {
 		return
 	}
-	response, err := h.transferService.Update(userID, id, req.serviceRequest())
+	response, err := h.transferService.WithContext(c.Request.Context()).Update(userID, id, req.serviceRequest())
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -112,7 +112,7 @@ func (h *TransferHandler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.transferService.Delete(userID, id); err != nil {
+	if err := h.transferService.WithContext(c.Request.Context()).Delete(userID, id); err != nil {
 		respondWithServiceError(c, err)
 		return
 	}

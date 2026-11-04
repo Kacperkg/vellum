@@ -1,12 +1,15 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/kacperkg/vellum/internal/calendar"
 	"github.com/kacperkg/vellum/internal/models"
+	"github.com/kacperkg/vellum/internal/money"
 	"github.com/kacperkg/vellum/internal/repository"
 )
 
@@ -51,7 +54,7 @@ func (s *TransactionService) Create(userID uuid.UUID, req CreateTransactionReque
 		Amount:     req.Amount,
 		AccountID:  req.AccountID,
 		CategoryID: req.CategoryID,
-		Date:       req.Date,
+		Date:       calendar.Day(req.Date),
 		Frequency:  req.Frequency,
 		Type:       req.Type,
 	}
@@ -60,7 +63,7 @@ func (s *TransactionService) Create(userID uuid.UUID, req CreateTransactionReque
 		return nil, err
 	}
 
-	return transactionResponse(transaction), nil
+	return transactionResponse(transaction)
 }
 
 func (s *TransactionService) GetByID(userID, transactionID uuid.UUID) (*TransactionResponse, error) {
@@ -75,7 +78,7 @@ func (s *TransactionService) GetByID(userID, transactionID uuid.UUID) (*Transact
 		return nil, ErrTransactionNotFound
 	}
 
-	return transactionResponse(transaction), nil
+	return transactionResponse(transaction)
 }
 
 func (s *TransactionService) FindByUserID(userID uuid.UUID) ([]*TransactionResponse, error) {
@@ -84,7 +87,7 @@ func (s *TransactionService) FindByUserID(userID uuid.UUID) ([]*TransactionRespo
 		return nil, err
 	}
 
-	return transactionResponses(transactions), nil
+	return transactionResponses(transactions)
 }
 
 func (s *TransactionService) Update(userID, transactionID uuid.UUID, req UpdateTransactionRequest) (*TransactionResponse, error) {
@@ -119,7 +122,7 @@ func (s *TransactionService) Update(userID, transactionID uuid.UUID, req UpdateT
 	transaction.Amount = req.Amount
 	transaction.AccountID = req.AccountID
 	transaction.CategoryID = req.CategoryID
-	transaction.Date = req.Date
+	transaction.Date = calendar.Day(req.Date)
 	transaction.Frequency = req.Frequency
 	transaction.Type = req.Type
 
@@ -130,7 +133,7 @@ func (s *TransactionService) Update(userID, transactionID uuid.UUID, req UpdateT
 		return nil, err
 	}
 
-	return transactionResponse(transaction), nil
+	return transactionResponse(transaction)
 }
 
 func (s *TransactionService) Delete(userID, transactionID uuid.UUID) error {
@@ -162,7 +165,7 @@ func (s *TransactionService) FindByAccountID(userID, accountID uuid.UUID) ([]*Tr
 		return nil, err
 	}
 
-	return transactionResponses(transactions), nil
+	return transactionResponses(transactions)
 }
 
 func (s *TransactionService) FindByCategoryID(userID, categoryID uuid.UUID) ([]*TransactionResponse, error) {
@@ -175,11 +178,12 @@ func (s *TransactionService) FindByCategoryID(userID, categoryID uuid.UUID) ([]*
 		return nil, err
 	}
 
-	return transactionResponses(transactions), nil
+	return transactionResponses(transactions)
 }
 
 func (s *TransactionService) FindByDateRange(userID uuid.UUID, startDate, endDate time.Time) ([]*TransactionResponse, error) {
-	if startDate.IsZero() || endDate.IsZero() || startDate.After(endDate) {
+	startDate, endDate = calendar.Day(startDate), calendar.Day(endDate)
+	if !calendar.Valid(startDate) || !calendar.Valid(endDate) || startDate.After(endDate) || endDate.Sub(startDate) > MaxTransactionDateRange {
 		return nil, ErrTransactionDateRange
 	}
 
@@ -188,7 +192,7 @@ func (s *TransactionService) FindByDateRange(userID uuid.UUID, startDate, endDat
 		return nil, err
 	}
 
-	return transactionResponses(transactions), nil
+	return transactionResponses(transactions)
 }
 
 func (s *TransactionService) FindByFrequency(userID uuid.UUID, frequency models.Frequency) ([]*TransactionResponse, error) {
@@ -201,7 +205,7 @@ func (s *TransactionService) FindByFrequency(userID uuid.UUID, frequency models.
 		return nil, err
 	}
 
-	return transactionResponses(transactions), nil
+	return transactionResponses(transactions)
 }
 
 func (s *TransactionService) validateRelations(userID, accountID, categoryID uuid.UUID) error {
@@ -218,6 +222,12 @@ func (s *TransactionService) validateAccount(userID, accountID uuid.UUID) error 
 	}
 
 	account, err := s.accountRepository.GetByID(accountID)
+	if errors.Is(err, money.ErrRange) && account != nil {
+		if account.UserID != userID {
+			return ErrAccountNotFound
+		}
+		err = nil
+	}
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return ErrAccountNotFound
@@ -259,8 +269,14 @@ func validateTransaction(
 	frequency models.Frequency,
 	transactionType models.TransactionType,
 ) error {
+	if err := validateResourceName(name); err != nil {
+		return err
+	}
 	if strings.TrimSpace(name) == "" {
 		return ErrTransactionNameRequired
+	}
+	if !money.Valid(amount) {
+		return money.ErrRange
 	}
 	if amount <= 0 {
 		return ErrTransactionAmountPositive
@@ -271,7 +287,7 @@ func validateTransaction(
 	if categoryID == uuid.Nil {
 		return ErrCategoryRequired
 	}
-	if date.IsZero() {
+	if !calendar.Valid(date) {
 		return ErrTransactionDateRequired
 	}
 	if !validFrequency(frequency) {
@@ -297,24 +313,40 @@ func validTransactionType(transactionType models.TransactionType) bool {
 	return transactionType == models.Income || transactionType == models.Expense
 }
 
-func transactionResponse(transaction *models.Transaction) *TransactionResponse {
+func transactionResponse(transaction *models.Transaction) (*TransactionResponse, error) {
+	if !money.Valid(transaction.Amount) {
+		return nil, money.ErrRange
+	}
 	return &TransactionResponse{
 		ID:         transaction.ID,
 		Name:       transaction.Name,
 		Amount:     transaction.Amount,
 		AccountID:  transaction.AccountID,
 		CategoryID: transaction.CategoryID,
-		Date:       transaction.Date,
+		Date:       calendar.Day(transaction.Date.UTC()),
 		Frequency:  transaction.Frequency,
 		Type:       transaction.Type,
-	}
+	}, nil
 }
 
-func transactionResponses(transactions []*models.Transaction) []*TransactionResponse {
+func transactionResponses(transactions []*models.Transaction) ([]*TransactionResponse, error) {
 	responses := make([]*TransactionResponse, 0, len(transactions))
 	for _, transaction := range transactions {
-		responses = append(responses, transactionResponse(transaction))
+		response, err := transactionResponse(transaction)
+		if err != nil {
+			return nil, err
+		}
+		responses = append(responses, response)
 	}
 
-	return responses
+	return responses, nil
+}
+
+// WithContext returns a request-scoped copy; the shared service is never mutated.
+func (s *TransactionService) WithContext(ctx context.Context) *TransactionService {
+	clone := *s
+	clone.transactionRepository = s.transactionRepository.WithContext(ctx)
+	clone.accountRepository = s.accountRepository.WithContext(ctx)
+	clone.categoryRepository = s.categoryRepository.WithContext(ctx)
+	return &clone
 }

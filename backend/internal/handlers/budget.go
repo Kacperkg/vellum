@@ -28,7 +28,7 @@ func (h *BudgetHandler) Create(c *gin.Context) {
 
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithBindingError(c, err)
 		return
 	}
 
@@ -37,7 +37,7 @@ func (h *BudgetHandler) Create(c *gin.Context) {
 		return
 	}
 
-	response, err := h.budgetService.Create(userID, services.CreateBudgetRequest(req))
+	response, err := h.budgetService.WithContext(c.Request.Context()).Create(userID, services.CreateBudgetRequest(req))
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -56,7 +56,7 @@ func (h *BudgetHandler) Update(c *gin.Context) {
 
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithBindingError(c, err)
 		return
 	}
 
@@ -65,7 +65,7 @@ func (h *BudgetHandler) Update(c *gin.Context) {
 		return
 	}
 
-	response, err := h.budgetService.Update(userID, budgetID, services.UpdateBudgetRequest(req))
+	response, err := h.budgetService.WithContext(c.Request.Context()).Update(userID, budgetID, services.UpdateBudgetRequest(req))
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -85,7 +85,7 @@ func (h *BudgetHandler) FindByID(c *gin.Context) {
 		return
 	}
 
-	response, err := h.budgetService.FindByID(userID, budgetID)
+	response, err := h.budgetService.WithContext(c.Request.Context()).FindByID(userID, budgetID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -100,7 +100,7 @@ func (h *BudgetHandler) ListByUser(c *gin.Context) {
 		return
 	}
 
-	response, err := h.budgetService.FindByUserID(userID)
+	response, err := h.budgetService.WithContext(c.Request.Context()).FindByUserID(userID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -120,7 +120,7 @@ func (h *BudgetHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	err := h.budgetService.Delete(userID, budgetID)
+	err := h.budgetService.WithContext(c.Request.Context()).Delete(userID, budgetID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return

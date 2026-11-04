@@ -8,6 +8,41 @@ explain where money goes and how much remains available.
 [Production application](https://vellum.kacpergajdarski.com) ·
 [Staging environment](https://staging.vellum.kacpergajdarski.com)
 
+## Code walkthrough: Transfers
+
+Moving money between your accounts changes both balances without counting as
+income or spending. Follow this five-minute path through the implementation:
+
+- **Submit:** [`NewTransactionDialog.handleSubmit`](frontend/src/features/transactions/components/NewTransactionDialog.tsx#L91)
+  converts the amount to integer minor units and passes the source and destination
+  to [`createTransfer`](frontend/src/api/endpoints/transfers.ts#L15), which sends
+  `POST /api/transfers`. A rejected request keeps the form open with its inputs
+  and an error; submission is re-enabled.
+- **Update the UI:** after a successful save,
+  [`FinanceDataContext.refresh`](frontend/src/contexts/FinanceDataContext.tsx#L78)
+  reloads the shared resources before the form closes.
+  [Account cards](frontend/src/features/accounts/pages/Accounts.tsx#L197) render
+  the refreshed server balance: the [account calculation](backend/internal/repository/financial.go#L16)
+  subtracts outgoing transfers and adds incoming ones.
+- **Keep spending separate:** the [overview totals](frontend/src/features/overview/pages/Home.tsx#L66)
+  sum income and expenses from transactions only. Transfers are separate records;
+  the [activity helpers](frontend/src/features/transactions/utils/activity.ts#L82)
+  give them opposite account impacts and zero overall net impact, and calculate
+  the form's source-balance preview.
+- **Verify the rule:** the [salary → transfer → subscription regression](frontend/src/features/transactions/utils/activity.test.mjs#L57)
+  checks that £1,000 income, a £200 transfer and a £10 expense leave £800 in the
+  source and £190 in the destination, while overall net remains £990. This tests
+  the production calculation helpers; the [browser workflow](frontend/e2e/workflows.spec.ts#L85)
+  separately exercises form submission, persisted balances and an account card.
+
+Run the calculation regressions locally (Node.js and pnpm required; no database):
+
+```sh
+cd frontend
+pnpm install --frozen-lockfile
+pnpm test:finance
+```
+
 ![Vellum overview with synthetic demo data](docs/screenshots/overview.png)
 
 ## Features
@@ -206,12 +241,13 @@ AWS OIDC and Systems Manager. Release manifests record
 immutable image digests and staging verification evidence. The
 [delivery guide](deploy/CI-CD.md) records a successful end-to-end staging release.
 
-**Production deployment automation remains disabled:** its workflow is stored as
-[`release-production.yml.disabled`](.github/workflows/release-production.yml.disabled).
-The prepared promotion design reuses verified staging image digests through a
-reviewed release manifest on `main`, with separate approval and backup/schema
-gates. It is not an active production pipeline. Consult the
-[deployment runbook](deploy/README.md) for manual operations and recovery.
+For production, merge the reviewed `staging` changes into `main`. Prepare the
+standard release-specific backup and restore approval, then open **Actions →
+Promote production → Run workflow** on `main` and tick the deployment
+confirmation. The workflow finds the single successful staging release whose
+tested files match `main` and deploys its existing image digests. A merge alone
+cannot deploy production. See the [production runbook](deploy/PRODUCTION-ACTIVATION.md)
+for approval, merge compatibility and missing-release troubleshooting.
 
 ## Security and operational limits
 

@@ -120,6 +120,16 @@ func NewAuthRateLimiter(limits map[AuthEndpoint]RateLimit, maxEntries, sharedIPM
 		}
 		immutableLimits[endpoint] = limit
 	}
+	return &AuthRateLimiter{
+		store:              newBoundedStore(maxEntries),
+		limits:             immutableLimits,
+		sharedIPMultiplier: sharedIPMultiplier,
+		work:               authConcurrency{networks: make(map[string]int), maxTotal: 8, maxNetwork: 2},
+		now:                time.Now,
+	}
+}
+
+func newBoundedStore(maxEntries int) *boundedStore {
 	shardCount := min(32, maxEntries)
 	shards := make([]rateShard, shardCount)
 	for i := range shards {
@@ -128,13 +138,7 @@ func NewAuthRateLimiter(limits map[AuthEndpoint]RateLimit, maxEntries, sharedIPM
 			shards[i].max++
 		}
 	}
-	return &AuthRateLimiter{
-		store:              &boundedStore{shards: shards},
-		limits:             immutableLimits,
-		sharedIPMultiplier: sharedIPMultiplier,
-		work:               authConcurrency{networks: make(map[string]int), maxTotal: 8, maxNetwork: 2},
-		now:                time.Now,
-	}
+	return &boundedStore{shards: shards}
 }
 
 func (l *AuthRateLimiter) Handler(endpoint AuthEndpoint) gin.HandlerFunc {

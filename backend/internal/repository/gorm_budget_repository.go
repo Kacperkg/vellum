@@ -1,11 +1,13 @@
 package repository
 
 import (
+	"context"
 	"errors"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/kacperkg/vellum/internal/models"
+	"github.com/kacperkg/vellum/internal/money"
 	"gorm.io/gorm"
 )
 
@@ -20,6 +22,9 @@ func NewBudgetRepository(db *gorm.DB) BudgetRepository {
 }
 
 func (r *budgetRepository) Create(budget *models.Budget) error {
+	if !money.Valid(budget.AllocatedAmount) {
+		return money.ErrRange
+	}
 	return budgetWriteError(r.db.Create(budget).Error)
 }
 
@@ -45,6 +50,9 @@ func (r *budgetRepository) FindByUserID(userID uuid.UUID) ([]*models.Budget, err
 }
 
 func (r *budgetRepository) Update(userID uuid.UUID, budget *models.Budget) error {
+	if !money.Valid(budget.AllocatedAmount) {
+		return money.ErrRange
+	}
 	result := r.db.Model(&models.Budget{}).
 		Where("id = ? AND user_id = ?", budget.ID, userID).
 		Updates(map[string]any{
@@ -67,4 +75,9 @@ func budgetWriteError(err error) error {
 
 func (r *budgetRepository) Delete(userID, id uuid.UUID) error {
 	return mutationError(r.db.Delete(&models.Budget{}, "id = ? AND user_id = ?", id, userID))
+}
+
+// WithContext returns a request-scoped clone; the shared repository is never mutated.
+func (r *budgetRepository) WithContext(ctx context.Context) BudgetRepository {
+	return &budgetRepository{db: r.db.WithContext(ctx)}
 }

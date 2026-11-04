@@ -4,25 +4,8 @@ name: Promote production
 on:
   workflow_dispatch:
     inputs:
-      expected_sha:
-        description: Exact 40-character reviewed main commit SHA to promote
-        required: true
-        type: string
       confirm_production_deployment:
         description: I approve production replacement, API downtime, migrations and smoke requests
-        required: true
-        default: false
-        type: boolean
-      recovery_approval:
-        description: Recovery approval (prelaunch is a one-use exception before 4 November 2026 UTC)
-        required: true
-        default: standard
-        type: choice
-        options:
-          - standard
-          - prelaunch
-      confirm_prelaunch_data_loss:
-        description: No public users; I accept pre-launch data loss without verified restore
         required: true
         default: false
         type: boolean
@@ -34,8 +17,13 @@ concurrency:
   group: vellum-deploy-production
   cancel-in-progress: false
 
+env:
+  CONFIRM_PRODUCTION_DEPLOYMENT: ${{ inputs.confirm_production_deployment }}
+  VELLUM_CD_ENABLED: ${{ vars.VELLUM_CD_ENABLED }}
+  PRODUCTION_APPROVAL_MODE: ${{ vars.PRODUCTION_APPROVAL_MODE }}
+
 jobs:
-  promote:
+  discover:
     if: >-
       github.event_name == 'workflow_dispatch' &&
       github.repository == 'Kacperkg/vellum' &&
@@ -43,31 +31,51 @@ jobs:
       vars.VELLUM_CD_ENABLED == 'true' && vars.PRODUCTION_APPROVAL_MODE == 'manual' &&
       inputs.confirm_production_deployment == true
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    environment: production
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read
-      id-token: write
-    env:
-      EXPECTED_SHA: ${{ inputs.expected_sha }}
-      CONFIRM_PRODUCTION_DEPLOYMENT: ${{ inputs.confirm_production_deployment }}
-      VELLUM_CD_ENABLED: ${{ vars.VELLUM_CD_ENABLED }}
-      PRODUCTION_APPROVAL_MODE: ${{ vars.PRODUCTION_APPROVAL_MODE }}
-      PRODUCTION_RECOVERY_APPROVAL: ${{ inputs.recovery_approval }}
-      CONFIRM_PRELAUNCH_DATA_LOSS: ${{ inputs.confirm_prelaunch_data_loss }}
+    outputs:
+      release: ${{ steps.release.outputs.release }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Validate explicit production request before resolution or AWS credentials
-        run: python3 scripts/ci/production_release.py guard
-      - name: Resolve approved staging artifact and compare tested source trees
+      - name: Find the unique tested staging release (read only)
+        id: release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci/production_release.py resolve --output approved-release.json
+        run: python3 scripts/ci/production_release.py discover
+
+  promote:
+    needs: discover
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.repository == 'Kacperkg/vellum' &&
+      github.ref == 'refs/heads/main' && github.ref_protected &&
+      vars.VELLUM_CD_ENABLED == 'true' && vars.PRODUCTION_APPROVAL_MODE == 'manual' &&
+      inputs.confirm_production_deployment == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      EXPECTED_RELEASE: ${{ needs.discover.outputs.release }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Revalidate the exact staging release before AWS credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/production_release.py prepare --output approved-release.json
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}

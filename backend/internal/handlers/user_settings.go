@@ -29,7 +29,7 @@ func (h *UserSettingsHandler) Get(c *gin.Context) {
 		return
 	}
 
-	response, err := h.userSettingsService.Get(userID)
+	response, err := h.userSettingsService.WithContext(c.Request.Context()).Get(userID)
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
@@ -41,7 +41,7 @@ func (h *UserSettingsHandler) Get(c *gin.Context) {
 func (h *UserSettingsHandler) Update(c *gin.Context) {
 	var req userSettingsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWithBindingError(c, err)
 		return
 	}
 
@@ -50,7 +50,7 @@ func (h *UserSettingsHandler) Update(c *gin.Context) {
 		return
 	}
 
-	response, err := h.userSettingsService.Update(userID, services.UpdateUserSettingsRequest(req))
+	response, err := h.userSettingsService.WithContext(c.Request.Context()).Update(userID, services.UpdateUserSettingsRequest(req))
 	if err != nil {
 		respondWithServiceError(c, err)
 		return
