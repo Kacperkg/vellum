@@ -34,20 +34,16 @@ def context():
         "VELLUM_CD_ENABLED": "true",
         "PRODUCTION_APPROVAL_MODE": "manual",
         "CONFIRM_PRODUCTION_DEPLOYMENT": "true",
-        "EXPECTED_SHA": SHA,
+        "GITHUB_WORKFLOW_SHA": SHA,
         "GITHUB_SHA": SHA,
         "GITHUB_RUN_ID": "67890",
         "GITHUB_RUN_ATTEMPT": "1",
     }
 
 
-def selector(digest="d" * 64):
-    return {"staging_run_id": RUN, "staging_run_attempt": ATTEMPT, "manifest_sha256": digest}
-
-
 def run():
     return {
-        "id": RUN, "run_attempt": ATTEMPT,
+        "id": RUN, "run_attempt": ATTEMPT, "repository": {"id": 42},
         "head_repository": {"full_name": "Kacperkg/vellum"},
         "event": "push", "head_branch": "staging", "path": release.WORKFLOW,
         "status": "completed", "conclusion": "success", "head_sha": SHA,
@@ -76,21 +72,6 @@ def manifest():
 
 
 class GuardTests(unittest.TestCase):
-    def test_prelaunch_requires_two_explicit_inputs_and_default_is_standard(self):
-        for values, expected in (({}, "standard"),
-            ({"PRODUCTION_RECOVERY_APPROVAL": "standard", "CONFIRM_PRELAUNCH_DATA_LOSS": "false"}, "standard"),
-            ({"PRODUCTION_RECOVERY_APPROVAL": "prelaunch", "CONFIRM_PRELAUNCH_DATA_LOSS": "true"}, "prelaunch")):
-            with self.subTest(values=values), patch.dict(os.environ, values, clear=True):
-                self.assertEqual(production.recovery_approval_mode(), expected)
-        for mode, ack in (("prelaunch", None), ("prelaunch", "false"), ("prelaunch", "True"),
-                          ("prelaunch", "1"), ("standard", "true"), ("", "true"),
-                          ("Prelaunch", "true"), ("$(id)", "true")):
-            values = {"PRODUCTION_RECOVERY_APPROVAL": mode}
-            if ack is not None: values["CONFIRM_PRELAUNCH_DATA_LOSS"] = ack
-            with self.subTest(values=values), patch.dict(os.environ, {**context(), **values}, clear=True), patch.object(release, "git") as git:
-                with self.assertRaises(ValueError): production.guard()
-                git.assert_not_called()
-
     def test_exact_protected_main_and_checkout_are_required(self):
         with patch.dict(os.environ, context(), clear=True), patch.object(release, "git", return_value=SHA) as git:
             self.assertEqual(production.guard(), SHA)
@@ -112,7 +93,7 @@ class GuardTests(unittest.TestCase):
             "VELLUM_CD_ENABLED": ("false", "True", "1", ""),
             "PRODUCTION_APPROVAL_MODE": ("environment", "Manual", "", "true"),
             "CONFIRM_PRODUCTION_DEPLOYMENT": ("false", "True", "1", ""),
-            "EXPECTED_SHA": ("", "a" * 39, "a" * 41, "A" * 40, "0" * 40, "b" * 40, "$(id)", SHA + "\n"),
+            "GITHUB_WORKFLOW_SHA": ("", "a" * 39, "a" * 41, "A" * 40, "0" * 40, "b" * 40, "$(id)", SHA + "\n"),
             "GITHUB_SHA": ("", "b" * 40),
             "GITHUB_RUN_ID": ("", "0", "-1", "01", "1.0", "1\n", "1" * 19),
             "GITHUB_RUN_ATTEMPT": ("", "0", "-1", "01", "1.0", "1\n", "1" * 19),
@@ -141,228 +122,220 @@ class GuardTests(unittest.TestCase):
                 production.current_main(SHA)
 
 
-class SelectionTests(unittest.TestCase):
-    def test_exact_schema_and_values_are_required(self):
-        with patch.object(release, "read_json", return_value=selector()) as read:
-            self.assertEqual(production.selection(), selector())
-            read.assert_called_once_with("deploy/production-release.json")
-        invalid = [None, [], "manifest", {}, {**selector(), "artifact_id": 9}]
-        for key in selector():
-            missing = selector()
-            del missing[key]
-            invalid.append(missing)
-        for key in ("staging_run_id", "staging_run_attempt"):
-            for value in (None, True, False, 0, -1, 10**18, "12345", 1.5):
-                invalid.append({**selector(), key: value})
-        for value in (None, True, 123, "", "D" * 64, "d" * 63, "d" * 65, "d" * 64 + "\n", "$(id)"):
-            invalid.append({**selector(), "manifest_sha256": value})
-        for selected in invalid:
-            with self.subTest(selection=selected), patch.object(release, "read_json", return_value=selected), self.assertRaises(ValueError):
-                production.selection()
-
-    def test_null_selector_fails_before_any_github_or_release_access(self):
-        selected = dict.fromkeys(selector())
-        with patch.object(production, "guard", return_value=SHA), patch.object(release, "read_json", return_value=selected), patch.object(release, "api") as api, patch.object(release, "resolve") as resolve, self.assertRaisesRegex(ValueError, "fresh successful ordinary staging-push"):
-            production.resolve(argparse.Namespace(output="unused"))
-        api.assert_not_called()
-        resolve.assert_not_called()
-
-    def test_repository_selector_is_unconfigured_or_complete_and_valid(self):
-        selected = json.loads((ROOT / production.SELECTION).read_bytes())
-        if selected == dict.fromkeys(selector()):
-            return
-        # A later reviewed promotion must be able to configure this file without
-        # changing regression tests. Partial or malformed selections still fail.
-        with patch.object(release, "read_json", return_value=selected):
-            self.assertEqual(production.selection(), selected)
-
-
-class EligibilityTests(unittest.TestCase):
-    def api(self, path, raw=False):
-        self.paths.append(path)
-        if "/jobs?" in path:
-            page = int(path.rsplit("=", 1)[1])
-            return {"jobs": self.pages[page - 1]}
-        return self.exact if "/attempts/" in path else self.latest
-
+class DiscoveryTests(unittest.TestCase):
     def setUp(self):
-        self.paths = []
-        self.latest, self.exact = run(), run()
-        self.pages = [jobs()]
+        self.runs = [run()]
+        self.latest = run()
+        self.exact = run()
+        self.jobs = jobs()
+        self.artifacts = []
+        self.publish(manifest())
+        for name, kwargs in (
+            ("api", {"side_effect": self.api}),
+            ("git", {"return_value": SHA}),
+            ("bundle_hashes", {"return_value": manifest()["deployment_files"]}),
+        ):
+            mock = patch.object(release, name, **kwargs)
+            mock.start()
+            self.addCleanup(mock.stop)
+        mock = patch.object(production, "git_matches", return_value=True)
+        self.git_matches = mock.start()
+        self.addCleanup(mock.stop)
 
-    def eligible(self):
-        with patch.object(release, "api", side_effect=self.api), patch.object(production.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as git:
-            production.eligible(selector())
-            return git
+    def publish(self, value, *, checksum=None, backend="b" * 64, frontend="c" * 64):
+        self.data = release.canonical(value)
+        checksum = checksum or hashlib.sha256(self.data).hexdigest()
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("release.json", self.data)
+        self.archive = buffer.getvalue()
+        self.artifacts[:] = [{
+            "id": 987, "expired": False,
+            "name": f"vellum-release-{RUN}-{ATTEMPT}-{checksum}-{backend}-{frontend}",
+            "digest": "sha256:" + hashlib.sha256(self.archive).hexdigest(),
+            "workflow_run": {
+                "id": RUN, "repository_id": 42, "head_repository_id": 42,
+                "head_branch": "staging", "head_sha": SHA,
+            },
+        }]
 
-    def test_successful_latest_exact_attempt_and_required_jobs_are_accepted(self):
-        git = self.eligible()
-        base = f"/repos/{production.REPOSITORY}/actions/runs/{RUN}"
-        self.assertEqual(self.paths, [base, f"{base}/attempts/{ATTEMPT}", f"{base}/attempts/{ATTEMPT}/jobs?per_page=100&page=1"])
-        git.assert_called_once_with(["git", "merge-base", "--is-ancestor", SHA, "refs/remotes/origin/staging"], capture_output=True)
+    def api(self, path, raw=False):
+        base = f"{production.API}/actions/runs/{RUN}"
+        if "/git/ref/heads/" in path:
+            return {"object": {"sha": SHA}}
+        if path.startswith(production.STAGING_WORKFLOW + "/runs?"):
+            self.assertIn("branch=staging&event=push&created=", path)
+            self.assertNotIn("status=success", path)
+            return {"total_count": len(self.runs), "workflow_runs": self.runs}
+        if path == base:
+            return self.latest
+        if path == f"{base}/attempts/{ATTEMPT}":
+            return self.exact
+        if path.startswith(f"{base}/attempts/{ATTEMPT}/jobs?"):
+            return {"jobs": self.jobs}
+        if path.startswith(f"{base}/artifacts?"):
+            return {"artifacts": self.artifacts}
+        if path.endswith("/artifacts/987/zip"):
+            self.assertTrue(raw)
+            return self.archive
+        self.fail(f"unexpected API request: {path}")
 
-    def test_manual_wrong_repository_workflow_branch_and_unsuccessful_runs_fail(self):
-        mutations = (
-            ("id", 42), ("run_attempt", 1), ("run_attempt", 3),
-            ("event", "workflow_dispatch"), ("event", "pull_request"),
-            ("head_repository", {"full_name": "attacker/vellum"}),
-            ("head_branch", "main"), ("head_branch", "feature/test"),
-            ("path", ".github/workflows/bootstrap-ghcr.yml"),
-            ("status", "in_progress"), ("status", "queued"),
-            *(("conclusion", conclusion) for conclusion in ("failure", "cancelled", "timed_out", "skipped", None)),
-        )
-        for target, (key, value) in itertools.product(("latest", "exact"), mutations):
-            self.latest, self.exact = run(), run()
-            getattr(self, target)[key] = value
-            with self.subTest(target=target, key=key, value=value), self.assertRaises(ValueError):
-                self.eligible()
+    def test_selects_exact_tested_release_for_a_different_main_sha(self):
+        main = "e" * 40
+        identity, data, value = production.discover(main)
+        self.assertEqual(identity, f"{RUN}:{ATTEMPT}:987:{hashlib.sha256(data).hexdigest()}")
+        self.assertEqual(value, manifest())
+        self.git_matches.assert_any_call("diff", "--quiet", "--no-ext-diff",
+                                         "--ignore-submodules=none", SHA, main, "--",
+                                         *production.RELEASE_PATHS)
 
-    def test_exact_attempt_source_must_match_latest_and_be_valid(self):
-        for source in ("b" * 40, "", "a" * 39, "A" * 40, None):
-            self.latest, self.exact = run(), {**run(), "head_sha": source}
-            with self.subTest(source=source), self.assertRaisesRegex(ValueError, "source mismatch"):
-                self.eligible()
-        self.latest = self.exact = {**run(), "head_sha": "not-a-sha"}
-        with self.assertRaisesRegex(ValueError, "source mismatch"):
-            self.eligible()
+    def test_refuses_multiple_eligible_releases(self):
+        self.runs.append({**run(), "id": RUN + 1})
+        with patch.object(production, "exact_run"), patch.object(production, "check_jobs", return_value=True), patch.object(
+            production, "verified_artifact", side_effect=[("first", b"x", {}), ("second", b"y", {})]
+        ), patch.object(release, "api", side_effect=lambda path, **kw: (
+            run() if f"/runs/{RUN + 1}" in path else self.api(path, **kw)
+        )), self.assertRaisesRegex(ValueError, "multiple eligible staging releases"):
+            production.discover(SHA)
 
-    def test_every_required_ci_and_publication_job_must_succeed(self):
-        mutations = (
-            ("status", "queued"), ("status", "in_progress"),
-            ("conclusion", "skipped"), ("conclusion", "failure"),
-            ("conclusion", "cancelled"), ("conclusion", "timed_out"),
-            ("conclusion", None), ("run_attempt", ATTEMPT - 1),
-            ("run_id", RUN + 1), ("head_sha", "b" * 40),
-        )
-        for index, (key, value) in itertools.product(range(len(production.REQUIRED_JOBS)), mutations):
-            self.pages = [jobs()]
-            self.pages[0][index][key] = value
-            with self.subTest(job=production.REQUIRED_JOBS[index], key=key, value=value), self.assertRaisesRegex(ValueError, "did not succeed"):
-                self.eligible()
+    def test_refuses_no_release_or_failed_rerun(self):
+        self.runs = [{**run(), "run_attempt": ATTEMPT + 1, "conclusion": "failure"}]
+        with self.assertRaisesRegex(ValueError, "no eligible staging release"):
+            production.discover(SHA)
+        self.runs = [run()]
+        self.latest = {**run(), "run_attempt": ATTEMPT + 1, "conclusion": "failure"}
+        with self.assertRaisesRegex(ValueError, "attempt mismatch"):
+            production.discover(SHA)
 
-    def test_missing_duplicate_and_ambiguous_required_jobs_fail(self):
-        for index in range(len(production.REQUIRED_JOBS)):
-            for duplicate in (False, True):
-                self.pages = [jobs()]
-                if duplicate:
-                    self.pages[0].append(dict(self.pages[0][index]))
-                else:
-                    self.pages[0].pop(index)
-                with self.subTest(index=index, duplicate=duplicate), self.assertRaisesRegex(ValueError, "missing or ambiguous"):
-                    self.eligible()
+    def test_manual_runs_and_artifacts_cannot_promote(self):
+        self.runs = [{**run(), "event": "workflow_dispatch"}]
+        with self.assertRaisesRegex(ValueError, "no eligible"):
+            production.discover(SHA)
+        self.runs = [run()]
+        self.artifacts[0]["name"] = f"vellum-staging-verification-{RUN}-{ATTEMPT}"
+        with self.assertRaisesRegex(ValueError, "no eligible"):
+            production.discover(SHA)
 
-    def test_attempt_jobs_are_paginated_and_bounded(self):
-        self.pages = [[{"name": f"unrelated-{i}"} for i in range(100)], jobs()]
-        self.eligible()
-        self.assertTrue(self.paths[-1].endswith("page=2"))
-        self.pages = [[{"name": "unrelated"}] * 100] * 20
-        with self.assertRaisesRegex(ValueError, "too many staging jobs"):
-            self.eligible()
+    def test_docs_only_push_without_publication_is_not_eligible(self):
+        self.jobs[-1]["conclusion"] = "skipped"
+        with self.assertRaisesRegex(ValueError, "no eligible"):
+            production.discover(SHA)
 
-    def test_unrelated_source_or_git_failure_refuses_release(self):
-        for code in (1, 128):
-            with self.subTest(returncode=code), patch.object(release, "api", side_effect=self.api), patch.object(production.subprocess, "run", return_value=subprocess.CompletedProcess([], code)), self.assertRaisesRegex(ValueError, "outside current staging history"):
-                production.eligible(selector())
+    def test_rejects_missing_artifact_or_source_mismatch(self):
+        self.artifacts.clear()
+        with self.assertRaisesRegex(ValueError, "no eligible"):
+            production.discover(SHA)
+        self.publish(manifest())
+        self.git_matches.side_effect = [True, False]
+        with self.assertRaisesRegex(ValueError, "no eligible"):
+            production.discover(SHA)
+
+    def test_rejects_wrong_exact_attempt_and_required_job(self):
+        self.exact["head_sha"] = "e" * 40
+        with self.assertRaisesRegex(ValueError, "staging source"):
+            production.discover(SHA)
+        self.exact = run()
+        self.jobs[0]["run_attempt"] = ATTEMPT - 1
+        with self.assertRaisesRegex(ValueError, "wrong attempt"):
+            production.discover(SHA)
+
+    def test_rejects_bad_artifact_provenance_and_checksums(self):
+        for key, value, pattern in (
+            ("workflow_run", {}, "id"),
+            ("workflow_run", {**self.artifacts[0]["workflow_run"], "id": RUN + 1}, "provenance"),
+            ("digest", "sha256:" + "0" * 64, "archive checksum"),
+        ):
+            with self.subTest(key=key, value=value):
+                self.publish(manifest())
+                self.artifacts[0][key] = value
+                with self.assertRaisesRegex((ValueError, KeyError), pattern):
+                    production.discover(SHA)
+        self.publish(manifest(), checksum="e" * 64)
+        with self.assertRaisesRegex(ValueError, "manifest checksum"):
+            production.discover(SHA)
+
+    def test_rejects_valid_but_wrong_image_digest_and_bundle_hashes(self):
+        value = manifest()
+        value["images"]["backend"] = value["images"]["backend"][:-64] + "e" * 64
+        self.publish(value)
+        with self.assertRaisesRegex(ValueError, "image digests differ"):
+            production.discover(SHA)
+        value = manifest()
+        value["deployment_files"]["cd/controller.py"] = "e" * 64
+        self.publish(value)
+        with self.assertRaisesRegex(ValueError, "six-file deployment bundle"):
+            production.discover(SHA)
+
+    def test_rejects_truncated_listing_instead_of_assuming_uniqueness(self):
+        for total in (2, 1000):
+            with patch.object(release, "api", return_value={"total_count": total, "workflow_runs": [run()]}):
+                with self.assertRaisesRegex(ValueError, "incomplete|safe limit"):
+                    production.paged("/test", "workflow_runs", limit=1000, count=True)
 
 
-class OperationTests(unittest.TestCase):
-    def test_resolve_calls_existing_resolver_only_after_all_runner_gates(self):
-        order = []
-        with patch.object(production, "guard", side_effect=lambda: order.append("guard") or SHA), patch.object(production, "selection", side_effect=lambda: order.append("selection") or selector()), patch.object(production, "current_main", side_effect=lambda sha: order.append("main")), patch.object(production, "eligible", side_effect=lambda chosen: order.append("eligible")), patch.object(release, "resolve", side_effect=lambda args: order.append("resolve")) as resolve:
-            production.resolve(argparse.Namespace(output="approved.json"))
-        self.assertEqual(order, ["guard", "selection", "main", "eligible", "resolve"])
-        self.assertEqual(vars(resolve.call_args.args[0]), {"selection": production.SELECTION, "output": "approved.json"})
-
-    def test_gate_failures_cannot_reach_resolve_or_dispatch(self):
-        for operation, gate in itertools.product(("resolve", "dispatch"), ("guard", "selection", "current_main", "eligible")):
-            with self.subTest(operation=operation, gate=gate), patch.object(production, "guard", return_value=SHA), patch.object(production, "selection", return_value=selector()), patch.object(production, "current_main"), patch.object(production, "eligible"), patch.object(production, gate, side_effect=ValueError("gate rejected")), patch.object(release, "resolve") as resolve, patch.object(release, "dispatch") as dispatch:
-                with self.assertRaisesRegex(ValueError, "gate rejected"):
-                    getattr(production, operation)(argparse.Namespace(output="unused", manifest="unused"))
-                resolve.assert_not_called()
-                dispatch.assert_not_called()
-
-    def test_dispatch_rechecks_gates_and_exact_reviewed_hash_before_aws(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "approved.json"
-            data = release.canonical(manifest())
-            path.write_bytes(data)
-            selected = selector(hashlib.sha256(data).hexdigest())
-            order = []
-            with patch.object(production, "guard", side_effect=lambda: order.append("guard") or SHA), patch.object(production, "selection", return_value=selected), patch.object(production, "current_main", side_effect=lambda sha: order.append("main")), patch.object(production, "eligible", side_effect=lambda value: order.append("eligible")), patch.object(release, "dispatch", side_effect=lambda args: order.append("dispatch")) as dispatch:
-                production.dispatch(argparse.Namespace(manifest=path))
-                self.assertEqual(order, ["guard", "main", "eligible", "dispatch"])
-                self.assertEqual(vars(dispatch.call_args.args[0]), {"environment": "production", "manifest": path, "approval_mode": "standard"})
-                path.write_bytes(data + b"\n")
-                dispatch.reset_mock()
-                with self.assertRaisesRegex(ValueError, "differs from the reviewed selector"):
-                    production.dispatch(argparse.Namespace(manifest=path))
-                dispatch.assert_not_called()
-
-    def test_dispatch_failure_propagates_without_fallback(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "approved.json"
-            path.write_bytes(b"manifest")
-            with patch.object(production, "guard", return_value=SHA), patch.object(production, "selection", return_value=selector(hashlib.sha256(b"manifest").hexdigest())), patch.object(production, "current_main"), patch.object(production, "eligible"), patch.object(release, "dispatch", side_effect=ValueError("remote command may still be running")) as dispatch, self.assertRaisesRegex(ValueError, "still be running"):
-                production.dispatch(argparse.Namespace(manifest=path))
-            dispatch.assert_called_once()
-
-    def test_real_resolver_rejects_bad_artifacts_checksums_digests_and_provenance(self):
-        original = release.canonical(manifest())
-        mutations = [
-            ("valid", None), ("manual artifact", None), ("expired", None),
-            ("missing", None), ("duplicate", None), ("bad checksum", None),
-            ("unexpected member", None), ("nested member", None), ("oversized member", None),
-            ("mutable image", lambda value: value["images"].update(backend="ghcr.io/kacperkg/vellum-backend:latest")),
-            ("foreign image", lambda value: value["images"].update(backend="ghcr.io/attacker/backend@sha256:" + "b" * 64)),
-            ("five files", lambda value: value["deployment_files"].pop("cd/coordination.py")),
-            ("wrong bundle", lambda value: value["deployment_files"].update({"cd/controller.py": "e" * 64})),
-            ("wrong source", lambda value: value.update(source_sha="b" * 40)),
-            ("wrong run", lambda value: value.update(run_id=RUN + 1)),
-            ("wrong attempt", lambda value: value.update(run_attempt=ATTEMPT + 1)),
-            ("unverified", lambda value: value["staging"].update(verified=False, command_id=None)),
-            *((f"different tree {path}", None) for path in release.SOURCE_PATHS),
-        ]
-        for case, mutate in mutations:
-            value = manifest()
-            if mutate:
-                mutate(value)
-            data = release.canonical(value)
-            archive = io.BytesIO()
-            with zipfile.ZipFile(archive, "w") as zipped:
-                zipped.writestr("nested/release.json" if case == "nested member" else "release.json", b"x" * (release.MAX_MANIFEST + 1) if case == "oversized member" else data)
-                if case == "unexpected member":
-                    zipped.writestr("controller.py", "raise RuntimeError('untrusted artifact must never execute')")
-            artifact = {"id": 987, "name": f"vellum-release-{RUN}-{ATTEMPT}", "expired": case == "expired"}
-            if case == "manual artifact":
-                artifact["name"] = f"vellum-staging-verification-{RUN}-{ATTEMPT}"
-
-            def api(path, raw=False):
-                if path.endswith("/zip"):
-                    return archive.getvalue()
-                if "/artifacts?" in path:
-                    return {"artifacts": [] if case == "missing" else [artifact] * (2 if case == "duplicate" else 1)}
-                return run()
+class GitEquivalenceTests(unittest.TestCase):
+    def test_different_commit_ids_with_only_inert_changes_can_promote(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            git_run = subprocess.run
 
             def git(*args):
-                if case.startswith("different tree ") and args[-1] == "HEAD:" + case.removeprefix("different tree "):
-                    return "different-tree"
-                return SHA
+                return subprocess.check_output(["git", "-C", directory, *args], text=True).strip()
 
-            with self.subTest(case=case), tempfile.TemporaryDirectory() as temp:
-                selected = Path(temp) / "selection.json"
-                selected.write_bytes(release.canonical(selector(hashlib.sha256(data).hexdigest())))
-                # Make checksum failure observable while retaining a valid ZIP.
-                if case == "bad checksum":
-                    selected.write_bytes(release.canonical(selector("e" * 64)))
-                target = Path(temp) / "approved.json"
-                with patch.dict(os.environ, context(), clear=True), patch.object(production, "SELECTION", str(selected)), patch.object(production, "current_main"), patch.object(production, "eligible"), patch.object(release, "api", side_effect=api), patch.object(release, "git", side_effect=git), patch.object(release, "bundle_hashes", return_value=manifest()["deployment_files"]):
-                    if case == "valid":
-                        production.resolve(argparse.Namespace(output=target))
-                        self.assertEqual(target.read_bytes(), original)
-                    else:
-                        with self.assertRaises(ValueError):
-                            production.resolve(argparse.Namespace(output=target))
-                        self.assertFalse(target.exists())
+            def commit():
+                git("add", ".")
+                git("-c", "user.name=CI", "-c", "user.email=ci@example.invalid", "commit", "-qm", "test")
+                return git("rev-parse", "HEAD")
+
+            git("init", "-q")
+            for path in ("backend/code", "frontend/code", "deploy/compose.yml", "deploy/ssm/production.json",
+                         "deploy/production-release.json", "deploy/CI-CD.md", ".github/workflows/release-production.yml",
+                         ".github/workflows/release-staging.yml", "README.md", "docs/guide.md"):
+                (root / path).parent.mkdir(parents=True, exist_ok=True)
+                (root / path).write_text("staging\n")
+            stage = commit()
+            for path in ("README.md", "docs/guide.md", "deploy/CI-CD.md", "deploy/production-release.json"):
+                (root / path).write_text("main\n")
+            main = commit()
+            with patch.object(production.subprocess, "run", side_effect=lambda *a, **kw: git_run(*a, cwd=root, **kw)):
+                self.assertNotEqual(main, stage)
+                self.assertTrue(production.equivalent(stage, main))
+                for path in ("backend/code", "frontend/code", "deploy/compose.yml", "deploy/ssm/production.json",
+                             ".github/workflows/release-production.yml", ".github/workflows/release-staging.yml"):
+                    with self.subTest(path=path):
+                        (root / path).write_text("main\n")
+                        different = commit()
+                        self.assertFalse(production.equivalent(stage, different))
+                        git("reset", "--hard", main)
+                git("update-index", "--chmod=+x", "deploy/compose.yml")
+                git("-c", "user.name=CI", "-c", "user.email=ci@example.invalid", "commit", "-qm", "mode")
+                self.assertFalse(production.equivalent(stage, git("rev-parse", "HEAD")))
+
+
+class DispatchTests(unittest.TestCase):
+    def test_dispatch_uses_standard_host_approval_and_rechecks_main_last(self):
+        data = release.canonical(manifest())
+        identity = f"{RUN}:{ATTEMPT}:987:{hashlib.sha256(data).hexdigest()}"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest"
+            path.write_bytes(data)
+            args = argparse.Namespace(manifest=str(path))
+            with patch.dict(os.environ, {"EXPECTED_RELEASE": identity}), patch.object(production, "guard", return_value=SHA), patch.object(
+                production, "discover", return_value=(identity, data, manifest())
+            ) as discover, patch.object(production, "current_staging"), patch.object(release, "api", return_value=run()), patch.object(
+                production, "current_main", side_effect=ValueError("main advanced")
+            ) as current, patch.object(release, "dispatch") as dispatch:
+                with self.assertRaisesRegex(ValueError, "main advanced"):
+                    production.dispatch(args)
+                dispatch.assert_not_called()
+                current.side_effect = None
+                production.dispatch(args)
+                self.assertEqual(dispatch.call_args.args[0].approval_mode, "standard")
+                dispatch.reset_mock()
+                discover.return_value = (identity.replace(":987:", ":988:"), data, manifest())
+                with self.assertRaisesRegex(ValueError, "artifact changed"):
+                    production.dispatch(args)
+                dispatch.assert_not_called()
 
 
 class WorkflowTests(unittest.TestCase):
@@ -377,11 +350,8 @@ class WorkflowTests(unittest.TestCase):
         triggers = self.workflow.split("on:\n", 1)[1].split("\npermissions:", 1)[0]
         self.assertEqual(re.findall(r"^  ([a-z_]+):", triggers, re.M), ["workflow_dispatch"])
         self.assertEqual(re.findall(r"^      ([a-z_]+):", triggers, re.M), [
-            "expected_sha", "confirm_production_deployment", "recovery_approval", "confirm_prelaunch_data_loss"])
+            "confirm_production_deployment"])
         self.assertIn("required: true\n        default: false\n        type: boolean", triggers)
-        self.assertIn("default: standard\n        type: choice\n        options:\n          - standard\n          - prelaunch", triggers)
-        self.assertIn("PRODUCTION_RECOVERY_APPROVAL: ${{ inputs.recovery_approval }}", self.promote)
-        self.assertIn("CONFIRM_PRELAUNCH_DATA_LOSS: ${{ inputs.confirm_prelaunch_data_loss }}", self.promote)
         self.assertNotIn("pull_request_target", self.workflow)
         self.assertNotIn("workflow_run:", self.workflow)
 
@@ -415,19 +385,25 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("permissions:\n  contents: read", self.workflow)
         self.assertIn("permissions:\n      contents: read\n      actions: read\n      id-token: write", self.promote)
         self.assertIn("group: vellum-deploy-production\n  cancel-in-progress: false", self.workflow)
-        self.assertIn("timeout-minutes: 20", self.promote)
+        self.assertIn("timeout-minutes: 30", self.promote)
         self.assertEqual(re.findall(r"uses: ([^\s]+)", self.workflow), [
+            "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
             "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
             "aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd",
         ])
         self.assertIn("ref: ${{ github.sha }}", self.promote)
         self.assertIn("fetch-depth: 0", self.promote)
         self.assertIn("persist-credentials: false", self.promote)
-        for name in ("AWS_DEPLOY_ROLE_ARN", "AWS_REGION", "AWS_ACCOUNT_ID", "SSM_INSTANCE_ID", "SSM_DOCUMENT_ARN", "SSM_DOCUMENT_VERSION", "SSM_DOCUMENT_SHA256"):
+        for name in ("AWS_DEPLOY_ROLE_ARN", "AWS_REGION", "AWS_ACCOUNT_ID", "SSM_INSTANCE_ID", "SSM_DOCUMENT_ARN"):
             self.assertIn("${{ vars." + name + " }}", self.promote)
+        self.assertIn("needs: discover", self.promote)
+        discover = self.workflow.split("  discover:\n", 1)[1].split("  promote:", 1)[0]
+        self.assertNotIn("environment:", discover)
+        self.assertNotIn("id-token:", discover)
+        self.assertIn("SSM_DOCUMENT_VERSION: '2'", self.promote)
+        self.assertIn("SSM_DOCUMENT_SHA256: 8d43e90f07c95456d7f781b591cc187eaf448e0c80b3a87d0433b9665297f83a", self.promote)
         self.assertIn("role-session-name: vellum-production-${{ github.run_id }}", self.promote)
-        self.assertLess(self.promote.index("production_release.py guard"), self.promote.index("production_release.py resolve"))
-        self.assertLess(self.promote.index("production_release.py resolve"), self.promote.index("aws-actions/configure-aws-credentials"))
+        self.assertLess(self.promote.index("production_release.py prepare"), self.promote.index("aws-actions/configure-aws-credentials"))
         self.assertLess(self.promote.index("aws-actions/configure-aws-credentials"), self.promote.index("production_release.py dispatch"))
         self.assertIn("production_release.py dispatch --manifest approved-release.json", self.promote)
         self.assertNotIn("release.py dispatch --environment production", self.promote)

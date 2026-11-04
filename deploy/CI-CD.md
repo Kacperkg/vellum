@@ -11,7 +11,7 @@ the same workflow with full CI and an exact SHA. See
 [MANUAL-STAGING-VERIFICATION.md](MANUAL-STAGING-VERIFICATION.md), including the
 requirement to disable CD before merging this workflow change if its first
 deployment must be the deliberate manual run. Manual evidence cannot promote
-to production; ordinary push artifacts retain the existing promotion contract.
+to production. Ordinary pushes that require a release run full CI for both apps.
 See [CI-OPTIMISATION.md](CI-OPTIMISATION.md) for current execution rules and the
 [historical activation runbook](STAGING-ACTIVATION.md) for operator prerequisites.
 This optimisation changes no flags, GitHub settings, AWS resources or installed
@@ -38,47 +38,34 @@ controller files.
 - Staging versions are `sha-<full-sha>-run-<run-id>-<attempt>` in
   `ghcr.io/kacperkg/vellum-backend` and `ghcr.io/kacperkg/vellum-frontend`.
   Tags are identifiers, not a security boundary: deployment uses only digests.
-- After a successful staging deployment, the workflow stores immutable artifact
-  `vellum-release-<run-id>-<attempt>` containing only `release.json`, for 90 days.
-  It records source SHA, image digests, deployment-file hashes, workflow identity
-  and the successful staging SSM invocation. The summary prints its SHA-256.
-- The reviewer selects that run/attempt and manifest SHA-256 in
-  `deploy/production-release.json` through a PR to `main`, promoting the same
-  runtime source as staging. Never fill it with arbitrary image references.
-- Production resolves the exact artifact from GitHub, verifies repository,
-  workflow path, push event, staging branch, run attempt and successful result,
-  verifies the reviewed manifest hash, and compares runtime/deployment Git trees
-  against the staging source. Merge/squash SHAs may differ; the trees must match.
-  An expired/missing artifact, source difference or ambiguous artifact fails.
-  There is no production image build or fallback to `latest`/a matching tag.
+- After a successful staging deployment, the workflow retains an immutable
+  artifact containing only `release.json` for 90 days. The artifact name binds
+  the run, attempt, manifest SHA-256 and both build output digests. The staging
+  summary prints the manifest SHA-256 for standard recovery approval.
+- Open a reviewed staging-to-main PR. Production discovers the single eligible
+  release with the same tracked build, CI and deployment files, even when commit
+  IDs differ. It verifies the latest exact run/attempt, CI and deployment, archive
+  checksum and provenance, manifest checksum, both digests and six bundle hashes.
+  Missing or ambiguous evidence blocks promotion. Production uses the existing
+  image digests without rebuilding.
 - The current controller version is part of the tested bundle. An operator must
   install matching trusted controller files before a release that changes them.
 
 ## Production manual approval
 
-The one-use, fixed-sunset [pre-launch exception](PRELAUNCH-PRODUCTION.md) requires
-explicit workflow choice/acknowledgement plus a root-private release-specific
-approval with `restore_verified=false`. Standard mode remains the default and
-requires genuine restore evidence. The exception changes the six-file bundle and
-adds a bounded production SSM `ApprovalMode` parameter: a new eligible release,
-reviewed matching controller installation and revised numeric document/hash pins
-are required before use. Staging's SSM document and OIDC restrictions are unchanged.
+`PRODUCTION_APPROVAL_MODE=manual` is required. Production accepts only
+`workflow_dispatch` on protected `main` in the canonical repository, with
+`confirm_production_deployment=true`. It derives the exact reviewed revision
+from the workflow dispatch context and verifies it against live `main`.
+No merge or push deploys production. Keep the workflow on the default branch
+and on `main`. The runner uses standard recovery approval; the
+[expired pre-launch exception](PRELAUNCH-PRODUCTION.md) is historical.
 
-`PRODUCTION_APPROVAL_MODE=manual` is required. Unset or `environment` mode
-cannot deploy. Production only accepts explicit `workflow_dispatch` on protected
-main in the exact repository, with the exact reviewed `expected_sha` and
-`confirm_production_deployment=true`. No merge/push deploys production.
-Keep the active workflow/helper on staging (default-branch discovery) and main
-(execution). Operator dispatch, remaining restore/release blockers, current
-GitHub configuration and recommended protections are documented in
-[PRODUCTION-ACTIVATION.md](PRODUCTION-ACTIVATION.md).
-
-The runner-only production adapter validates the request before AWS credentials,
-requires successful publication and all required CI jobs for the exact latest
-ordinary staging-push attempt, then delegates data-only artifact/hash/digest/tree
-validation to the unchanged six-file resolver. It rechecks current main and
-eligibility before the existing pinned SSM dispatcher. Manual verification,
-skipped publication and historical receipt substitutions remain ineligible.
+Discovery runs with read permissions. The production job then rechecks the same
+artifact before AWS credentials and immediately before the pinned SSM dispatch.
+Manual verification artifacts and previous attempts of failed or running reruns
+cannot be promoted. See [PRODUCTION-ACTIVATION.md](PRODUCTION-ACTIVATION.md) for
+the merge, discovery, recovery and dispatch contract.
 
 Environment protection features vary by plan and visibility. GitHub currently
 restricts required-reviewer rules on several plans to public repositories.
@@ -296,9 +283,8 @@ planned maintenance/recovery procedure and must not pass this CD gate.
 
 The staging workflow is now `.yml`, but requires the runtime CD flag. After
 human review and all prerequisites, use STAGING-ACTIVATION.md to enable that flag
-and approve a fresh ordinary staging push. Production is dispatch-only; its
-selector remains unconfigured until an eligible release exists. No flag or
-deployment is enabled by adding the workflow file.
+and approve a fresh ordinary staging push. Production remains dispatch-only
+and refuses to deploy without eligible staging evidence.
 
 Push/merge a feature into `staging`. Check the actual CI result, GHCR digest
 visibility/pulls, SSM status and staging manifest summary. Through staging Caddy,
@@ -314,11 +300,11 @@ accounts or writes financial records. Also use two genuinely different external
 clients/networks to confirm Caddy is not collapsing all clients to its own IP;
 synthetic headers alone cannot establish that operational fact.
 
-Then open the promotion PR to `main`, selecting the successful run/attempt and
-manifest hash. Prepare that release's backup/schema approval record on EC2.
-After a separately authorised merge, explicitly dispatch on main in `manual`
-mode with the exact SHA and acknowledgement from the activation runbook.
-Production deploys the selected digests unchanged.
+Then review the staging-to-main PR and prepare the existing standard recovery
+approval with the manifest hash shown in the staging summary. After the authorised
+merge, select **Promote production → Run workflow** on `main` and tick the
+confirmation. The workflow selects the tested release and sends its unchanged
+digests through production SSM.
 Do not dispatch on a feature branch or attempt to bypass missing evidence.
 
 ## Failure handling, rollback and manual fallback

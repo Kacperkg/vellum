@@ -241,12 +241,13 @@ AWS OIDC and Systems Manager. Release manifests record
 immutable image digests and staging verification evidence. The
 [delivery guide](deploy/CI-CD.md) records a successful end-to-end staging release.
 
-**Production deployment automation remains disabled:** its workflow is stored as
-[`release-production.yml.disabled`](.github/workflows/release-production.yml.disabled).
-The prepared promotion design reuses verified staging image digests through a
-reviewed release manifest on `main`, with separate approval and backup/schema
-gates. It is not an active production pipeline. Consult the
-[deployment runbook](deploy/README.md) for manual operations and recovery.
+For production, merge the reviewed `staging` changes into `main`. Prepare the
+standard release-specific backup and restore approval, then open **Actions →
+Promote production → Run workflow** on `main` and tick the deployment
+confirmation. The workflow finds the single successful staging release whose
+tested files match `main` and deploys its existing image digests. A merge alone
+cannot deploy production. See the [production runbook](deploy/PRODUCTION-ACTIVATION.md)
+for approval, merge compatibility and missing-release troubleshooting.
 
 ## Security and operational limits
 

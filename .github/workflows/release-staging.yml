@@ -154,16 +154,22 @@ jobs:
           SSM_DOCUMENT_SHA256: ${{ vars.SSM_DOCUMENT_SHA256 }}
         run: python3 deploy/cd/release.py dispatch --environment staging --manifest candidate.json
       - name: Record successful staging verification
+        id: verified
+        shell: bash
         env:
           COMMAND_ID: ${{ steps.deployment.outputs.command_id }}
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
         run: |
           mkdir -p tested-release
-          python3 deploy/cd/release.py mark-verified --manifest candidate.json --command-id "$COMMAND_ID" --output tested-release/release.json | tee -a "$GITHUB_STEP_SUMMARY"
+          python3 deploy/cd/release.py mark-verified --manifest candidate.json --command-id "$COMMAND_ID" --output tested-release/release.json | tee -a "$GITHUB_STEP_SUMMARY" "$GITHUB_OUTPUT"
+          printf 'backend_digest=%s\nfrontend_digest=%s\n' "${BACKEND_DIGEST#sha256:}" "${FRONTEND_DIGEST#sha256:}" >> "$GITHUB_OUTPUT"
+          printf '\n- Backend digest: `%s`\n- Frontend digest: `%s`\n' "$BACKEND_DIGEST" "$FRONTEND_DIGEST" >> "$GITHUB_STEP_SUMMARY"
       - name: Retain immutable tested release manifest
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           # Manual evidence is intentionally not a production promotion artifact.
-          name: ${{ github.event_name == 'workflow_dispatch' && 'vellum-staging-verification' || 'vellum-release' }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ github.event_name == 'workflow_dispatch' && format('vellum-staging-verification-{0}-{1}', github.run_id, github.run_attempt) || format('vellum-release-{0}-{1}-{2}-{3}-{4}', github.run_id, github.run_attempt, steps.verified.outputs.manifest_sha256, steps.verified.outputs.backend_digest, steps.verified.outputs.frontend_digest) }}
           path: tested-release/release.json
           retention-days: 90
           if-no-files-found: error

@@ -1,5 +1,10 @@
 # One-use pre-launch production recovery exception
 
+> **Historical procedure.** The one-use exception expired on 4 November 2026 UTC.
+> The current workflow sends standard approval only. Keep this runbook for audit
+> and recovery context; use [Production activation](PRODUCTION-ACTIVATION.md)
+> for routine promotion.
+
 This is a proposed, separately approved operator procedure. Preparing this change
 does not merge, install, configure or deploy anything. Only isolated restore
 verification is waived. Production backups, verified off-host copies, schema and
