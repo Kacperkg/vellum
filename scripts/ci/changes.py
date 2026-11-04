@@ -97,6 +97,12 @@ def main():
             else:
                 event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
                 plan, categories = classify(changed_paths(event, os.environ["GITHUB_EVENT_NAME"]))
+                # A promotable pair needs both applications tested at this exact
+                # revision, including changes from any failed earlier push.
+                if (os.environ["GITHUB_EVENT_NAME"] == "push"
+                        and os.environ.get("GITHUB_REF") == "refs/heads/staging"
+                        and plan["deploy"]):
+                    plan = dict.fromkeys(KEYS, True)
         except (KeyError, ValueError, OSError, subprocess.SubprocessError):
             # A missing parent/initial push/unsupported path selects everything.
             plan, categories = dict.fromkeys(KEYS, True), ["fallback: full validation"]

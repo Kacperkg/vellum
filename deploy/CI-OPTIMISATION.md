@@ -1,5 +1,9 @@
 # CI optimisation audit — 25 October 2026
 
+Current policy: staging pushes that require a release run the full CI suite so
+production can verify both applications at the exact promoted revision. PR and
+documentation-only optimisation remains. See [CI/CD](CI-CD.md).
+
 This is phase 1: duplicate execution removal, conservative dependency selection
 and cache improvements. Mixed-image staging reuse is deliberately deferred to
 the coordinated migration below. No settings, AWS resources or installed
