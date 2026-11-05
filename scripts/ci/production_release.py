@@ -13,7 +13,7 @@ import sys
 import tempfile
 import time
 from urllib.parse import urlencode, urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import Request, build_opener
 import uuid
 import zipfile
 
@@ -272,7 +272,8 @@ def prepare(args):
         )
 
 
-def invoke_authority(payload):
+def invoke_authority(payload, budget=195):
+    deadline = time.monotonic() + budget
     account = os.environ["AWS_ACCOUNT_ID"]
     target = os.environ["VELLUM_DISPATCH_FUNCTION"]
     audience = os.environ["VELLUM_DISPATCH_AUDIENCE"]
@@ -290,19 +291,21 @@ def invoke_authority(payload):
     request = Request(endpoint + delimiter + urlencode({"audience": audience}),
                       headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]})
     try:
-        with urlopen(request, timeout=10) as response:
+        with build_opener(release.SafeRedirect()).open(request, timeout=min(10, budget)) as response:
             release.require(response.geturl() == request.full_url, "unexpected OIDC redirect")
             token = json.loads(response.read(16385))["value"]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             request_path, response_path = root / "request.json", root / "response.json"
             request_path.write_bytes(release.canonical(payload | {"token": token}))
+            remaining = deadline - time.monotonic()
+            release.require(remaining >= 1, "independent production invocation budget expired")
             result = subprocess.run(
                 ["aws", "lambda", "invoke", "--function-name", target,
                  "--region", "eu-west-2", "--cli-binary-format", "raw-in-base64-out",
                  "--payload", f"fileb://{request_path}", "--cli-connect-timeout", "5",
-                 "--cli-read-timeout", "180", str(response_path)],
-                capture_output=True, timeout=195, env=os.environ | {"AWS_MAX_ATTEMPTS": "1"},
+                 "--cli-read-timeout", str(min(180, int(remaining))), str(response_path)],
+                capture_output=True, timeout=remaining, env=os.environ | {"AWS_MAX_ATTEMPTS": "1"},
             )
             release.require(result.returncode == 0, "independent production dispatch failed")
             result = release.read_json(response_path)
@@ -321,15 +324,16 @@ def independent_dispatch(value):
     with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
         summary.write(f"\nProduction SSM command: `{command}`\n")
     deadline = time.monotonic() + 900
-    while time.monotonic() < deadline:
-        outcome = invoke_authority({"command_id": command, "manifest_sha256": checksum})
+    while (remaining := deadline - time.monotonic()) >= 1:
+        outcome = invoke_authority({"command_id": command, "manifest_sha256": checksum},
+                                   budget=min(30, remaining))
         if outcome == {"verified": True}:
             with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
                 output.write(f"command_id={command}\n")
             return
         release.require(outcome == {"pending": True},
                         "independent production outcome rejected; inspect the command privately")
-        time.sleep(10)
+        time.sleep(min(10, max(0, deadline - time.monotonic())))
     raise ValueError("production outcome timed out; investigate the accepted command before retrying")
 
 

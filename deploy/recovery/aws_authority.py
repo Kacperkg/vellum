@@ -222,16 +222,17 @@ class Ledger:
 
     def confirm_baseline(self, checksum, command):
         self.client.update_item(TableName=self.table, Key={"key": {"S": f"baseline:{checksum}"}},
-                                UpdateExpression="SET confirmed = :yes",
-                                ConditionExpression="#command = :command OR confirmed = :yes",
-                                ExpressionAttributeNames={"#command": "command"},
+                                UpdateExpression="SET #confirmed = :yes",
+                                ConditionExpression="#command = :command OR #confirmed = :yes",
+                                ExpressionAttributeNames={"#command": "command", "#confirmed": "confirmed"},
                                 ExpressionAttributeValues={":command": {"S": command}, ":yes": {"BOOL": True}})
 
     def remember_baseline(self, checksum, command):
         try:
             self.client.put_item(TableName=self.table, Item={
                 "key": {"S": f"baseline:{checksum}"}, "command": {"S": command},
-            }, ConditionExpression="attribute_not_exists(confirmed)")
+            }, ConditionExpression="attribute_not_exists(#confirmed)",
+                ExpressionAttributeNames={"#confirmed": "confirmed"})
         except self.client.exceptions.ConditionalCheckFailedException:
             # A new attempt must never replace an independently confirmed
             # historical outcome, even if the new attempt subsequently fails.
@@ -239,9 +240,10 @@ class Ledger:
 
     def consume(self, command):
         self.client.update_item(TableName=self.table, Key={"key": {"S": f"command:{command}"}},
-                                UpdateExpression="SET consumed = :yes",
-                                ConditionExpression="attribute_exists(#key) AND attribute_not_exists(consumed)",
-                                ExpressionAttributeNames={"#key": "key"}, ExpressionAttributeValues={":yes": {"BOOL": True}})
+                                UpdateExpression="SET #consumed = :yes",
+                                ConditionExpression="attribute_exists(#key) AND attribute_not_exists(#consumed)",
+                                ExpressionAttributeNames={"#key": "key", "#consumed": "consumed"},
+                                ExpressionAttributeValues={":yes": {"BOOL": True}})
 
 
 class Recovery:

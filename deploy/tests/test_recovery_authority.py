@@ -18,7 +18,7 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "cd"), str(ROOT / "recovery"), str(ROOT.parent / "scripts/ci")]
 from authority import API, Authority, ISSUER, WORKFLOW, digest, timestamp
-from aws_authority import GitHub, Recovery, SSM
+from aws_authority import GitHub, Ledger, Recovery, SSM
 import controller
 import coordination
 import release
@@ -200,6 +200,16 @@ class FakeReceiptBucket:
     def get_object(self, Bucket, ExpectedBucketOwner, Key):
         assert Bucket == "fixture-receipts" and ExpectedBucketOwner == ACCOUNT
         return {"VersionId": "pinned-fixture", "Body": io.BytesIO(self.receipts[Key.split("/")[2]])}
+
+
+class LedgerTests(unittest.TestCase):
+    def test_consumption_aliases_dynamodb_reserved_attribute(self):
+        client = Mock()
+        Ledger(client, "fixture-ledger").consume(COMMAND)
+        request = client.update_item.call_args.kwargs
+        self.assertEqual(request["ExpressionAttributeNames"]["#consumed"], "consumed")
+        self.assertEqual(request["UpdateExpression"], "SET #consumed = :yes")
+        self.assertIn("attribute_not_exists(#consumed)", request["ConditionExpression"])
 
 
 class AuthorityTests(unittest.TestCase):

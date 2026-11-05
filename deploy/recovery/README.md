@@ -136,10 +136,15 @@ files. Verify revocation, certificate expiry and denied cross-role requests.
    and the new numeric SSM document and AWS metadata hash. Set the automated
    GitHub Environment's `AWS_READINESS_ROLE_ARN`,
    `VELLUM_DISPATCH_FUNCTION`, and `VELLUM_DISPATCH_AUDIENCE` from reviewed
-   provisioning outputs. Keep the existing standard role and environment
-   approval guard during transition. Activate `PRODUCTION_READINESS_MODE=automated`
-   only after the corresponding host policy and retained evidence have been
-   verified. Obtain separate approval for the first live production exercise.
+   provisioning outputs. Keep the existing standard path while preparing the
+   transition. Before switching modes, disable the old production deploy role's
+   GitHub trust or prove it uses a distinct enforced OIDC subject. Both roles
+   otherwise accept the same production Environment subject, and an automated
+   job could assume the legacy role directly. Test that the automated job
+   cannot assume it or read SSM output. Keep the Environment approval guard.
+   Activate `PRODUCTION_READINESS_MODE=automated` only after verifying these
+   boundaries, the host policy and retained evidence. Obtain separate approval
+   for the first live production exercise.
 6. For an eligible release, merge the tested staging tree into protected
    `main`. Run **Promote production** on `main` and tick the confirmation.
    Satisfy any configured Environment review. The job reports the accepted SSM
@@ -152,7 +157,8 @@ install the reviewed replacement keys and immutable service versions, verify a
 new independent receipt chain, then retire the old invoke and sign grants.
 A failed rotation leaves automation stopped. For approval rollback, use a
 separately reviewed drained change to the verified standard policy and fresh
-standard evidence. Keep historical receipts and pending state. A transient
+standard evidence. Restore the reviewed standard role trust only within that
+approved rollback, after disabling automated dispatch. Keep historical receipts and pending state. A transient
 issuer or relay outage never falls back to a weaker path.
 
 Keep raw PostgreSQL output, SSM inputs, production env, provider state,
