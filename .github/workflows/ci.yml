@@ -147,6 +147,10 @@ jobs:
         if: steps.scope.outputs.run == 'true'
       - run: go vet ./...
         if: steps.scope.outputs.run == 'true'
+      - name: Provision disposable restricted runtime database for integration
+        if: steps.scope.outputs.run == 'true'
+        working-directory: .
+        run: bash scripts/ci/runtime_postgres.sh integration
       - name: Test all packages with real PostgreSQL
         if: steps.scope.outputs.run == 'true'
         run: |
@@ -170,6 +174,10 @@ jobs:
               if not any(event['Action'] == 'pass' and event.get('Test') and event['Package'].endswith(package) for event in events):
                   raise SystemExit(f'No passing database tests found in {package}')
           PY
+      - name: Provision disposable restricted runtime database for race
+        if: steps.scope.outputs.run == 'true'
+        working-directory: .
+        run: bash scripts/ci/runtime_postgres.sh race
       - name: Race detector with PostgreSQL integration tests
         if: steps.scope.outputs.run == 'true'
         run: go test -race -count=1 -p 1 ./...
