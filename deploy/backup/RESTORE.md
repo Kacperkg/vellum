@@ -1,7 +1,8 @@
 # Isolated S3 restore drill
 
-This procedure is for a future separately approved drill on a private disposable
-host. It must not target either live Compose project or their PostgreSQL volumes.
+This optional recovery drill runs on a private disposable host, independently
+of production promotion. It must not target either live Compose project or
+their PostgreSQL volumes.
 A local synthetic-data restore tests dump/restore mechanics; it does not prove
 S3 round-trip recovery. Declare operational readiness only after downloading and
 restoring an actual selected S3 backup with the matching application checks.

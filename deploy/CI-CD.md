@@ -1,6 +1,6 @@
 # CI/CD implementation and activation handoff
 
-Status: **staging verified; production workflow dispatch-only, deployment blocked pending release and restore evidence**.
+Status: **staging delivery and dispatch-only production promotion are implemented in source**.
 `.github/workflows/release-staging.yml` validates protected staging pushes and
 requires `VELLUM_CD_ENABLED=true` plus a release-needed change plan before
 publication/deployment. The production workflow is
@@ -41,7 +41,7 @@ controller files.
 - After a successful staging deployment, the workflow retains an immutable
   artifact containing only `release.json` for 90 days. The artifact name binds
   the run, attempt, manifest SHA-256 and both build output digests. The staging
-  summary prints the manifest SHA-256 for standard recovery approval.
+  summary prints the manifest SHA-256 for release verification.
 - Open a reviewed staging-to-main PR. Production discovers the single eligible
   release with the same tracked build, CI and deployment files, even when commit
   IDs differ. It verifies the latest exact run/attempt, CI and deployment, archive
@@ -51,15 +51,16 @@ controller files.
 - The current controller version is part of the tested bundle. An operator must
   install matching trusted controller files before a release that changes them.
 
-## Production manual approval
+## Manual production dispatch
 
-`PRODUCTION_APPROVAL_MODE=manual` is required. Production accepts only
+The existing `VELLUM_CD_ENABLED=true` and `PRODUCTION_APPROVAL_MODE=manual`
+settings enable manual production dispatch. Production accepts only
 `workflow_dispatch` on protected `main` in the canonical repository, with
 `confirm_production_deployment=true`. It derives the exact reviewed revision
-from the workflow dispatch context and verifies it against live `main`.
-No merge or push deploys production. Keep the workflow on the default branch
-and on `main`. The runner uses standard recovery approval; the
-[expired pre-launch exception](PRELAUNCH-PRODUCTION.md) is historical.
+from the dispatch context and verifies it against live `main`. Keep the workflow
+on the default branch and on `main`. The checkbox is the per-release decision
+to deploy. Backups are monitored independently and provide no deployment
+approval. The [pre-launch exception](PRELAUNCH-PRODUCTION.md) is historical.
 
 Discovery runs with read permissions. The production job then rechecks the same
 artifact before AWS credentials and immediately before the pinned SSM dispatch.
@@ -86,13 +87,11 @@ Keep those targets and no-bypass protections when editing repository settings.
 Environment branch policies must remain exact: staging branch only for staging,
 main branch only for production, with no wildcard/tag policies.
 
-The ruleset currently requires no approving/code-owner reviews. Before enabling
-CD, enforce the human/code-owner reviews below; do not mistake CI success for
-independent approval. Production environment reviewers remain absent in the
-2026-10-27 read-only inspection; retain manual mode and review the recommendations
-in the activation runbook.
-This PR does not modify those settings. See PRODUCTION-ACTIVATION.md for current
-production prerequisites and STAGING-ACTIVATION.md for historical staging setup.
+The 2026-10-27 read-only inspection found no required approving or code-owner
+reviews and no production Environment reviewers. Confirm current protections
+before operation. Keep the existing manual dispatch mode. See the
+[production prerequisites](PRODUCTION-ACTIVATION.md) and
+[historical staging setup](STAGING-ACTIVATION.md).
 
 GitHub's current OIDC subject settings report `use_default=true`,
 `use_immutable_subject=false`, prefix `repo:Kacperkg/vellum`. The example trust
@@ -180,9 +179,11 @@ missing or expired. Public-package activation does not require this helper.
   `VellumDeploy-production` from `ssm/staging.json` and `ssm/production.json`.
   Record their immutable numeric versions and SHA-256 hashes from AWS document
   metadata. The workflow sends both, not `$LATEST`/`$DEFAULT`. Deployment roles
-  cannot modify documents. The documents take base64 JSON data (production also
-  takes the bounded recovery approval mode) and invoke
-  a fixed environment/controller; no caller-provided shell is executed.
+  cannot modify documents. The runner sends base64 JSON manifest data and the
+  document invokes the fixed environment/controller. Production's pinned
+  version 2 still supplies its legacy `ApprovalMode=standard` default for
+  compatibility. The controller rejects missing or non-standard values before
+  mutation. The parameter carries no backup or restore approval.
   Manifest parameters use an alphabet-only regex, with supported `minChars: 1`
   and `maxChars: 45000` fields for the encoded size bound. Do not put the large
   bound in a counted regex repetition: the SSM Agent's Go regex engine rejects
@@ -191,12 +192,13 @@ missing or expired. Public-package activation does not require this helper.
   When updating these templates, create reviewed document versions and refresh
   the pinned version/hash variables; do not edit live documents automatically.
 - Review and install controller assets from the exact trusted revision outside
-  the writable checkout. On EC2, an operator can use:
+  the writable checkout. On EC2, stage the independently verified files in
+  `/root/APPROVED-STAGE` under the drained shared-host procedure before installing:
 
   ```sh
   sudo install -d -m 755 /usr/local/lib/vellum-cd /usr/local/lib/vellum-cd/cd
-  sudo install -m 644 deploy/compose.yml deploy/compose.registry.yml /usr/local/lib/vellum-cd/
-  sudo install -m 644 deploy/cd/controller.py deploy/cd/coordination.py deploy/cd/release.py deploy/cd/smoke.py /usr/local/lib/vellum-cd/cd/
+  sudo install -o root -g root -m 644 /root/APPROVED-STAGE/compose.yml /root/APPROVED-STAGE/compose.registry.yml /usr/local/lib/vellum-cd/
+  sudo install -o root -g root -m 644 /root/APPROVED-STAGE/cd/controller.py /root/APPROVED-STAGE/cd/coordination.py /root/APPROVED-STAGE/cd/release.py /root/APPROVED-STAGE/cd/smoke.py /usr/local/lib/vellum-cd/cd/
   sudo install -d -m 700 /var/lib/vellum-cd /etc/vellum-cd /etc/vellum-cd/docker
   ```
 
@@ -234,50 +236,44 @@ missing or expired. Public-package activation does not require this helper.
 - GitHub concurrency and the [shared host gate](HOST-COORDINATION.md) serialize
   backups, staging/production controller updates and guarded schema work across
   the EC2 host, retaining both environment locks. Incomplete operations leave a
-  durable recovery gate. Install the matching six-file bundle and backup scripts
-  together before resuming; no live upgrade is performed by this repository change.
+  durable recovery gate for work that can outlive its client. For the production
+  policy update, install the matching controller bundle and backup runner
+  during the one-time rollout in [PRODUCTION-ACTIVATION.md](PRODUCTION-ACTIVATION.md).
+  For initial installation, follow the paired host coordination procedure.
 
 ### 5. Provision GitHub variables, names and scopes
 
 | Scope | Name | Meaning |
 | --- | --- | --- |
 | Repository | `VELLUM_CD_ENABLED` | Keep unset/false until human-approved activation |
-| Repository | `PRODUCTION_APPROVAL_MODE` | `manual` only; explicit acknowledged dispatch on main |
+| Repository | `PRODUCTION_APPROVAL_MODE` | `manual` enables acknowledged dispatch on protected `main` |
 | Each environment | `AWS_ACCOUNT_ID` | Expected AWS account allowlist |
 | Each environment | `AWS_REGION` | Region of the target instance/documents |
 | Each environment | `AWS_DEPLOY_ROLE_ARN` | Different OIDC deployment role for that environment |
 | Each environment | `SSM_INSTANCE_ID` | Exact existing instance ID |
 | Each environment | `SSM_DOCUMENT_ARN` | Its fixed environment document ARN |
-| Each environment | `SSM_DOCUMENT_VERSION` | Reviewed numeric document version |
-| Each environment | `SSM_DOCUMENT_SHA256` | Reviewed document content hash from AWS metadata |
+| Staging environment | `SSM_DOCUMENT_VERSION` | Reviewed numeric staging document version |
+| Staging environment | `SSM_DOCUMENT_SHA256` | Reviewed staging document hash from AWS metadata |
 
-No AWS access-key secrets are required; OIDC credentials are temporary. The
+The production version and AWS metadata hash are pinned in the workflow.
+No AWS access-key secrets are required. OIDC credentials are temporary. The
 built-in `GITHUB_TOKEN` is supplied by GitHub. Real application secrets stay in
 EC2 env files; they are not GitHub build inputs. Registry helper secrets, if
 needed, are provisioned independently as above, not as SSM command arguments.
 
-### 6. Establish backup and schema gates before production activation
+### 6. Monitor backups independently and review schema changes
 
-**S3 backup automation is not configured by this implementation.** An EC2-local
-dump is not disaster recovery. `backup.sh` checking `pg_restore --list` is not a
-restore drill. Before any schema-changing release, back up the target database
-(including staging if it contains meaningful data). Keep staging synthetic.
+Maintain and monitor the existing S3 backup and freshness jobs independently
+of release delivery. Keep staging synthetic. Backup results, freshness and
+restore evidence are advisory for release decisions. See the
+[backup guide](backup/README.md) and optional [restore drill](backup/RESTORE.md)
+for testing recovery in isolation.
 
-Production additionally requires root-owned mode600
-`/var/lib/vellum-cd/production-approval.json`, based on
-`production-approval.example.json`. An operator must provide the exact selected
-manifest SHA-256, UTC backup-creation and verification times less than 24 hours old, private evidence
-reference, verified off-host copy and restore evidence, schema compatibility and
-trusted-proxy review. False/missing/stale/wrong-release evidence blocks production
-before pulling images. These are explicit operator attestations, not automated
-proof that an off-host backup or restoration succeeded. Do not set booleans until
-the checks have actually been performed; retain evidence privately.
-
-Current Go startup always executes GORM AutoMigrate. Keep one backend per
-environment. Review model/migration diffs and require backward-compatible schema
-changes; there is no automated migration compatibility proof, down-migration or
-rollback of database writes. Incompatible schema changes need a separately
-planned maintenance/recovery procedure and must not pass this CD gate.
+Go startup runs GORM AutoMigrate. Keep one backend per environment and review
+model/migration changes for compatibility. The controller checks database
+readiness, drains old backend writers and requires a healthy new backend before
+recording success. Incompatible schema changes need planned maintenance and
+recovery. Deploying an older image cannot undo migrations or database writes.
 
 ### 7. Activate staging, then promote deliberately
 
@@ -300,12 +296,10 @@ accounts or writes financial records. Also use two genuinely different external
 clients/networks to confirm Caddy is not collapsing all clients to its own IP;
 synthetic headers alone cannot establish that operational fact.
 
-Then review the staging-to-main PR and prepare the existing standard recovery
-approval with the manifest hash shown in the staging summary. After the authorised
-merge, select **Promote production → Run workflow** on `main` and tick the
-confirmation. The workflow selects the tested release and sends its unchanged
-digests through production SSM.
-Do not dispatch on a feature branch or attempt to bypass missing evidence.
+Then review and merge the staging-to-main PR. Select
+**Promote production → Run workflow** on protected `main` and tick the
+confirmation. The workflow selects the eligible staging release and sends its
+immutable digests through the pinned production SSM document.
 
 ## Failure handling, rollback and manual fallback
 
@@ -319,16 +313,15 @@ verifies termination, removes only those stopped containers without volumes,
 requires an empty backend inventory and drained target DB client sessions,
 then starts exactly one backend with the existing immutable Compose/health flags.
 A final singleton/health/digest check precedes the unchanged Caddy smoke/receipts.
-This barrier applies with SES disabled. Production uses the same barrier while
-retaining its verified-staging provenance and release-specific approval. Follow
-the runbook's production backup, installation and recovery prerequisites. This
-activation does not authorize deployment; the production activation runbook
-adds manual guards without changing this installed barrier.
+This barrier applies with SES disabled. Production uses the same barrier and
+requires verified staging provenance. Follow the
+[production runbook](PRODUCTION-ACTIVATION.md) for controller installation,
+dispatch and failure recovery.
 
-The PR #28/#29 authentication transition changed the six-file installed bundle;
-this workflow activation leaves it unchanged. Approve and install its reviewed
-bytes under a drained host-wide maintenance freeze before the merge-triggered
-staging release. Old receipts fail the existing bundle-hash gate. Keep that gate,
+The PR #28/#29 authentication transition and the later production policy update
+both changed the six-file installed bundle. Approve and install the reviewed
+bytes under a drained host-wide maintenance freeze before the corresponding
+merge-triggered staging release. Old receipts fail the existing bundle-hash gate. Keep that gate,
 old images/receipts and the host locks/pending marker; never rewrite hashes or
 downgrade the controller. Version-unaware backend rollback is unsafe even when
 its schema still works. Failed startup/migration or cancellation can leave the
@@ -408,7 +401,7 @@ status, host locks and [pending operation recovery](HOST-COORDINATION.md) before
 retrying; canceling a workflow does not stop SSM or establish database quiescence.
 
 Recovery must use a reviewed version-aware release compatible with the installed
-coordinated six-file bundle and fresh release-specific backup/restore approval.
+coordinated six-file bundle, live schema and session-revocation behaviour.
 Never downgrade the controller, rewrite receipt hashes, automatically revive
 pre-PR28 authentication code or assume image rollback undoes migration. Follow
 [PRODUCTION-ACTIVATION.md](PRODUCTION-ACTIVATION.md) and
@@ -421,10 +414,10 @@ this production activation workflow.
 
 Actual GitHub Actions execution, required checks/approval enforcement, package
 visibility and EC2 registry authentication, OIDC/IAM/SSM agent/document/version
-configuration, existing server resources, off-host backup/restore evidence and
-real public client-IP behavior require manual setup and staging verification.
-Local unit/mock tests cannot certify those external conditions. This work does
-not deploy, enable CD, modify infrastructure or configure S3 backups.
+configuration, existing server resources and real public client-IP behaviour
+require operator verification. Local unit/mock tests cannot certify those
+external conditions. Verify backups and restore capability independently of
+deployment readiness.
 
 Relevant references: [GitHub OIDC with AWS](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws),
 [SSM safe parameter interpolation](https://docs.aws.amazon.com/systems-manager/latest/userguide/documents-syntax-data-elements-parameters.html),

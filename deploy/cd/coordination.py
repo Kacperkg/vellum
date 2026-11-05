@@ -73,26 +73,50 @@ def host_locks(state):
         yield
 
 
+def require_no_pending(state):
+    # Use lstat so every entry, including a dangling link, requires recovery.
+    try:
+        (state / PENDING).lstat()
+    except FileNotFoundError:
+        return
+    raise CoordinationError('unfinished host operation; operator recovery required')
+
+
 @contextmanager
-def operation(state, kind, environment):
+def pending_operation(state, kind, environment):
+    """Record work that can outlive its client. The caller must hold host_locks."""
     require(kind in ('backup', 'deployment', 'maintenance'), 'unknown host operation')
     require(environment in ('staging', 'production'), 'unknown operation environment')
-    with host_locks(state):
-        pending = state / PENDING
-        # O_EXCL rejects any existing entry, including dangling symlinks. No PID,
-        # timestamp, reboot or unlocked flock is sufficient evidence to recover it.
-        try:
-            fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-        except FileExistsError:
-            raise CoordinationError('unfinished host operation; operator recovery required') from None
-        with os.fdopen(fd, 'w', encoding='utf-8') as output:
-            json.dump({'format_version': 1, 'kind': kind, 'environment': environment,
-                       'pid': os.getpid(), 'started_at': datetime.now(timezone.utc).isoformat()}, output)
-            output.flush()
-            os.fsync(output.fileno())
+    pending = state / PENDING
+    # No PID, timestamp, reboot or unlocked flock is sufficient to recover an
+    # existing marker. Only the owner of a freshly created record may remove it.
+    try:
+        fd = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    except FileExistsError:
+        raise CoordinationError('unfinished host operation; operator recovery required') from None
+    with os.fdopen(fd, 'w', encoding='utf-8') as output:
+        json.dump({'format_version': 1, 'kind': kind, 'environment': environment,
+                   'pid': os.getpid(), 'started_at': datetime.now(timezone.utc).isoformat()}, output)
+        output.flush()
+        os.fsync(output.fileno())
         sync_state(state)
-        # Exceptions (including SIGTERM handling/SystemExit) intentionally retain
-        # the record. Only a completely successful caller removes it, under locks.
+        created = os.fstat(output.fileno())
+        # Exceptions (including cancellation) intentionally retain this record.
         yield
+        # Hold the original descriptor open to prevent reuse of its inode.
+        try:
+            current = pending.lstat()
+        except FileNotFoundError:
+            raise CoordinationError('host operation marker disappeared; operator recovery required') from None
+        require(os.path.samestat(current, created) and current.st_nlink == 1
+                and (current.st_size, current.st_mtime_ns, current.st_ctime_ns)
+                == (created.st_size, created.st_mtime_ns, created.st_ctime_ns),
+                'host operation marker changed; operator recovery required')
         pending.unlink()
         sync_state(state)
+
+
+@contextmanager
+def operation(state, kind, environment):
+    with host_locks(state), pending_operation(state, kind, environment):
+        yield

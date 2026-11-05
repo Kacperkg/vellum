@@ -35,20 +35,18 @@ Each run records conservative snapshot/start time, dump completion, PostgreSQL
 version, archive size and SHA-256. Unique keys under `<environment>/runs/` prevent
 overwrite. Single-object PUTs include SHA-256 and explicit `AES256`; HEAD verifies
 size, checksum and encryption. A marker under `<environment>/completed/` is created
-only after archive and manifest verification. This proves transfer integrity,
-not that the database can be restored. Do not set CD `restore_verified` based on
-`pg_restore --list` or an upload.
+only after archive and manifest verification. This proves transfer integrity.
+To demonstrate restore capability, use the optional [isolated drill](RESTORE.md).
+Backup status and restore evidence are independent of production promotion.
 
-The shared host gate serializes backups, both environments' controller deployments
-and guarded operator schema work. It preserves both environment locks and retains
-a durable pending record after incomplete work, because Docker/database processes
-can outlive their client. See [host coordination](../HOST-COORDINATION.md) for
-lock order, interrupted-operation recovery, the required paired root-owned
-controller/backup installation and manual maintenance requirements. Never invoke
-a controller recursively while holding its locks. A scheduled backup is not an
-automatically atomic pre-release backup gate; keep release-specific backup/schema
-approval. Autonomous backend restarts and raw SQL/Docker require the operational
-controls described there.
+The shared host gate serializes backups, both environments' deployments and
+guarded operator schema work. A backup keeps all three locks through preflight,
+dump, archive checks, upload and cleanup. It rejects any existing pending record
+before work starts and retains its own record around the potentially surviving
+PostgreSQL dump. After the dump returns successfully, backup clears that record
+while still holding the locks. See [host coordination](../HOST-COORDINATION.md)
+for installation and recovery. Never invoke the controller from a backup or
+maintenance process holding the same locks.
 
 The archive limit is 512 MiB, aggregate spool cap is 1 GiB, and free-space reserve
 is the greater of 5 GiB or 20% of the containing filesystem. Failure to satisfy
@@ -60,12 +58,13 @@ and verifies them or explicitly approves removal. Never delete the last usable
 copy merely to clear an alarm. Crashes can leave partial files: inspect their
 specific run directories under the locks before approving cleanup.
 
-Any incomplete run retains the host pending record and blocks later managed work
-until operator recovery. SIGTERM/SIGINT follow the handled cancellation path.
-A forced SIGKILL or host
-failure cannot guarantee remote-process cleanup: before any deployment, verify
-that no orphaned dump remains or wait at least the in-container hard timeout
-(approximately 16 minutes from interruption). Do not bypass a held lock.
+Failures in preflight, archive checks or uploads still fail the backup service
+and surface through backup monitoring. They do not leave a host recovery marker
+for that failure. A failed or interrupted dump can retain a marker and block
+later managed work. SIGTERM/SIGINT follow the handled cancellation path.
+SIGKILL or host failure during the dump can leave it running. Follow the
+[host recovery procedure](../HOST-COORDINATION.md#recover-an-interrupted-operation)
+to verify dump quiescence before clearing the marker. Do not bypass a held lock.
 
 Successful runs delete only their own temporary files after verified off-host
 success. Existing checkout dumps remain untouched. The PostgreSQL container has a

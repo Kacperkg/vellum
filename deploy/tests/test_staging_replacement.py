@@ -101,7 +101,7 @@ class Runtime:
             identifier = args[-1]
             metadata = {"id": identifier, "project": self.project, "service": "backend",
                         "oneoff": "True" if identifier == ONEOFF_BACKEND else "False",
-                        "image": self.value["images"]["backend"],
+                        "image": self.value["images"]["backend"], "restarts": 0,
                         "state": self.records[identifier]}
             if self.inspect_override is not None:
                 self.inspect_override(metadata)
@@ -151,18 +151,6 @@ class Runtime:
 def private_state(state):
     stack = ExitStack()
     stack.enter_context(patch.object(controller, "STATE", state))
-    stack.enter_context(patch.object(controller, "protected"))
-    from datetime import datetime, timezone
-    import hashlib
-    now = datetime.now(timezone.utc).isoformat()
-    (state / "production-approval.json").write_bytes(controller.canonical({
-        "manifest_sha256": hashlib.sha256(controller.canonical(manifest())).hexdigest(),
-        "verified_at": now,
-        "backup_created_at": now,
-        "backup_reference": "synthetic-restore-evidence",
-        "off_host_copy_verified": True, "restore_verified": True,
-        "schema_compatible": True, "trusted_proxy_reviewed": True,
-    }))
     stack.enter_context(patch.object(coordination, "validate_state"))
     stack.enter_context(patch.object(coordination, "root_owned", lambda info: info.st_uid == os.getuid()))
     return stack
@@ -392,10 +380,10 @@ class StagingReplacementTests(unittest.TestCase):
                 self.assertEqual(runtime.records[OLD_BACKEND], running_state())
                 self.assertFalse(any("stop" in args or "rm" in args or "up" in args for args in runtime.calls))
 
-    def test_manifest_bundle_and_approval_rejection_before_docker(self):
+    def test_manifest_and_bundle_rejection_before_docker(self):
         faults = ["manifest", "bundle"]
         if self.environment == "production":
-            faults += ["unverified", "approval", "approval_permissions"]
+            faults.append("unverified")
         for fault in faults:
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as temporary:
                 state = Path(temporary)
@@ -411,18 +399,13 @@ class StagingReplacementTests(unittest.TestCase):
                         hashes.return_value = {}
                     elif fault == "unverified":
                         value["staging"] = {"verified": False, "command_id": None}
-                    elif fault == "approval":
-                        (state / "production-approval.json").write_text("{}")
-                    elif fault == "approval_permissions":
-                        controller.protected.side_effect = ValueError("unsafe approval permissions")
                     with self.assertRaises(ValueError):
                         controller.deploy(self.environment, value)
                     self.assertFalse(runtime.calls)
                     self.assertFalse((state / coordination.PENDING).exists())
 
     def test_each_incomplete_stage_keeps_marker_and_success_receipts(self):
-        # Run failures through deploy(), including the real production approval
-        # validator and the real local pending/lock protocol, not only apply().
+        # Exercise deploy() and its real local pending/lock protocol.
         for fault in ("pull", "revision", "state", "stop", "termination", "remove", "remaining",
                       "drain", "drain_timeout", "startup", "migration", "unhealthy", "digest",
                       "replicas", "smoke"):
@@ -488,8 +471,6 @@ class StagingReplacementTests(unittest.TestCase):
                 original_write = controller.atomic_json
                 writes = []
                 def write(path, contents):
-                    if path.name == controller.PRELAUNCH_CLOSED:
-                        return original_write(path, contents)
                     writes.append(path)
                     if len(writes) == failed_write:
                         raise OSError("synthetic receipt persistence failure")
@@ -564,6 +545,65 @@ class StagingReplacementTests(unittest.TestCase):
 
 class ProductionReplacementTests(StagingReplacementTests):
     environment = "production"
+
+    def test_production_succeeds_without_approval_and_preserves_historical_records(self):
+        for history in (None, b'{"restore_verified": false}', b'{"backup_created_at": "2020-01-01T00:00:00Z"}'):
+            with self.subTest(history=history), tempfile.TemporaryDirectory() as temporary:
+                state = Path(temporary)
+                approval = state / "production-approval.json"
+                closure = state / "production-prelaunch-closed.json"
+                if history is not None:
+                    approval.write_bytes(history)
+                    closure.write_bytes(b'{"reason":"consumed"}')
+                value = manifest()
+                runtime = self.runtime(value)
+                with (private_state(state),
+                      patch.object(controller, "bundle_hashes", return_value=value["deployment_files"]),
+                      patch.object(controller, "validate_environment_file"),
+                      patch.object(controller.subprocess, "run", side_effect=runtime),
+                      patch.object(controller, "smoke") as smoke):
+                    controller.deploy("production", value)
+                smoke.assert_called_once()
+                self.assertEqual(json.loads((state / "production-current.json").read_bytes()), value)
+                self.assertFalse((state / coordination.PENDING).exists())
+                if history is None:
+                    self.assertFalse(approval.exists())
+                    self.assertFalse(closure.exists())
+                else:
+                    self.assertEqual(approval.read_bytes(), history)
+                    self.assertEqual(closure.read_bytes(), b'{"reason":"consumed"}')
+
+    def test_recovered_startup_restart_never_records_success(self):
+        for during_smoke in (False, True):
+            with self.subTest(during_smoke=during_smoke), tempfile.TemporaryDirectory() as temporary:
+                state = Path(temporary)
+                value = manifest()
+                runtime = self.runtime(value)
+                def restart():
+                    runtime.candidate_inspect_override = lambda meta: meta.update(restarts=1)
+                if not during_smoke:
+                    restart()
+                with (private_state(state),
+                      patch.object(controller, "bundle_hashes", return_value=value["deployment_files"]),
+                      patch.object(controller, "validate_environment_file"),
+                      patch.object(controller.subprocess, "run", side_effect=runtime),
+                      patch.object(controller.Commands, "diagnostics"),
+                      patch.object(controller, "smoke", side_effect=lambda *args, **kwargs: restart()) as smoke):
+                    with self.assertRaisesRegex(ValueError, "startup restart"):
+                        controller.deploy("production", value)
+                self.assertTrue(runtime.started, "Compose reported a healthy retry")
+                self.assertEqual(smoke.call_count, int(during_smoke))
+                self.assertTrue((state / coordination.PENDING).exists())
+                self.assertFalse(list(state.glob("production-*.json")))
+
+    def test_wrong_production_app_env_fails_before_pull_or_writer_drain(self):
+        for environment in ("staging", "development", None):
+            with self.subTest(environment=environment):
+                runtime = self.runtime(manifest())
+                runtime.backend_env["APP_ENV"] = environment
+                with self.assertRaisesRegex(ValueError, "unexpected production application environment"):
+                    self.apply(runtime)
+                self.assertFalse(any({"pull", "stop", "rm", "up"} & set(args) for args in runtime.calls))
 
 
 if __name__ == "__main__":

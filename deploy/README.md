@@ -5,9 +5,11 @@ This stack runs on Ubuntu 24.04 with Docker Engine and Docker Compose v2
 It creates no Caddy service, changes no server configuration, and publishes no
 ports. Run all commands below on the EC2 server unless stated otherwise.
 
-The registry/OIDC/SSM pipeline and its manual
-activation prerequisites are documented in [CI-CD.md](CI-CD.md). This page
-retains the local SHA-tagged manual deployment and recovery procedure.
+The normal production path is **feature PR → staging → reviewed merge into
+main → Actions → Promote production**. Follow the
+[production runbook](PRODUCTION-ACTIVATION.md) for the one-time installation,
+dispatch and verification. This page covers host setup, separately approved
+manual maintenance and recovery. See [CI-CD.md](CI-CD.md) for the delivery design.
 
 ## 1. Prepare the checkout
 
@@ -179,24 +181,19 @@ Expect JSON from `/ping` and HTML from GET `/login`. Exercise registration,
 login, token refresh, CRUD, and a direct browser deep link in staging. Check that
 POST `/login` with invalid credentials returns an API error rather than HTML.
 
-## 5. Start production
+## 5. Promote production
 
-After staging passes, put the tested SHA in `/etc/vellum-cd/production.env` using sudoedit. The frontend uses
-`VITE_API_BASE_URL=/` at build time, so the same images work in both environments.
-If that SHA was already built, skip rebuilding and use those exact local images.
+After an ordinary staging release passes full CI and deployment, review and
+merge the tested inputs into protected `main`. Open **Actions → Promote
+production → Run workflow**, select `main` and tick the confirmation checkbox.
+The workflow verifies the staging artifact and deploys the existing digests
+through the pinned production SSM document. Backups run independently and do
+not supply a deployment approval.
 
-```sh
-vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml config --quiet
-# Only necessary when these SHA-tagged images are not already present:
-vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml build --pull
-vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml up -d --no-build --wait --wait-timeout 180
-vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml ps
-curl --fail https://vellum.kacpergajdarski.com/ping
-```
-
-Never rebuild an already promoted SHA tag; promote the tested image artifact.
-Both environments may run different SHA tags. No application or database `ports`
-are published; Dockerfile `EXPOSE` is metadata and does not open an EC2 port.
+Wait for deployment, health and smoke verification. Check the resulting digests
+and receipts through the [production runbook](PRODUCTION-ACTIVATION.md). If
+a pending host operation exists, stop and follow the
+[recovery procedure](HOST-COORDINATION.md#recover-an-interrupted-operation).
 
 ## 6. Updates, rollback and operations
 
@@ -214,25 +211,14 @@ For controller receipts predating the `/etc` migration, read the rollback
 compatibility section in ENVIRONMENT-MIGRATION.md first; do not replay old
 controllers or rewrite manifest hashes to bypass the bundle check.
 
-Before upgrading, back up the target database and retain the previous image tag.
-Fetch/check out the intended committed revision, build and test staging, then
-promote the same images/tag to production. Re-run `up -d --no-build --wait` for
-the relevant project. Expect a brief interruption when its API container is
-replaced; this is a single-instance deployment.
-
-The current server always runs GORM AutoMigrate, including on rollback. It has
-no migration-only command, migration lock, down migration or schema history.
-Run one backend replica per project. Review schema changes before release and
-prefer backward-compatible changes. Reverting `IMAGE_TAG` requires both schema
-compatibility and preserved authentication/session-revocation semantics. For an
-older change unrelated to authentication, any required backup restore must follow
-the approved recovery procedure with explicit data-loss review. Do not run a second backend as a migration job.
-
-```sh
-vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml logs --tail=100 backend
-vellum_compose --project-name vellum-production --env-file /etc/vellum-cd/production.env -f deploy/compose.yml stop
-# Start it again with the up command above.
-```
+Keep the previous known-good images and receipts. The server runs GORM
+AutoMigrate at startup, including when recovering an earlier image. It has no
+migration-only command or down migration. Run one backend per project and
+review schema compatibility before release. An earlier image requires both
+schema compatibility and preserved authentication/session-revocation
+semantics. Neither reverting Git nor recovering an image undoes schema or
+data changes. Investigate failed migration or startup under the shared host
+recovery procedure. A live restore needs a separately approved recovery plan.
 
 `down` retains the named database volume; **never use `down -v` for normal
 operations**. Do not prune volumes. Updating `DB_PASSWORD`, `DB_USER` or `DB_NAME`
@@ -249,7 +235,7 @@ authentication behavior or add rate-limiting plugins to Caddy.
 
 ## 7. Backups and restore
 
-The proposed daily S3 workflow is documented in
+The independent daily S3 backup workflow is documented in
 [backup/README.md](backup/README.md), with an
 [isolated restore runbook](backup/RESTORE.md). It uses root-installed
 `backup.sh`/`backup.py`, the existing `/etc/vellum-cd/` environment files and
@@ -270,28 +256,12 @@ in the live staging database or a publicly routed application. Live recovery,
 write loss and schema-incompatible rollback require separate operator approval;
 image rollback does not undo AutoMigrate or database writes.
 
-## 8. Future registry / GitHub Actions workflow
+## 8. Registry and GitHub Actions
 
-The staging Actions workflow and production promotion design are documented in CI-CD.md. Both services already use
-`${IMAGE_PREFIX}-backend:${IMAGE_TAG}` / `${IMAGE_PREFIX}-frontend:${IMAGE_TAG}`
-and carry an OCI revision label. A future pipeline should build once per full
-commit SHA, scan/test both images, push them, deploy staging, and promote those
-same immutable artifacts to production. Match the build platform to EC2
-(`linux/amd64` for x86 instances or `linux/arm64` for Graviton), or publish a
-multi-platform manifest. Never overwrite a SHA tag; retain a digest for audit.
-Base images follow their declared version tags; pin reviewed image digests for
-fully repeatable builds and refresh them deliberately for security updates.
-
-Set `IMAGE_PREFIX=ghcr.io/<lowercase-owner>/vellum` in each env file when switching
-to GHCR (or use an ECR repository prefix). Authenticate using the registry's
-normal mechanism, then:
-
-```sh
-vellum_compose --project-name vellum-staging --env-file /etc/vellum-cd/staging.env -f deploy/compose.yml pull
-vellum_compose --project-name vellum-staging --env-file /etc/vellum-cd/staging.env -f deploy/compose.yml up -d --no-build --pull never --wait --wait-timeout 180
-```
-
-The explicit `--no-build` prevents rebuilding registry artifacts on EC2.
+[CI/CD](CI-CD.md) describes staging builds, GHCR image publication and pinned
+SSM deployment. Production promotes the exact staging image digests through
+the same installed six-file bundle. Keep deployment package pulls and known-good
+digests available for reviewed recovery.
 
 ## Password recovery
 
