@@ -6,6 +6,8 @@ broker, recovery worker, source-bound backup producer or scheduled drill. The
 standard production procedure remains in force until those components are
 implemented, independently reviewed and verified together. Changed backend
 execution or controller bundle requires the standard reviewed maintenance path.
+See the [production recovery evidence decision](PRODUCTION-RECOVERY-DECISION.md)
+for the independent worker design, verified London rates and remaining gates.
 
 ## Operator quickstart
 
