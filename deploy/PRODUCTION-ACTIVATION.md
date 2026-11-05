@@ -1,116 +1,63 @@
-# Guarded production activation
+# Promote a tested staging release to production
 
-**Feature PR → staging → reviewed PR into main → Run Promote production.**
-A release-needed staging push runs full CI, publishes and deploys both images
-when CD is enabled, and records the verified release. Production finds the single
-eligible release for the reviewed `main` tree and promotes those same digests.
-The existing standard production backup, isolated restore, schema and proxy
-approval still applies. The [pre-launch exception](PRELAUNCH-PRODUCTION.md)
-expired on 4 November 2026 UTC and is no longer exposed by this workflow.
+**Feature PR → staging → reviewed merge into main → Actions → Promote production.**
+A release-needed push to protected `staging` runs full CI and, with CD enabled,
+publishes and deploys both images. Once the owner chooses to merge the tested
+changes into protected `main`, they choose when to dispatch production. The
+workflow finds the one eligible staging release and deploys its existing image
+digests. A merge or push to `main` does not deploy production.
 
-## 1. GitHub configuration and verified current state
+Backups run independently. Their status is advisory for merges and deployments.
+The confirmation checkbox authorises the deployment, including brief API
+downtime, startup migrations and smoke requests. It carries no backup or restore
+attestation. Keep historical approval and pre-launch closure records as evidence.
+The [pre-launch procedure](PRELAUNCH-PRODUCTION.md) is retired.
 
-Read-only inspection on 2026-10-27 found default branch `staging`, repository CD
-flag `VELLUM_CD_ENABLED=false`, and `PRODUCTION_APPROVAL_MODE=manual`. Active
-main/staging rulesets require PRs and seven CI checks, prohibit force pushes and
-deletion, and have no bypass actors. Neither requires approving/code-owner
-reviews; main does not require an up-to-date branch, staging does. Production
-Environment permits only branch `main`, staging only `staging`; neither has
-reviewers, and administrator bypass is enabled. Recheck before operation:
+## One-time rollout of this controller revision
 
-```sh
-gh api repos/Kacperkg/vellum --jq '{default_branch,visibility}'
-gh api repos/Kacperkg/vellum/rulesets --paginate
-gh api repos/Kacperkg/vellum/rulesets/REPLACE_RULESET_ID
-gh api repos/Kacperkg/vellum/environments/production
-gh api repos/Kacperkg/vellum/environments/production/deployment-branch-policies
-gh api repos/Kacperkg/vellum/environments/staging/deployment-branch-policies
-gh variable list --repo Kacperkg/vellum
-gh variable list --repo Kacperkg/vellum --env production
-```
+These steps require operator approval and access to the shared host. They add
+no recovery infrastructure or AWS monthly charges. The production SSM document
+and its pins, deployment roles, backup jobs and schedules already have their
+own installation and configuration.
 
-Keep manual approval mode. Dispatch permission is an operator gate, without
-enforced two-person approval. Recommend at least one independent approving
-review, code-owner approval for workflows/controller, stale approval
-invalidation, and strict required checks on main. Any settings changes need
-separate approval. Environment reviewers, prevent-self-review and disabled admin
-bypass would strengthen the gate, but adopting another approval mode requires a
-separately reviewed implementation/configuration. This workflow rejects
-`environment` mode and never deploys on push.
+1. **Review and prepare before the first staging delivery.** Use the exact six
+   files from the reviewed revision, accounting for any changes included in
+   the proposed staging merge. Merging a bundle change with CD enabled can
+   immediately start staging CI and delivery. Install the matching protected
+   bundle before that delivery can reach SSM. If installation cannot precede
+   the merge, defer delivery through the existing operator process and obtain a
+   new eligible ordinary staging push once the bundle is installed and CD is
+   enabled. A manual staging verification does not supply production evidence.
+2. **Drain the shared host.** Freeze managed and manual deployments and schema
+   changes in both environments and coordinate backup timers for the maintenance
+   window. Verify in-flight SSM, Docker, database migration and dump work has
+   finished. Stop if `/var/lib/vellum-cd/operation-pending.json` exists and
+   follow the [host recovery procedure](HOST-COORDINATION.md). An unlocked host
+   or a cancelled Actions run is insufficient.
+3. **Install and verify the exact bundle and updated backup runner.** Copy the
+   six bundle files and `deploy/backup.py` as inert data into private, root-owned
+   staging, verify independent SHA-256 hashes and install at the existing
+   `/usr/local/lib/vellum-cd/` paths. Use root-owned 0644 files and trusted 0755
+   directories. Preserve lock inodes, root-private state and runtime configuration,
+   database credentials, volumes, earlier receipts and known-good images. Use
+   the [installation procedure](CI-CD.md#3-prepare-ec2-and-ssm-manually) and
+   [host coordination rules](HOST-COORDINATION.md). Resume the existing backup
+   schedule after verification and before normal operation. The old releases
+   cannot use the new bundle hashes, so keep production dispatch frozen until
+   the new staging release verifies and reaches `main`.
+4. **Verify protections and pins.** Keep `staging` as the default branch, both
+   deployment branches protected, and the staging/production GitHub Environments
+   restricted to their matching branches. Keep the exact production OIDC
+   identity, restricted role, document name, instance and pins below. The
+   existing `VELLUM_CD_ENABLED=true` and `PRODUCTION_APPROVAL_MODE=manual`
+   settings enable CD and manual production dispatch respectively. They are
+   one-time settings. Verify runtime and Caddy configuration privately.
+5. **Wait for a verified staging release.** Check the successful ordinary
+   **Release staging** run, including full CI and `publish-and-deploy`. Compare
+   its release manifest hashes to the installed bundle. Then review and merge
+   its release inputs into `main` before dispatching production.
 
-Production Environment variables must identify only the production account,
-role, region, instance and document ARN: `AWS_ACCOUNT_ID`, `AWS_REGION`,
-`AWS_DEPLOY_ROLE_ARN`, `SSM_INSTANCE_ID`, `SSM_DOCUMENT_ARN`. The production workflow pins version
-`2` and AWS metadata SHA-256
-`8d43e90f07c95456d7f781b591cc187eaf448e0c80b3a87d0433b9665297f83a`, carried
-over from the reviewed main workflow in PR #39. The production job gets `contents: read`,
-`actions: read`, `id-token: write`; no package writes. PR CI receives no AWS
-credentials. The exact case-sensitive repository/workflow identity remains
-`Kacperkg/vellum`, independently of case-insensitive GitHub URLs.
-
-## 2. Workflow availability
-
-The same workflow path must exist on default `staging` for discovery and on
-`main` for execution. Its only trigger is `workflow_dispatch`. Dispatch to
-staging, a feature branch, a tag, another repository or an unprotected main
-cannot deploy. Keep the production concurrency group and Environment protections.
-
-## 3. Verify current AWS and controller compatibility
-
-Historical AWS evidence (not current live verification): region `eu-west-2`,
-instance `i-073a8f8cf2abd86c5`, role `vellum-github-production-deploy`, document
-`VellumDeploy-production`, version `1`, metadata SHA-256
-`63e591e39c255a88d9a947474062242124816434eacf0c9c4f6ad8db1b000626`.
-This task did not contact AWS. With an authorised read-only operator identity:
-
-```sh
-aws sts get-caller-identity --query Account --output text
-aws iam get-role --role-name vellum-github-production-deploy
-aws iam list-role-policies --role-name vellum-github-production-deploy
-aws iam list-attached-role-policies --role-name vellum-github-production-deploy
-aws ssm describe-document --region eu-west-2 --name VellumDeploy-production \
-  --document-version 2 --query 'Document.{Name:Name,Version:DocumentVersion,Hash:Hash,HashType:HashType,Owner:Owner,Status:Status}'
-aws ssm get-document --region eu-west-2 --name VellumDeploy-production \
-  --document-version 2 --document-format JSON --query Content --output text
-aws ssm describe-instance-information --region eu-west-2 \
-  --filters Key=InstanceIds,Values=i-073a8f8cf2abd86c5 \
-  --query 'InstanceInformationList[].{Id:InstanceId,Agent:AgentVersion,Ping:PingStatus}'
-```
-
-Retrieve every listed inline policy (`iam get-role-policy`) and attached policy's
-default version (`iam get-policy`, `iam get-policy-version`). Verify trust has
-exact audience `sts.amazonaws.com` and subject
-`repo:Kacperkg/vellum:environment:production`, no wildcard or staging trust.
-Verify SendCommand grants only the reviewed account's exact production document
-and instance, with no generic shell-document, document-edit or alternate role
-grants. Preserve the existing GetCommandInvocation read permission. Compare AWS
-metadata hash/version to the independently reviewed pin; a local JSON formatting
-hash is not a substitute. The document must execute only the root-installed
-`python3 -I` controller for production using the Manifest ENV_VAR input. The
-revised template also requires bounded `ApprovalMode` ENV_VAR data, defaulting to
-`standard`; separately review a new numeric version and its AWS metadata hash
-before updating production pins, as detailed in the pre-launch runbook. Verify
-SSM Agent ENV_VAR support. Investigate drift; do not update pins blindly.
-
-## 4. Exact six-file bundle verification
-
-The pre-launch policy changes `cd/controller.py` and `cd/release.py` within the
-six-file bundle. It does not certify the live installation. The existing
-40587847468/1 manifest is incompatible with those changes; do not rewrite it.
-Before creating a new staging release, verify the installed bundle against the
-reviewed source on the drained host under the existing authorised installation
-procedure in [STAGING-AUTH-ROLLOUT.md](STAGING-AUTH-ROLLOUT.md). The exact list is:
-
-```text
-compose.yml
-compose.registry.yml
-cd/controller.py
-cd/coordination.py
-cd/release.py
-cd/smoke.py
-```
-
-From a trusted checkout, print expected hashes locally (no root execution):
+Print expected bundle hashes from a trusted checkout as an unprivileged user:
 
 ```sh
 python3 - <<'PY'
@@ -120,224 +67,160 @@ from release import bundle_hashes
 for name, digest in bundle_hashes('deploy').items():
     print(digest, name)
 PY
+shasum -a 256 deploy/backup.py
 ```
 
-On the host, read-only:
+During the same drained window, install the independently verified backup runner
+from the root-owned staging directory alongside the controller bundle:
+
+```sh
+sudo install -o root -g root -m 644 /root/APPROVED-STAGE/backup.py /usr/local/lib/vellum-cd/backup.py
+```
+
+Compare the installed bytes and ownership on the host:
 
 ```sh
 cd /usr/local/lib/vellum-cd
-sha256sum compose.yml compose.registry.yml cd/controller.py cd/coordination.py cd/release.py cd/smoke.py
-stat -c '%U %a %n' . cd compose.yml compose.registry.yml cd/controller.py cd/coordination.py cd/release.py cd/smoke.py
-sudo test ! -e /var/lib/vellum-cd/operation-pending.json
+sha256sum compose.yml compose.registry.yml cd/controller.py cd/coordination.py cd/release.py cd/smoke.py backup.py
+stat -c '%U %a %n' . cd compose.yml compose.registry.yml cd/controller.py cd/coordination.py cd/release.py cd/smoke.py backup.py
 ```
 
-Compare every hash to reviewed source and the selected manifest. Files must be
-root-owned 0644, trusted directories 0755; state/config remain root-private 0700.
-If mismatched, stop and obtain separate installation approval; retain original
-lock inodes, credentials, volumes and recovery information. Do not downgrade a
-controller or rewrite receipt hashes. Runner helper stays in the Actions
-checkout; never install/execute it as root.
+The bundle check deliberately rejects old receipts or manifests with other
+hashes. Keep them for history. The runner helper belongs in the Actions
+checkout. The SSM command invokes only the installed controller under isolated
+Python for the fixed `production` environment.
 
-## 5. Obtain an eligible staging release
+## GitHub, AWS and runtime prerequisites
 
-Merge a reviewed feature PR to protected `staging` after verifying the existing
-staging delivery prerequisites. Confirm **Release staging** succeeded, including
-`publish-and-deploy`. When delivery is enabled, any release-needed change runs
-full CI and produces the evidence required for production. Docs-only pushes
-can reuse a release with an equivalent tree. A skipped deployment, a manual
-verification, an old-format artifact or an unsuccessful rerun is ineligible.
-The staging job summary gives the canonical manifest SHA-256 needed below.
-There is no need to download the manifest or calculate the hash locally.
+The same workflow path must exist on default `staging` for discovery and on
+`main` for execution. Only an acknowledged `workflow_dispatch` of the canonical
+workflow on protected `main` can enter the production job. The job uses
+`contents: read`, `actions: read` and `id-token: write`. PR jobs do not get
+the production role. Retain the production Environment branch restriction and
+the workflow concurrency group.
 
-## 6. Review and merge staging into main
+Verify the actual protected branches, environment restrictions, role, target
+instance and SSM Agent rather than inferring them from repository source.
+Production Environment variables are `AWS_ACCOUNT_ID`, `AWS_REGION`,
+`AWS_DEPLOY_ROLE_ARN`, `SSM_INSTANCE_ID` and `SSM_DOCUMENT_ARN`. The exact OIDC
+audience is `sts.amazonaws.com` and the subject is
+`repo:Kacperkg/vellum:environment:production`. Verify that `SendCommand` allows
+only the reviewed production document and instance, with no generic shell
+document, document-edit permissions or wildcard trust.
 
-Open a normal staging-to-main PR. The resulting tree must match the tested
-staging commit across all tracked files, including both complete application
-trees, workflows, CI helpers, Compose, SSM and IAM examples, file types and
-modes. Only root `README.md`, `docs/`, top-level `deploy/*.md` runbooks and the
-unused historical `deploy/production-release.json` are excluded. Keep any
-production-only workflow update in the reviewed staging source as well so it
-is covered by release CI. The production SSM version and hash are already
-present there; preserve those exact pins in the merge.
-
-Squash, rebase and merge commits are all compatible with discovery if branch
-rules allow the merge strategy and the resulting files are equivalent. The
-branches already diverged; the first PR has conflicts in application,
-workflow and documentation files. Resolve them in review so the resulting
-application, deployment and workflow files match the tested staging tree.
-Retain the previous selector in Git history as release evidence. GitHub's
-current linear-history rules allow squash/rebase rather than a merge commit;
-these do not bring staging ancestry into main, so future PRs can also need
-conflict resolution. If a proposed resolution changes release-relevant
-files, land and test it on staging first. A different main tree cannot be
-promoted, regardless of how the PR was merged.
-
-## 7–8. How discovery verifies the release
-
-The read-only job searches ordinary staging-push runs created in the previous
-90 days (the artifact retention period). An incomplete search blocks promotion.
-It requires a source in current staging history, tree equivalence, successful
-CI and publication/deployment for the exact latest attempt, and one matching
-unexpired artifact. A rerun that is running, failed or cancelled invalidates
-earlier attempts of that run. The verified artifact name binds the run, attempt,
-canonical manifest SHA-256, and both staging build output digests. The workflow
-verifies the ZIP checksum and GitHub run metadata, compares the manifest
-checksum and image digests, and checks all six deployment-bundle hashes.
-
-If no release matches, inspect the intended staging run and check the main
-PR's resulting tree. Fix any differences on staging or obtain a fresh ordinary
-release for the intended source. A full rerun is usable only if the exact new
-attempt runs CI and deploys successfully and remains within the search window.
-If two releases match, the workflow refuses to choose. Review the evidence and
-use a new reviewed staging revision to establish a unique match; do not edit
-historical manifests or remove evidence to force selection.
-
-Historical context: manual run 40560489451/1 was ineligible. PR #36 selected
-ordinary staging run 40587847468/1 using the legacy selector. That release
-predates this artifact contract; its historical evidence remains in Git.
-
-## 9. Backup, isolated restore and release-specific approval
-
-Two-day S3 retention is accepted, but is not restore proof. **Never set
-`restore_verified=true` without an actual isolated verified restore.** Missing
-restore evidence intentionally blocks production, even after workflow activation.
-
-Minimum procedure for standard production approval:
-
-1. On an authorised private disposable host, follow
-   [backup/RESTORE.md](backup/RESTORE.md) using an actual recent **production**
-   completion marker/archive/manifest triple, replacing that guide's staging key
-   examples with exact production keys. Use a read-only recovery role, private
-   files and checksum verification of every selected S3 object.
-2. Restore with matching PostgreSQL 17 tools into a uniquely named disposable
-   database/container, no live volumes, no host/public ports, no `web` network,
-   no production environment file/secret and no IMDS exposure. `pg_restore --list`
-   alone is insufficient. Run restore with exit-on-error and inspect private
-   table/index/constraint/relationship and financial aggregate evidence.
-3. On separate restored copies, verify the matching retained application and
-   selected version-aware candidate, with fresh drill secrets, controlled test
-   accounts and SES disabled. Inspect schema before/after AutoMigrate/seeding,
-   budget uniqueness preflight, auth/session revocation and financial behavior.
-   Migration can leave partial DDL/data. Record durations, digests, recovery
-   point, aggregate results and private evidence reference. No live DB writes.
-4. Clean up only recorded disposable resources after retaining private evidence.
-   Take a new protected production backup if the selected backup/verification
-   would exceed 24 hours at dispatch; repeat/refresh evidence as appropriate.
-
-Through the existing separately approved host configuration process, prepare
-root-private `/var/lib/vellum-cd/production-approval.json` from
-`production-approval.example.json`. Require the canonical selected manifest's
-exact hash, timezone-aware backup creation and verification timestamps within
-24 hours (creation no later than verification), private nonempty
-`backup_reference`, and strictly true `off_host_copy_verified`, `restore_verified`,
-`schema_compatible`, `trusted_proxy_reviewed`. Do not publish evidence, dumps,
-credentials or user data in a PR. The installed controller enforces these before
-downtime; it also rejects a wrong release, missing or stale approval.
-
-## 10–11. Runtime and production Caddy routing
-
-Privately verify `/etc/vellum-cd/production.env` ownership/mode and the existing
-production project, PostgreSQL volume/name/user/password, JWT signing secret,
-origin `https://vellum.kacpergajdarski.com`, private backend/database ports and
-reviewed `TRUSTED_PROXY_CIDRS`. Retain staging/production isolation. SES may stay
-`disabled`; migrations and version revocation still apply. Follow
-[PASSWORD-RESET.md](PASSWORD-RESET.md) for any separately approved runtime changes.
-Do not print resolved Compose or secrets. Caddy must already route auth/recovery
-POST and OPTIONS to backend, GET deep links to SPA, with privacy headers and
-correct proxy trust. Validate any merged Caddy configuration separately before
-an authorised reload; preserve unrelated sites and shared `web`. The deployment
-workflow/controller never modifies Caddy. Disconnect maintenance clients and
-freeze external production writers before the backend drain gate.
-
-## 12. Explicit production dispatch — mutating operator action
-
-After the reviewed merge and installation of the standard host approval, open
-**Actions → Promote production → Run workflow**, select `main`, and tick
-`confirm_production_deployment`. The checkbox acknowledges backend replacement,
-brief API downtime, AutoMigrate/seeding and smoke requests. The host record
-separately attests to backup, restore and schema evidence. With no GitHub
-Environment reviewer configured, dispatch does not pause for that record;
-prepare it first from the staging summary hash.
-
-The read-only job reports the exact staging run, artifact, image digests and
-manifest checksum. The production job requires the same unique release before
-obtaining credentials and again before sending the pinned SSM command. It checks
-live `main` just before dispatch and rejects an observed change. GitHub and SSM
-do not provide a shared transaction; avoid concurrent merges or staging reruns
-while production is being dispatched. The controller verifies the same standard,
-release-specific approval before mutation and retains the existing recovery gates.
-
-## 13–14. Monitoring and post-deployment verification
-
-Watch the exact workflow run (`gh run watch RUN_ID --repo Kacperkg/vellum`).
-Inspect SSM status privately without dumping payloads/logs. Through approved host
-access, compare exact runtime image digests, one healthy production backend and
-current/per-release receipts to the selected manifest. Verify `/ping`, frontend,
-login/refresh/logout, protected authorization and password recovery routing with
-approved accounts; verify version revocation and SES behavior only through
-separately approved tests. Ensure backup freshness and no pending marker before
-resuming coordinated work. Historical receipts alone do not prove current state.
-
-**Expect a brief API outage/502s**: old production backends stop, are identity
-verified/removed and the production database's client sessions drain before one
-candidate starts. Immutable digest/singleton health and Caddy smoke gates remain
-mandatory. No rolling overlap of old/new authentication writers is allowed.
-
-## 15. Failure investigation and version-aware recovery
-
-Do not retry, auto-cancel SSM, clear markers or roll back automatically. Workflow
-cancellation/timeouts can leave SSM/Docker/migration work running. If no command
-ID appears, note the exact run/time window and find the matching production
-command privately (success output emits command_id only after completion):
+This policy keeps `VellumDeploy-production` at numeric version `2` and AWS
+metadata SHA-256
+`8d43e90f07c95456d7f781b591cc187eaf448e0c80b3a87d0433b9665297f83a`.
+Check the actual AWS metadata and reviewed document with an authorised read-only
+identity. A hash of the local JSON file is not an AWS document hash.
 
 ```sh
-aws ssm list-commands --region eu-west-2 --instance-id i-073a8f8cf2abd86c5 \
+aws ssm describe-document --name VellumDeploy-production --document-version 2 \
+  --query 'Document.{Name:Name,Version:DocumentVersion,Hash:Hash,HashType:HashType,Owner:Owner,Status:Status}'
+aws ssm get-document --name VellumDeploy-production --document-version 2 \
+  --document-format JSON --query Content --output text
+```
+
+The runner sends only the manifest. Version 2 still supplies its legacy
+`ApprovalMode` default `standard` as an environment variable for compatibility.
+The new controller rejects a missing or non-standard value, including the
+retired pre-launch mode. This wire parameter carries no approval evidence. Investigate document
+drift before any dispatch. Changing document versions or pins requires a
+separate, reviewed change.
+
+Privately verify ownership and mode of `/etc/vellum-cd/production.env`, the
+existing production project, database, volume and credentials, the production
+origin, private ports and `TRUSTED_PROXY_CIDRS`. The controller retains its
+automated trusted proxy check. Caddy must route auth/recovery POST and OPTIONS to
+the backend and GET deep links to the SPA. Keep runtime secrets, resolved Compose
+output and detailed logs private. Disconnect maintenance clients and freeze
+external writers for the backend drain. SES can stay disabled while migrations
+and session revocation still run.
+
+## Review the merge and dispatch
+
+The reviewed `main` tree must match an eligible staging release across tracked
+release inputs, including both application trees, workflows, CI helpers,
+Compose, SSM and IAM examples, file types and modes. The comparison excludes
+only root `README.md`, `docs/`, top-level `deploy/*.md` and the historical
+`deploy/production-release.json`. Merge, squash and rebase can produce equivalent
+trees when branch rules permit. Land and test any changes to release inputs on
+staging before promoting.
+
+After merging, open **Actions → Promote production → Run workflow**, select
+**main** and tick **I approve production replacement, API downtime, migrations
+and smoke requests**. The workflow reports the exact staging run, artifact,
+manifest SHA-256 and image digests. The production job rechecks that same
+release before obtaining AWS credentials and before sending the pinned SSM
+command. Avoid concurrent merges or staging reruns while it is being dispatched.
+
+Discovery requires a successful ordinary staging push from current staging
+history within the 90-day search window, full required CI and staging delivery
+for the exact latest attempt, and one unexpired matching artifact. It checks
+archive provenance and checksum, manifest checksum, both build digests and all
+six deployment-bundle hashes. A manual verification, skipped deploy or failed,
+running or cancelled latest attempt cannot supply a release. If discovery finds
+zero matches, inspect the intended run and compare the reviewed tree. If it
+finds multiple matches, use a new reviewed staging revision to establish one
+eligible match. Preserve all historical manifests and receipts.
+
+## Verify the deployment or investigate a failure
+
+Watch the exact Actions run (for example, `gh run watch RUN_ID --repo
+Kacperkg/vellum`). The backend may return brief 502s while the controller stops
+and removes old writers, drains the target database sessions, and starts one
+version-aware backend. Startup migration precedes the API listener. Container
+health, backend identity/digest and Caddy smoke checks must pass before the
+controller writes successful release receipts. The production controller also
+checks the new backend did not restart before or during smoke verification;
+a healthy retry can mask a failed startup or migration.
+
+With approved host access, compare the workflow summary with
+`/var/lib/vellum-cd/production-current.json`,
+`production-previous.json` and the per-release
+`production-RUN_ID-RUN_ATTEMPT.json` in the same directory. Check actual
+running container references and health in both production services. These
+targeted read-only commands avoid printing container environment data:
+
+```sh
+sudo jq '{source_sha, run_id, run_attempt, images}' /var/lib/vellum-cd/production-current.json
+sudo docker ps -a --filter label=com.docker.compose.project=vellum-production \
+  --format '{{.ID}} {{.Label "com.docker.compose.service"}} {{.Image}} {{.Status}}'
+sudo docker inspect --format '{{.Config.Image}} {{.Image}}' CONTAINER_ID
+```
+
+Check public `/ping` and frontend routing. Use approved test accounts for any
+additional auth checks. Receipts identify successful history and can lag actual
+runtime state after a failure.
+
+If Actions fails, times out or is cancelled, inspect the exact SSM command
+before attempting another release. Actions cancellation can leave remote work
+running. If the workflow did not report a command ID, match the pinned document,
+target instance and run time window in SSM:
+
+```sh
+aws ssm list-commands --instance-id INSTANCE_ID \
   --query 'Commands[].{Id:CommandId,Document:DocumentName,Time:RequestedDateTime,Status:Status}'
-aws ssm get-command-invocation --region eu-west-2 \
-  --instance-id i-073a8f8cf2abd86c5 --command-id REPLACE_EXACT_ID \
+aws ssm get-command-invocation --instance-id INSTANCE_ID --command-id COMMAND_ID \
   --query '{Status:Status,Code:ResponseCode}'
 ```
 
-Match the pinned production document and dispatch window; never infer success
-from a stopped workflow. Follow [HOST-COORDINATION.md](HOST-COORDINATION.md) for
-private investigation and separately approved recovery under original lock
-inodes. A retained marker blocks both environments and backups; respond promptly.
-Quiesce candidate restart/migration work, verify target sessions, container state
-and all receipts (receipt writes can partially succeed after smoke), then obtain
-explicit recovery approval. Never delete PostgreSQL volumes, rewrite historical
-hashes, downgrade the controller or assume image rollback reverses migration.
-Use a reviewed version-aware roll-forward/recovery release with current bundle
-and fresh release-specific approval. Pre-PR28 authentication code can resurrect
-revoked sessions and is not an automatic rollback option. There is no second
-production deployment path or unreviewed manual Compose fallback in this workflow.
+If a pending marker exists, stop managed work and follow
+[HOST-COORDINATION.md](HOST-COORDINATION.md#recover-an-interrupted-operation).
+Inspect the running containers, database sessions, restarts and receipts before
+authorising recovery. Never clear a pending marker automatically or replace a
+lock file. A held lock or a marker from an unconfirmed database dump is a shared
+host safety condition. Once the dump returns successfully, the backup clears
+its own marker and keeps the locks through archive checks and S3 upload.
+Backup freshness, archive and upload failures, alert results and restore
+evidence are not dispatch gates.
 
-## Historical activation validation and independent review (2026-10-27)
-
-Local results for this activation change: 50 CI helper regression tests and 128
-deployment safety tests passed. These cover production approval, provenance,
-backend-writer replacement, recovery markers, SSM timeout/failure/cancellation,
-backup safety and staging/manual compatibility. Actionlint v1.7.7, Go SSM regex
-tests, synthetic Compose relocation/model validation, Caddy validation and both
-hosts' loopback recovery routing, Docker secret exclusions, Python syntax and
-`git diff --check` passed. Docker checks used only local disposable synthetic
-fixtures; no live services/databases were used. Docker context checks emitted a
-non-fatal build metadata warning about unavailable Git commit information.
-
-Five independent reviewer roles completed: Actions security, release provenance,
-AWS deployment security, deployment reliability and final diff review. Findings
-resolved include the template's automatic push path, missing dispatch identity
-and acknowledgement gates, skipped publication/latest-attempt validation, and a
-regression test that would have incorrectly prohibited later valid selector
-configuration. No confirmed blocking implementation finding remains. Live GitHub
-protections were inspected read-only; live AWS/controller installation/restore
-and deployment behavior were not verified. The existing six-file bundle,
-selector, application code, runtime config, SSM/IAM and CI performance settings
-remain unchanged. AGENTS.md stays local and ignored.
-
-Verdict: **Ready with caveats** for the reviewed implementation draft PR;
-**Not ready** for production dispatch until this runbook's release, restore,
-configuration and host/AWS verification gates are satisfied. No staging or
-production deployment, image publication, merge, AWS mutation, GitHub settings
-change, live database change, Caddy reload or backup-timer change was performed.
-Hosted PR CI is separate from the local validation above; inspect the draft PR's
-current checks before any merge approval.
+The controller has no automatic image rollback after migration or health
+failure. A reviewed image recovery can reuse known-good digests only when
+the schema and authentication/session behaviour remain compatible and the
+current bundle is verified. Reverting a Git commit or image does not reverse
+schema or data changes, and a failed migration can leave partial changes.
+Prefer a version-aware fix where safe. Retain receipts and images, and use the
+separate [backup and restore runbook](backup/README.md) for optional recovery
+planning or an authorised data restore. Never restore production data into
+public staging.

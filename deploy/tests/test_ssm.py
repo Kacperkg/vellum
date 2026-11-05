@@ -1,8 +1,12 @@
 import base64
 import json
+import os
 from pathlib import Path
+import stat
 import sys
+import types
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cd"))
 import controller
@@ -25,6 +29,34 @@ class ManifestParameterTests(unittest.TestCase):
         self.assertTrue(any("SSM_ApprovalMode:-" in command for command in commands))
         self.assertFalse(any("{{" in command for command in commands))
         self.assertEqual(commands[-1], "exec /usr/bin/python3 -I /usr/local/lib/vellum-cd/cd/controller.py production")
+
+    def test_controller_only_accepts_legacy_v2_default_and_uses_normal_deploy(self):
+        deploy_root = Path(controller.__file__).resolve().parents[1]
+        state = types.SimpleNamespace(
+            is_dir=lambda: True,
+            stat=lambda: types.SimpleNamespace(st_uid=0, st_mode=stat.S_IFDIR | 0o700),
+        )
+        value = {"example": "manifest transport"}
+        encoded = base64.b64encode(json.dumps(value).encode()).decode()
+        for mode in ("standard", None, "prelaunch", "", "$(id)"):
+            env = {"SSM_Manifest": encoded}
+            if mode is not None:
+                env["SSM_ApprovalMode"] = mode
+            with (self.subTest(mode=mode),
+                  patch.object(controller, "BASE", deploy_root),
+                  patch.object(controller, "STATE", state),
+                  patch.object(controller.os, "geteuid", return_value=0),
+                  patch.object(controller, "protected"),
+                  patch.object(sys, "argv", ["controller.py", "production"]),
+                  patch.dict(os.environ, env, clear=True),
+                  patch.object(controller, "deploy") as deploy):
+                if mode == "standard":
+                    controller.main()
+                    deploy.assert_called_once_with("production", value)
+                else:
+                    with self.assertRaisesRegex(ValueError, "legacy SSM approval modes"):
+                        controller.main()
+                    deploy.assert_not_called()
 
     def test_templates_share_native_size_bounds_and_safe_interpolation(self):
         for environment in ("staging", "production"):

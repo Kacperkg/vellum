@@ -25,14 +25,16 @@ Existing root-owned regular single-link 0644 controller locks are accepted;
 symlinks, hardlinks, FIFOs, non-root owners and writable locks are rejected.
 The state directory must be root-owned 0700 under trusted root-owned parents.
 
-Before any managed Docker/database work, the operation exclusively creates
+Before a guarded phase, the operation exclusively creates
 `/var/lib/vellum-cd/operation-pending.json` at 0600 and fsyncs the file and directory.
 The record contains only operation kind, environment, PID and UTC start time.
-A successful operation removes it and syncs the directory while still locked.
-Every incomplete operation retains it: errors, graceful cancellation, SIGKILL,
-SSM timeout, reboot and loss of the Docker client all require operator recovery.
-This intentionally includes harmless early failures and failed uploads; safety
-is preferred over automatic resumption after uncertain work.
+A successful guarded phase removes it and syncs the directory while still
+locked. Deployment and maintenance retain it on incomplete work. Backups keep
+it around the PostgreSQL dump phase, which can outlive its client. They clear
+their own marker once the dump returns successfully, before archive checks,
+S3 upload and cleanup. The entire backup still holds the same host locks.
+A backup preflight, archive or upload error fails the backup independently
+without creating or retaining a marker for that error.
 
 The file lock alone cannot prove quiescence: Docker's daemon can continue an
 update, a newly started backend can continue AutoMigrate, and an in-container
@@ -41,18 +43,22 @@ maintenance fail closed on **any** existing pending entry, even a dangling symli
 A dead PID, old timestamp, reboot or free flock never authorizes automatic recovery.
 Freshness checks remain read-only and bypass this gate so alarms still operate.
 
-Controller manifest/bundle verification and production release-specific backup,
-schema and proxy approvals remain mandatory. The gate surrounds `Commands.apply`,
-including image work, application startup/AutoMigrate, smoke checks and durable
-release receipts. Failure retains the gate and does not automatically roll back.
-The backup gate covers dump, upload verification and cleanup. Backup cancellation
-still attempts in-container cancellation and retains the existing hard-timeout
-wait; the pending record remains even after a handled failure.
+Controller manifest/bundle and automated runtime checks remain mandatory.
+The deployment marker covers `Commands.apply`, including image work,
+startup/AutoMigrate, smoke checks and durable release receipts. Failure retains
+the marker and does not automatically roll back. Backup cancellation during
+the dump still attempts in-container cancellation and retains the existing
+hard-timeout wait. A failed or interrupted dump can leave the marker and
+requires host recovery.
 
 ## Operator installation requirement
 
-This repository change does not update EC2. Before resuming either controller or
-backup jobs, an operator must separately approve a **paired installation**:
+Before resuming controller or backup jobs, an operator must approve a paired
+installation under a drained maintenance window. For the current production
+policy update, follow the [one-time rollout](PRODUCTION-ACTIVATION.md#one-time-rollout-of-this-controller-revision)
+to install the matching six-file bundle and root-owned `backup.py` while keeping
+existing units, timers and lock files. The initial host coordination
+installation is documented below for hosts that still need it.
 
 1. Freeze manual/SSM/Actions deployments and migrations in both environments;
    pause backup timers and other jobs through their approved operational process.
@@ -96,8 +102,8 @@ receipts/hashes to bypass this check. Both versions share the lock paths for
 in-flight exclusion, but **mixed installations are not supported for active use**:
 old code does not understand the durable pending record. Upgrade both together
 under the drained freeze. A previous-image rollback still needs compatible schema,
-reviewed current tooling and a new valid approval; downgrading the controller to
-replay a receipt removes these protections and is not an operational rollback.
+reviewed current tooling and a separate operator decision. Downgrading the
+controller to replay a receipt removes the shared coordination protections.
 No change to the restricted SSM command/document, role or deployment flags is needed.
 
 ## Manual schema work and raw Compose
@@ -145,8 +151,8 @@ operation and affected deployment state. Keep a freeze across both environments.
 2. For an interrupted backup, verify no orphan `pg_dump`; if cancellation cannot
    be confirmed, wait beyond the documented approximately 16-minute in-container
    bound from interruption **and** verify quiescence. Do not infer deployment
-   quiescence from this timeout: backend AutoMigrate has no equivalent bound.
-   For interrupted deployments, resolve incomplete startup/schema work explicitly;
+   quiescence from this timeout: the candidate can restart and run AutoMigrate
+   again. For interrupted deployments, resolve incomplete startup/schema work explicitly;
    never assume old-image rollback reverses migrations or later writes.
 3. Once quiescence is independently established, use a separately reviewed
    root-owned recovery script to acquire `host_locks(STATE)` in the same order.
@@ -192,8 +198,7 @@ After cancellation, do not infer quiescence from a dead controller or unchanged
 receipts. A Docker daemon request or new backend restart can still be executing
 AutoMigrate. Privately inspect all target-environment backend instances (including one-offs),
 actual digests, startup health and that environment's DB client sessions/transactions.
-Production uses the same barrier as staging; preserve its verified manifest and
-release-specific approval gate. The six-file membership is unchanged from PR #28,
+Production uses the same barrier as staging and requires its verified manifest. The six-file membership is unchanged from PR #28,
 but all installed hashes must match the newly approved release before either
 environment resumes deployments. See the production installation prerequisites
 in the authentication rollout runbook, including daily backup timer coordination. Drain

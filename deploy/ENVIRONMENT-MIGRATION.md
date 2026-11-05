@@ -165,7 +165,7 @@ and source contexts, but sudo must never run unreviewed code from that writable
 checkout. IMAGE_TAG changes must now be made privately by root in the managed
 file. Runtime credentials and project names must remain unchanged. The installed
 digest controller remains the preferred update/recovery path, with its host lock
-and production approvals; manual Compose must not overlap a controller run.
+and protected production dispatch. Manual Compose must not overlap a controller run.
 
 **Backup compatibility:** use the root-installed daily S3 implementation and
 [paired host-coordination installation](HOST-COORDINATION.md), including
@@ -180,7 +180,7 @@ Old receipts require their original bundle hashes, and older controllers expect
 checkout env paths. Do not recreate checkout secrets, add symlink fallbacks or
 rewrite manifest hashes to replay them. Before deployment, prepare an explicitly
 reviewed recovery procedure using the previous known-good digests, new `/etc`
-paths, trusted installed Compose files, the host lock and schema/backup approval.
+paths, trusted installed Compose files, the host lock and compatible schema.
 Target only backend/frontend with `--no-deps --no-build --pull never`; image
 rollback cannot undo AutoMigrate or database writes. A historical receipt is not
 automatically compatible with the new controller bundle.

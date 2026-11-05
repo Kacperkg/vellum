@@ -1,5 +1,4 @@
 from contextlib import nullcontext
-from datetime import datetime, timezone, timedelta
 import hashlib
 import base64
 import io
@@ -363,38 +362,6 @@ class ControllerTests(unittest.TestCase):
             with patch.object(Path, "lstat", autospec=True, side_effect=writable_library):
                 with self.assertRaisesRegex(ValueError, "installation file"):
                     controller.validate_installation()
-
-    def test_production_requires_fresh_release_specific_backup(self):
-        now = datetime.now(timezone.utc)
-        approval = {
-            "manifest_sha256": hashlib.sha256(
-                release.canonical(manifest())
-            ).hexdigest(),
-            "verified_at": now.isoformat(),
-            "backup_created_at": (now - timedelta(hours=1)).isoformat(),
-            "backup_reference": "private-drill-42",
-            "off_host_copy_verified": True,
-            "restore_verified": True,
-            "schema_compatible": True,
-            "trusted_proxy_reviewed": True,
-        }
-        controller.validate_approval(approval, manifest(), now)
-        for key, bad in (
-            ("manifest_sha256", "e" * 64),
-            ("verified_at", (now - timedelta(days=2)).isoformat()),
-            ("verified_at", (now + timedelta(minutes=1)).isoformat()),
-            ("backup_created_at", (now - timedelta(days=2)).isoformat()),
-            ("backup_created_at", (now + timedelta(minutes=1)).isoformat()),
-            ("off_host_copy_verified", False),
-            ("restore_verified", False),
-            ("schema_compatible", False),
-            ("trusted_proxy_reviewed", False),
-        ):
-            with self.subTest(key=key):
-                value = dict(approval)
-                value[key] = bad
-                with self.assertRaises(ValueError):
-                    controller.validate_approval(value, manifest(), now)
 
     def test_applies_only_targeted_app_services_after_both_pulls(self):
         value = manifest()

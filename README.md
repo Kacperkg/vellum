@@ -241,13 +241,14 @@ AWS OIDC and Systems Manager. Release manifests record
 immutable image digests and staging verification evidence. The
 [delivery guide](deploy/CI-CD.md) records a successful end-to-end staging release.
 
-For production, merge the reviewed `staging` changes into `main`. Prepare the
-standard release-specific backup and restore approval, then open **Actions →
-Promote production → Run workflow** on `main` and tick the deployment
-confirmation. The workflow finds the single successful staging release whose
-tested files match `main` and deploys its existing image digests. A merge alone
-cannot deploy production. See the [production runbook](deploy/PRODUCTION-ACTIVATION.md)
-for approval, merge compatibility and missing-release troubleshooting.
+For production, merge the reviewed `staging` changes into protected `main`
+when ready. Open **Actions → Promote production → Run workflow**, select
+`main` and tick the deployment confirmation. The workflow finds the one
+eligible staging release whose tested inputs match `main`, deploys its existing
+image digests and checks service health. Backups run independently and their
+status is advisory. The merge itself leaves production running its current
+release. See the [production runbook](deploy/PRODUCTION-ACTIVATION.md) for the
+one-time controller rollout and how to verify a deployment.
 
 ## Security and operational limits
 
@@ -264,7 +265,8 @@ for approval, merge compatibility and missing-release troubleshooting.
 - Staging and production share an EC2 host and proxy network. Separate database
   volumes do not provide independent infrastructure failure boundaries.
 - Schema changes run through startup AutoMigrate. Rolling back an image does not
-  reverse a database migration; backup and compatibility review remain necessary.
+  reverse a database migration or undo subsequent writes. Review schema and
+  session compatibility before recovering an earlier image.
 
 ## Project status
 
@@ -276,9 +278,9 @@ guide; production promotion is controlled separately.
 | Area                                             | Current repository status                                                                 |
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | Production runtime images and staging delivery   | Implemented; staging release verification recorded                                        |
-| Production deployment automation                 | Prepared workflow remains disabled                                                        |
+| Production deployment automation                 | Manual dispatch on protected `main` with a verified staging release                       |
 | AWS SES password recovery and email verification | Not implemented                                                                           |
-| Automated PostgreSQL backups to S3               | Not configured; manual backup tooling exists, with migration prerequisites in the runbook |
+| Automated PostgreSQL backups to S3               | Independent daily backup and freshness checks, configured on the host                       |
 | Terraform and SOPS migration                     | Not implemented; future infrastructure work                                               |
 
 ## Further reading
