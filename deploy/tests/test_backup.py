@@ -294,7 +294,7 @@ class BackupFlowTests(unittest.TestCase):
         def synthetic_run(args, label, timeout=60):
             return b'17.6\n' if label == 'PostgreSQL version' else b''
         with patch.object(backup, 'STATE', root), patch.object(backup, 'trusted'), \
-             patch.object(backup, 'host_operation', side_effect=lambda environment: nullcontext()), \
+             patch.object(backup, 'host_operation', return_value=nullcontext(nullcontext())), \
              patch.object(backup, 'check_space'), patch.object(backup, 'run', side_effect=synthetic_run), \
              patch.object(backup, 'dump', side_effect=synthetic_dump), \
              patch.object(backup, 'verify_archive', side_effect=backup.BackupError('corrupt') if archive_failure else None), \
