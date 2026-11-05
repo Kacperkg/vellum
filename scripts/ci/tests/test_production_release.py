@@ -313,7 +313,7 @@ class GitEquivalenceTests(unittest.TestCase):
 
 
 class DispatchTests(unittest.TestCase):
-    def test_dispatch_uses_standard_host_approval_and_rechecks_main_last(self):
+    def test_dispatch_passes_only_release_and_rechecks_main_last(self):
         data = release.canonical(manifest())
         identity = f"{RUN}:{ATTEMPT}:987:{hashlib.sha256(data).hexdigest()}"
         with tempfile.TemporaryDirectory() as directory:
@@ -330,7 +330,7 @@ class DispatchTests(unittest.TestCase):
                 dispatch.assert_not_called()
                 current.side_effect = None
                 production.dispatch(args)
-                self.assertEqual(dispatch.call_args.args[0].approval_mode, "standard")
+                dispatch.assert_called_once_with(argparse.Namespace(environment="production", manifest=str(path)))
                 dispatch.reset_mock()
                 discover.return_value = (identity.replace(":987:", ":988:"), data, manifest())
                 with self.assertRaisesRegex(ValueError, "artifact changed"):
@@ -405,7 +405,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("role-session-name: vellum-production-${{ github.run_id }}", self.promote)
         self.assertLess(self.promote.index("production_release.py prepare"), self.promote.index("aws-actions/configure-aws-credentials"))
         self.assertLess(self.promote.index("aws-actions/configure-aws-credentials"), self.promote.index("production_release.py dispatch"))
-        self.assertIn("production_release.py dispatch --manifest approved-release.json", self.promote)
+        self.assertIn("production_release.py dispatch --manifest verified-release.json", self.promote)
         self.assertNotIn("release.py dispatch --environment production", self.promote)
         self.assertNotIn("continue-on-error", self.promote)
         self.assertNotIn("if: always()", self.promote)

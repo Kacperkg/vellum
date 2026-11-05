@@ -140,10 +140,11 @@ def host_operation(environment):
     trusted(BASE / 'cd' / 'coordination.py')
     # -I removed implicit local imports. Add only the explicitly trusted library.
     sys.path.insert(0, str(BASE / 'cd'))
-    from coordination import CoordinationError, operation
+    from coordination import CoordinationError, host_locks, pending_operation, require_no_pending
     try:
-        with operation(STATE, 'backup', environment):
-            yield
+        with host_locks(STATE):
+            require_no_pending(STATE)
+            yield pending_operation(STATE, 'backup', environment)
     except CoordinationError as error:
         raise BackupError(str(error)) from None
 
@@ -278,7 +279,7 @@ def backup(environment, config):
     spool.mkdir(mode=0o700, exist_ok=True)
     trusted(spool, directory=True, private=True)
     # Shared host gate also excludes opposite-environment and legacy controllers.
-    with host_operation(environment):
+    with host_operation(environment) as pending_dump:
         check_space(spool)
         work = Path(tempfile.mkdtemp(prefix=environment + '-', dir=spool))
         archive = work / 'database.dump'
@@ -293,7 +294,11 @@ def backup(environment, config):
             require(re.fullmatch(r'17(?:\.[0-9]+)?(?: [A-Za-z0-9 .()_-]+)?', version),
                     'expected PostgreSQL 17')
             started = now()
-            dump(compose, archive, spool)
+            # A lost Docker client can leave pg_dump running. Once the dump
+            # returns successfully, the remaining archive and S3 work cannot
+            # leave a database operation running, but still holds all locks.
+            with pending_dump:
+                dump(compose, archive, spool)
             verify_archive(compose, archive)
             complete_dump = True
             run_id = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ-') + uuid.uuid4().hex

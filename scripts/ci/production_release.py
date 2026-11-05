@@ -53,7 +53,7 @@ def guard():
         os.environ.get("VELLUM_CD_ENABLED") == "true"
         and os.environ.get("PRODUCTION_APPROVAL_MODE") == "manual"
         and os.environ.get("CONFIRM_PRODUCTION_DEPLOYMENT") == "true",
-        "production requires enabled CD, manual approval mode and explicit acknowledgement",
+        "production requires enabled CD, production opt-in and explicit acknowledgement",
     )
     sha = os.environ.get("GITHUB_SHA", "")
     release.require(
@@ -253,7 +253,7 @@ def prepare(args):
             f"- Staging source: `{value['source_sha']}`\n"
             f"- [Staging run {run_id}, attempt {attempt}](https://github.com/{REPOSITORY}/actions/runs/{run_id}/attempts/{attempt})\n"
             f"- Artifact ID: `{artifact}`\n"
-            f"- Recovery approval manifest SHA-256: `{checksum}`\n"
+            f"- Verified manifest SHA-256: `{checksum}`\n"
             f"- Backend: `{value['images']['backend']}`\n"
             f"- Frontend: `{value['images']['frontend']}`\n"
         )
@@ -275,8 +275,7 @@ def dispatch(args):
     current_staging()
     exact_run(release.api(f"{API}/actions/runs/{run_id}"), int(run_id), int(attempt), source)
     current_main(sha)
-    release.dispatch(argparse.Namespace(environment="production", manifest=args.manifest,
-                                        approval_mode="standard"))
+    release.dispatch(argparse.Namespace(environment="production", manifest=args.manifest))
 
 
 def main():

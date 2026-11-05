@@ -2,6 +2,7 @@
 from contextlib import ExitStack
 import fcntl
 import importlib.util
+import json
 import multiprocessing
 import os
 from pathlib import Path
@@ -35,7 +36,7 @@ def fixture(state):
     return stack
 
 
-def run_operation(state, kind, environment, work):
+def run_operation(state, kind, environment, work, *, phase='dump'):
     with fixture(state), ExitStack() as stack:
         if kind == 'maintenance':
             with coordination.operation(state, kind, environment):
@@ -43,31 +44,34 @@ def run_operation(state, kind, environment, work):
         elif kind == 'deployment':
             value = manifest()
             stack.enter_context(patch.object(controller, 'bundle_hashes', return_value=value['deployment_files']))
-            stack.enter_context(patch.object(controller, 'protected'))
-            stack.enter_context(patch.object(controller, 'read_json', return_value={}))
-            stack.enter_context(patch.object(controller, 'validate_approval'))
             commands = types.SimpleNamespace(apply=lambda _: work(), diagnostics=lambda: None)
             controller.deploy(environment, value, commands)
         else:
             stack.enter_context(patch.object(backup, 'trusted'))
-            stack.enter_context(patch.object(backup, 'check_space'))
+            stack.enter_context(patch.object(backup, 'check_space',
+                                             side_effect=(lambda _: work()) if phase == 'preflight' else None))
             stack.enter_context(patch.object(backup, 'BASE', DEPLOY))
             stack.enter_context(patch.object(backup, 'run', return_value=b'17.6'))
             def dump(compose, path, spool):
-                work()
+                if phase == 'dump':
+                    work()
                 path.write_bytes(b'synthetic archive')
             stack.enter_context(patch.object(backup, 'dump', side_effect=dump))
             stack.enter_context(patch.object(backup, 'verify_archive'))
-            stack.enter_context(patch.object(backup, 'upload', side_effect=lambda c, k, p: {'key': k}))
+            def upload(config, key, path):
+                if phase == 'upload' and key.endswith('.dump'):
+                    work()
+                return {'key': key}
+            stack.enter_context(patch.object(backup, 'upload', side_effect=upload))
             backup.backup(environment, CONFIG)
 
 
-def holder(state, kind, environment, connection):
+def holder(state, kind, environment, connection, phase='dump'):
     def work():
         connection.send('entered')
         connection.recv()
     try:
-        run_operation(state, kind, environment, work)
+        run_operation(state, kind, environment, work, phase=phase)
         connection.send('done')
     except BaseException as error:
         connection.send(type(error).__name__ + ': ' + str(error))
@@ -109,6 +113,81 @@ class CoordinationTests(unittest.TestCase):
                         process.kill()
                         process.join(5)
                     parent.close()
+
+    def test_safe_backup_failures_allow_subsequent_production_deployment(self):
+        for phase in ('preflight', 'upload'):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as tmp:
+                state = Path(tmp)
+                pending = state / coordination.PENDING
+                def fail():
+                    self.assertFalse(pending.exists())
+                    raise backup.BackupError('S3 upload failed' if phase == 'upload' else 'disk reserve too small')
+                with self.assertRaises(backup.BackupError):
+                    run_operation(state, 'backup', 'production', fail, phase=phase)
+                self.assertFalse(pending.exists())
+                self.assertEqual(len(list(state.glob('backups/*/database.dump'))), phase == 'upload')
+                reached = []
+                run_operation(state, 'deployment', 'production', lambda: reached.append(True))
+                self.assertEqual(reached, [True])
+                self.assertTrue((state / 'production-current.json').exists())
+
+    def test_backup_upload_still_excludes_production_without_a_pending_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp)
+            parent, child = multiprocessing.Pipe()
+            process = multiprocessing.get_context('fork').Process(
+                target=holder, args=(state, 'backup', 'staging', child, 'upload'))
+            process.start()
+            child.close()
+            try:
+                self.assertTrue(parent.poll(5))
+                self.assertEqual(parent.recv(), 'entered')
+                self.assertFalse((state / coordination.PENDING).exists())
+                with self.assertRaisesRegex(ValueError, 'lock busy'):
+                    run_operation(state, 'deployment', 'production', lambda: self.fail('unsafe update'))
+                parent.send('release')
+                self.assertTrue(parent.poll(5))
+                self.assertEqual(parent.recv(), 'done')
+                process.join(5)
+                self.assertEqual(process.exitcode, 0)
+                run_operation(state, 'deployment', 'production', lambda: None)
+            finally:
+                if process.is_alive():
+                    process.kill()
+                    process.join(5)
+                parent.close()
+
+    def test_stale_foreign_marker_is_never_reused_or_removed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp)
+            pending = state / coordination.PENDING
+            data = json.dumps({'format_version': 1, 'kind': 'deployment', 'environment': 'staging',
+                               'pid': 1, 'started_at': '2020-01-01T00:00:00Z'})
+            pending.write_text(data)
+            inode = pending.stat().st_ino
+            for kind in ('backup', 'deployment'):
+                with self.subTest(kind=kind), self.assertRaisesRegex((ValueError, backup.BackupError), 'operator recovery required'):
+                    run_operation(state, kind, 'production', lambda: self.fail('accepted foreign marker'))
+                self.assertEqual(pending.read_text(), data)
+                self.assertEqual(pending.stat().st_ino, inode)
+
+    def test_successful_dump_does_not_remove_replaced_or_rewritten_marker(self):
+        for rewrite in (False, True):
+            with self.subTest(rewrite=rewrite), tempfile.TemporaryDirectory() as tmp:
+                state = Path(tmp)
+                pending = state / coordination.PENDING
+                def replace():
+                    if rewrite:
+                        pending.write_text('foreign operation')
+                    else:
+                        other = state / 'other-operation.json'
+                        other.write_text('foreign operation')
+                        other.replace(pending)
+                with self.assertRaisesRegex(backup.BackupError, 'marker changed'):
+                    run_operation(state, 'backup', 'production', replace)
+                self.assertEqual(pending.read_text(), 'foreign operation')
+                with self.assertRaisesRegex(ValueError, 'operator recovery required'):
+                    run_operation(state, 'deployment', 'production', lambda: self.fail('accepted foreign marker'))
 
     def test_legacy_environment_locks_and_partial_acquisition_release(self):
         for env in ('staging', 'production'):
