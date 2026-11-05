@@ -1,0 +1,20 @@
+[Unit]
+Description=Vellum recovery job (%i)
+Wants=network-online.target time-sync.target
+Requires=docker.service
+RequiresMountsFor=/run/vellum-recovery
+After=docker.service network-online.target time-sync.target
+
+[Service]
+Type=oneshot
+StateDirectory=vellum-recovery
+StateDirectoryMode=0700
+UMask=0077
+LimitCORE=0
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/run/vellum-recovery
+ExecStart=/usr/bin/python3 -I /usr/local/lib/vellum-recovery/deploy/recovery/worker.py %i
+ExecStopPost=-/usr/bin/python3 -I /usr/local/lib/vellum-recovery/deploy/recovery/worker.py clean-abandoned
+TimeoutStartSec=16min
+TimeoutStopSec=90s

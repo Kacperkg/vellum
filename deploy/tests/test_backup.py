@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import sys
@@ -21,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'cd'))
 import coordination
 
 CONFIG = {'bucket': 'synthetic-vellum-test', 'account_id': '123456789012', 'alert_topic_arn': None}
+SOURCE = {'system_identifier': '7568452312345678901', 'database_oid': 16384, 'database_name': 'production_db'}
 
 
 def root_info(path):
@@ -386,6 +388,124 @@ class FreshnessTests(unittest.TestCase):
     def test_cross_environment_reference_fails(self):
         with self.assertRaisesRegex(backup.BackupError, 'key mismatch'):
             self.run_freshness(tamper=lambda marker: marker['archive'].update(key='staging/runs/wrong.dump'))
+
+
+class ProvenanceTests(unittest.TestCase):
+    def test_snapshot_identity_and_clock_are_verified_before_dump(self):
+        fields = ['00000003-0000000A-1', backup.now(), '17.9', *SOURCE.values()]
+        metadata = backup.snapshot_metadata(json.dumps(fields), SOURCE)
+        self.assertEqual(metadata['source'], SOURCE)
+        self.assertEqual(metadata['snapshot_id'], fields[0])
+        for column, value in ((0, 'snapshot;injection'), (1, '2025-01-01T00:00:00Z'),
+                              (1, '2099-01-01T00:00:00Z'), (2, '16.5'), (3, '123456'),
+                              (4, 16385), (5, 'different_database')):
+            changed = fields.copy()
+            changed[column] = value
+            with self.subTest(changed=changed), self.assertRaises(backup.BackupError):
+                backup.snapshot_metadata(json.dumps(changed), SOURCE)
+
+    def test_signed_upload_rejects_missing_changed_or_null_version(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            archive = Path(temporary) / 'dump'
+            archive.write_bytes(b'synthetic')
+            for result, head in (({}, None), ({'VersionId': 'null'}, 'null'), ({'VersionId': 'v1'}, 'v2')):
+                with self.subTest(result=result, head=head), patch.object(backup, 'aws', return_value=result), \
+                     patch.object(backup, 'verify_object', return_value=head):
+                    with self.assertRaisesRegex(backup.BackupError, 'version mismatch'):
+                        backup.upload(CONFIG, 'production/runs/synthetic.dump', archive, versioned=True)
+            with patch.object(backup, 'aws', side_effect=backup.BackupError('lost response')), \
+                 patch.object(backup, 'verify_object', return_value='version1'):
+                ref = backup.upload(CONFIG, 'production/runs/synthetic.dump', archive, versioned=True)
+                self.assertEqual(ref['version_id'], 'version1')
+
+    def test_wrong_bucket_region_and_suspended_versioning_are_rejected(self):
+        with patch.object(backup, 'aws', return_value={'LocationConstraint': 'eu-central-1'}) as aws:
+            with self.assertRaisesRegex(backup.BackupError, 'region'):
+                backup.check_bucket(CONFIG, publishing=True)
+            self.assertIn('--expected-bucket-owner', aws.call_args.args[1])
+        with patch.object(backup, 'aws', side_effect=[{'LocationConstraint': 'eu-west-2'}, {'Status': 'Suspended'}]):
+            with self.assertRaisesRegex(backup.BackupError, 'versioning'):
+                backup.check_bucket(CONFIG, publishing=True)
+
+    def test_publisher_never_signs_or_completes_after_interrupted_manifest_upload(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            archive = work / 'archive'
+            archive.write_bytes(b'synthetic archive')
+            snapshot = {'source': SOURCE, 'snapshot_id': '00000003-0000000A-1',
+                        'snapshot_started_at': backup.now(), 'postgres_version': '17.9'}
+            with patch.object(backup, 'upload', side_effect=[{}, backup.BackupError('manifest failed')]) as upload, \
+                 patch.object(backup, 'signed_completion') as sign:
+                with self.assertRaisesRegex(backup.BackupError, 'manifest failed'):
+                    backup.publish_backup('production', CONFIG, work, archive, snapshot, {'key_id': 'producer'})
+            self.assertEqual(upload.call_count, 2)
+            self.assertTrue(all('/runs/' in call.args[1] for call in upload.call_args_list))
+            sign.assert_not_called()
+
+    def test_signed_publication_and_freshness_reject_substitution_and_forgery(self):
+        openssl = shutil.which('openssl')
+        self.assertIsNotNone(openssl)
+        real_run = backup.run
+
+        def local_openssl(args, label, timeout=60):
+            return real_run([openssl, *args[1:]], label, timeout)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            archive = work / 'archive'
+            archive.write_bytes(b'synthetic archive')
+            private_key, public_key, attacker_key = (work / name for name in ('private', 'public', 'attacker'))
+            for key in (private_key, attacker_key):
+                subprocess.run([openssl, 'genpkey', '-algorithm', 'ED25519', '-out', str(key)], check=True)
+            subprocess.run([openssl, 'pkey', '-in', str(private_key), '-pubout', '-out', str(public_key)], check=True)
+            provenance = {'source': SOURCE, 'key_id': 'synthetic-producer', 'public_key': str(public_key),
+                          'signing_key': str(private_key)}
+            snapshot = {'source': SOURCE, 'snapshot_id': '00000003-0000000A-1',
+                        'snapshot_started_at': backup.now(), 'postgres_version': '17.9'}
+            objects = {}
+
+            def fake_s3(config, args, label):
+                self.assertIn('--expected-bucket-owner', args)
+                key = args[args.index('--key') + 1]
+                if args[1] == 'put-object':
+                    self.assertEqual(args[args.index('--if-none-match') + 1], '*')
+                    self.assertNotIn(key, objects)
+                    objects[key] = (f'v{len(objects) + 1}', Path(args[args.index('--body') + 1]).read_bytes())
+                    return {'VersionId': objects[key][0]}
+                version, data = objects[key]
+                if args[1] == 'get-object':
+                    self.assertIn('--version-id=' + version, args)
+                    Path(args[-1]).write_bytes(data)
+                return {'VersionId': version, 'ContentLength': len(data), 'ServerSideEncryption': 'AES256',
+                        'ChecksumSHA256': base64.b64encode(backup.hashlib.sha256(data).digest()).decode()}
+
+            with patch.object(backup, 'BASE', work), patch.object(backup, 'trusted'), \
+                 patch.object(backup, 'run', side_effect=local_openssl), patch.object(backup, 'aws', side_effect=fake_s3):
+                backup.publish_backup('production', CONFIG, work, archive, snapshot, provenance)
+                archive_key, manifest_key, completion_key = objects
+                self.assertTrue(completion_key.startswith('production/completed/'))
+                complete = objects[completion_key]
+                selection = {'Key': completion_key, 'Size': len(complete[1])}
+                backup.check_signed_freshness(CONFIG, provenance, selection)
+                for key in (archive_key, manifest_key):
+                    original = objects[key]
+                    objects[key] = (original[0], b'x' + original[1][1:])
+                    with self.subTest(substituted=key), self.assertRaisesRegex(backup.BackupError, 'mismatch'):
+                        backup.check_signed_freshness(CONFIG, provenance, selection)
+                    objects[key] = original
+                marker = json.loads(complete[1])
+                message = work / 'forged-payload'
+                message.write_bytes(backup.canonical(marker['payload']))
+                signature = subprocess.check_output([openssl, 'pkeyutl', '-sign', '-rawin', '-inkey',
+                                                     str(attacker_key), '-in', str(message)])
+                marker['signature'] = base64.b64encode(signature).decode()
+                objects[completion_key] = (complete[0], backup.canonical(marker))
+                with self.assertRaisesRegex(backup.BackupError, 'signature verification'):
+                    backup.check_signed_freshness(CONFIG, provenance, selection)
+                objects[completion_key] = complete
+                with self.assertRaisesRegex(backup.BackupError, 'manifest mismatch'):
+                    backup.check_signed_freshness(CONFIG, dict(provenance, source=dict(SOURCE, database_oid=9)),
+                                                  selection)
 
 
 if __name__ == '__main__':

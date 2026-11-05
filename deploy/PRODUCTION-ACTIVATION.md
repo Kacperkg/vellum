@@ -10,6 +10,11 @@ documents an opt-in verifier and the prerequisites that block its activation.
 The [pre-launch exception](PRELAUNCH-PRODUCTION.md)
 expired on 4 November 2026 UTC and is no longer exposed by this workflow.
 
+The opt-in automation implementation remains blocked for live activation.
+See the [independent recovery runbook](recovery/README.md) for its trust
+boundaries, repository test coverage and separately approved activation steps.
+The standard procedure below remains the current supported approval route.
+
 ## 1. GitHub configuration and verified current state
 
 Read-only inspection on 2026-10-27 found default branch `staging`, repository CD

@@ -11,6 +11,12 @@
       ]
     },
     {
+      "Sid": "InspectExactBackupBucketForVersionedProducer",
+      "Effect": "Allow",
+      "Action": ["s3:GetBucketLocation", "s3:GetBucketVersioning"],
+      "Resource": "arn:aws:s3:::REPLACE_BUCKET"
+    },
+    {
       "Sid": "NotifyBackupFailure",
       "Effect": "Allow",
       "Action": "sns:Publish",

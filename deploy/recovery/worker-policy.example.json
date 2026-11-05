@@ -1,0 +1,74 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CheckPinnedBucketRegions",
+      "Effect": "Allow",
+      "Action": "s3:GetBucketLocation",
+      "Resource": ["arn:aws:s3:::REPLACE_BACKUP_BUCKET", "arn:aws:s3:::REPLACE_RECEIPT_BUCKET"]
+    },
+    {
+      "Sid": "DiscoverCompletedProductionBackups",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::REPLACE_BACKUP_BUCKET",
+      "Condition": {"StringEquals": {"s3:prefix": "production/completed/"}}
+    },
+    {
+      "Sid": "ResolveOnlyCurrentCompletionVersions",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::REPLACE_BACKUP_BUCKET/production/completed/*"
+    },
+    {
+      "Sid": "ReadOnlyExactProductionBackupVersions",
+      "Effect": "Allow",
+      "Action": "s3:GetObjectVersion",
+      "Resource": [
+        "arn:aws:s3:::REPLACE_BACKUP_BUCKET/production/completed/*",
+        "arn:aws:s3:::REPLACE_BACKUP_BUCKET/production/runs/*"
+      ]
+    },
+    {
+      "Sid": "CreateOnlyWorkerEvidence",
+      "Effect": "Allow",
+      "Action": "s3:PutObject",
+      "Resource": [
+        "arn:aws:s3:::REPLACE_RECEIPT_BUCKET/production/recovery/verified-backup/*",
+        "arn:aws:s3:::REPLACE_RECEIPT_BUCKET/production/recovery/restore-drill/*",
+        "arn:aws:s3:::REPLACE_RECEIPT_BUCKET/production/recovery/candidate-rehearsal/*"
+      ],
+      "Condition": {"StringEquals": {"s3:if-none-match": "*", "s3:x-amz-server-side-encryption": "AES256"}}
+    },
+    {
+      "Sid": "CheckPublishedWorkerEvidenceVersion",
+      "Effect": "Allow",
+      "Action": "s3:GetObjectVersion",
+      "Resource": [
+        "arn:aws:s3:::REPLACE_RECEIPT_BUCKET/production/recovery/verified-backup/*",
+        "arn:aws:s3:::REPLACE_RECEIPT_BUCKET/production/recovery/restore-drill/*",
+        "arn:aws:s3:::REPLACE_RECEIPT_BUCKET/production/recovery/candidate-rehearsal/*"
+      ]
+    },
+    {
+      "Sid": "SignOnlyWithDedicatedWorkerKey",
+      "Effect": "Allow",
+      "Action": "kms:Sign",
+      "Resource": "arn:aws:kms:eu-west-2:REPLACE_ACCOUNT:key/REPLACE_WORKER_KEY_UUID",
+      "Condition": {"StringEquals": {"kms:SigningAlgorithm": "ED25519_SHA_512"}}
+    },
+    {
+      "Sid": "PublishRedactedWorkerFailures",
+      "Effect": "Allow",
+      "Action": "sns:Publish",
+      "Resource": "arn:aws:sns:eu-west-2:REPLACE_ACCOUNT:REPLACE_RECOVERY_ALERT_TOPIC"
+    },
+    {
+      "Sid": "PublishRecoveryHeartbeat",
+      "Effect": "Allow",
+      "Action": "cloudwatch:PutMetricData",
+      "Resource": "*",
+      "Condition": {"StringEquals": {"cloudwatch:namespace": "Vellum/Recovery"}}
+    }
+  ]
+}

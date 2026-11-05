@@ -1,0 +1,15 @@
+{
+  "bucket": "REPLACE_WITH_PRIVATE_BUCKET",
+  "account_id": "REPLACE_WITH_12_DIGIT_ACCOUNT_ID",
+  "alert_topic_arn": null,
+  "production_provenance": {
+    "source": {
+      "system_identifier": "REPLACE_WITH_APPROVED_SYSTEM_IDENTIFIER",
+      "database_oid": 0,
+      "database_name": "replace_with_approved_database_name"
+    },
+    "key_id": "production-backup-1",
+    "public_key": "/etc/vellum-cd/backup-producer-public.pem",
+    "signing_key": "/etc/vellum-cd/backup-producer-private.pem"
+  }
+}

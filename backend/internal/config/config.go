@@ -52,6 +52,7 @@ func Load() *Config {
 	if err != nil {
 		log.Fatal(err)
 	}
+	cfg := LoadDatabase()
 	return &Config{
 		PasswordReset:               reset,
 		ForgotPasswordRateLimit:     rateLimit("FORGOT_PASSWORD", 3, time.Hour),
@@ -59,12 +60,12 @@ func Load() *Config {
 		Port:                        required("PORT"),
 		BindHost:                    os.Getenv("BIND_HOST"),
 		CORSAllowedOrigins:          corsOrigins(os.Getenv("CORS_ALLOWED_ORIGINS")),
-		DBHost:                      required("DB_HOST"),
-		DBPort:                      required("DB_PORT"),
-		DBUser:                      required("DB_USER"),
-		DBPassword:                  required("DB_PASSWORD"),
-		DBName:                      required("DB_NAME"),
-		DBSSLMode:                   required("DB_SSLMODE"),
+		DBHost:                      cfg.DBHost,
+		DBPort:                      cfg.DBPort,
+		DBUser:                      cfg.DBUser,
+		DBPassword:                  cfg.DBPassword,
+		DBName:                      cfg.DBName,
+		DBSSLMode:                   cfg.DBSSLMode,
 		JWTSecret:                   required("JWT_SECRET"),
 		JWTExpiry:                   required("JWT_EXPIRY"),
 		JWTRefreshExpiry:            required("JWT_REFRESH_EXPIRY"),
@@ -75,6 +76,19 @@ func Load() *Config {
 		LogoutRateLimit:             rateLimit("LOGOUT", 30, time.Minute),
 		RateLimitMaxEntries:         positiveInt("RATE_LIMIT_MAX_ENTRIES", 10000),
 		RateLimitSharedIPMultiplier: positiveInt("RATE_LIMIT_SHARED_IP_MULTIPLIER", 20),
+	}
+}
+
+// LoadDatabase deliberately uses only the process environment. The migration
+// command needs database settings without loading application or SES secrets.
+func LoadDatabase() *Config {
+	return &Config{
+		DBHost:     required("DB_HOST"),
+		DBPort:     required("DB_PORT"),
+		DBUser:     required("DB_USER"),
+		DBPassword: required("DB_PASSWORD"),
+		DBName:     required("DB_NAME"),
+		DBSSLMode:  required("DB_SSLMODE"),
 	}
 }
 

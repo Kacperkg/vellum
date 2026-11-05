@@ -1,0 +1,11 @@
+[Unit]
+Description=Bounded in-memory Vellum recovery workspace
+
+[Mount]
+What=tmpfs
+Where=/run/vellum-recovery
+Type=tmpfs
+Options=mode=0700,uid=0,gid=0,nosuid,nodev,noexec,noswap,size=768M
+
+[Install]
+WantedBy=local-fs.target

@@ -55,13 +55,13 @@ func connectionConfigWithTimeout(cfg *config.Config, statementTimeout time.Durat
 func Connect(cfg *config.Config) (*gorm.DB, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), databaseConnectTimeout)
 	defer cancel()
-	return connectWithPolicy(ctx, cfg, StatementTimeout, MaxOpenConnections, MaxIdleConnections)
+	return connectWithPolicy(ctx, cfg, StatementTimeout, MaxOpenConnections, MaxIdleConnections, "")
 }
 
 // MigrateConfigured uses a separate, short-lived startup pool. Slow schema work
 // never relaxes runtime session limits or occupies runtime connections.
 func MigrateConfigured(ctx context.Context, cfg *config.Config) error {
-	db, err := connectWithPolicy(ctx, cfg, MigrationStatementTimeout, 1, 1)
+	db, err := connectWithPolicy(ctx, cfg, MigrationStatementTimeout, 1, 1, "")
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -77,13 +77,16 @@ func MigrateConfigured(ctx context.Context, cfg *config.Config) error {
 	return Migrate(db.WithContext(ctx))
 }
 
-func connectWithPolicy(ctx context.Context, cfg *config.Config, statementTimeout time.Duration, maxOpen, maxIdle int) (*gorm.DB, error) {
+func connectWithPolicy(ctx context.Context, cfg *config.Config, statementTimeout time.Duration, maxOpen, maxIdle int, searchPath string) (*gorm.DB, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	conn, err := connectionConfigWithTimeout(cfg, statementTimeout)
 	if err != nil {
 		return nil, err
+	}
+	if searchPath != "" {
+		conn.RuntimeParams["search_path"] = searchPath
 	}
 	sqlDB := stdlib.OpenDB(*conn)
 	sqlDB.SetMaxOpenConns(maxOpen)

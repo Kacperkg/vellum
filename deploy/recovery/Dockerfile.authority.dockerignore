@@ -1,0 +1,15 @@
+**
+!deploy/
+deploy/*
+!deploy/cd/
+deploy/cd/*
+!deploy/cd/release.py
+!deploy/recovery/
+deploy/recovery/*
+!deploy/recovery/authority.py
+!deploy/recovery/aws_authority.py
+!scripts/
+scripts/*
+!scripts/ci/
+scripts/ci/*
+!scripts/ci/production_release.py

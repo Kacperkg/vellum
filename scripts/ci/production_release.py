@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Runner-only production gates around the verified six-file controller bundle."""
 import argparse
-from datetime import datetime, timedelta, timezone
 import hashlib
+from datetime import datetime, timedelta, timezone
 import io
 import json
 import os
@@ -10,7 +10,9 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-from urllib.parse import urlencode
+import tempfile
+from urllib.parse import urlencode, urlsplit
+from urllib.request import Request, urlopen
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "deploy/cd"))
@@ -156,7 +158,7 @@ def check_jobs(base, attempt, run_id, source):
     return True
 
 
-def verified_artifact(base, run_id, attempt, source, repo_id):
+def verified_artifact(base, run_id, attempt, source, repo_id, expected_bundle=None):
     prefix = f"vellum-release-{run_id}-{attempt}-"
     artifacts = paged(f"{base}/artifacts", "artifacts", limit=500)
     matches = [a for a in artifacts if a["name"].startswith(prefix)]
@@ -199,7 +201,9 @@ def verified_artifact(base, run_id, attempt, source, repo_id):
             for component, digest in (("backend", backend), ("frontend", frontend))),
         "manifest image digests differ from staging build outputs",
     )
-    release.require(release.bundle_hashes("deploy") == value["deployment_files"],
+    if expected_bundle is None:
+        expected_bundle = release.bundle_hashes("deploy")
+    release.require(expected_bundle == value["deployment_files"],
                     "six-file deployment bundle differs from tested release")
     return f"{run_id}:{attempt}:{artifact_id}:{checksum}", data, value
 
@@ -266,6 +270,55 @@ def prepare(args):
         )
 
 
+def invoke_authority(payload):
+    account = os.environ["AWS_ACCOUNT_ID"]
+    target = os.environ["VELLUM_DISPATCH_FUNCTION"]
+    audience = os.environ["VELLUM_DISPATCH_AUDIENCE"]
+    endpoint = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+    url = urlsplit(endpoint)
+    release.require(url.scheme == "https" and url.hostname
+                    and (url.hostname == "actions.githubusercontent.com"
+                         or url.hostname.endswith(".actions.githubusercontent.com"))
+                    and url.username is None and url.password is None
+                    and re.fullmatch(r"[0-9]{12}", account)
+                    and re.fullmatch(r"arn:aws:lambda:eu-west-2:" + account +
+                                     r":function:vellum-production-dispatch:[1-9][0-9]*", target),
+                    "invalid independent dispatch configuration")
+    delimiter = "&" if url.query else "?"
+    request = Request(endpoint + delimiter + urlencode({"audience": audience}),
+                      headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]})
+    try:
+        with urlopen(request, timeout=10) as response:
+            release.require(response.geturl() == request.full_url, "unexpected OIDC redirect")
+            token = json.loads(response.read(16385))["value"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request_path, response_path = root / "request.json", root / "response.json"
+            request_path.write_bytes(release.canonical(payload | {"token": token}))
+            result = subprocess.run(
+                ["aws", "lambda", "invoke", "--function-name", target,
+                 "--region", "eu-west-2", "--cli-binary-format", "raw-in-base64-out",
+                 "--payload", f"fileb://{request_path}", "--cli-connect-timeout", "5",
+                 "--cli-read-timeout", "180", str(response_path)],
+                capture_output=True, timeout=195, env=os.environ | {"AWS_MAX_ATTEMPTS": "1"},
+            )
+            release.require(result.returncode == 0, "independent production dispatch failed")
+            result = release.read_json(response_path)
+        return result
+    except (KeyError, OSError, subprocess.SubprocessError, TypeError):
+        raise ValueError("independent production dispatch could not be confirmed") from None
+
+
+def independent_dispatch(value):
+    result = invoke_authority({"manifest": value})
+    release.require(set(result) == {"command_id"}, "independent production dispatch refused or unconfirmed")
+    command = result["command_id"]
+    checksum = hashlib.sha256(release.canonical(value)).hexdigest()
+    release.wait_command(command, os.environ["SSM_INSTANCE_ID"], expected_receipt=checksum)
+    release.require(invoke_authority({"command_id": command, "manifest_sha256": checksum}) == {"verified": True},
+                    "host reported successful deployment but independent receipt retention is unconfirmed")
+
+
 def dispatch(args):
     sha = guard()
     identity = os.environ.get("EXPECTED_RELEASE", "")
@@ -284,9 +337,8 @@ def dispatch(args):
     current_main(sha)
     mode = recovery_mode()
     if mode == "automated":
-        # Deliberately do not fall back to the v2/manual pin.
-        os.environ["SSM_DOCUMENT_VERSION"] = os.environ.get("SSM_READINESS_DOCUMENT_VERSION", "")
-        os.environ["SSM_DOCUMENT_SHA256"] = os.environ.get("SSM_READINESS_DOCUMENT_SHA256", "")
+        independent_dispatch(value)
+        return
     release.dispatch(argparse.Namespace(environment="production", manifest=args.manifest,
                                         approval_mode=mode))
 

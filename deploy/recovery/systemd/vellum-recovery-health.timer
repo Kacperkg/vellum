@@ -1,0 +1,11 @@
+[Unit]
+Description=Publish the Vellum recovery freshness heartbeat
+
+[Timer]
+OnCalendar=*-*-* *:02/5:00 UTC
+Persistent=true
+AccuracySec=10s
+Unit=vellum-recovery@health.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Vellum production backup verification
+
+[Timer]
+OnCalendar=*-*-* *:00/5:00 UTC
+Persistent=true
+AccuracySec=10s
+Unit=vellum-recovery@verify-backup.service
+
+[Install]
+WantedBy=timers.target

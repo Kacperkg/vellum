@@ -20,6 +20,21 @@
       ]
     },
     {
+      "Sid": "InspectExactBackupBucketForSignedFreshness",
+      "Effect": "Allow",
+      "Action": "s3:GetBucketLocation",
+      "Resource": "arn:aws:s3:::REPLACE_BUCKET"
+    },
+    {
+      "Sid": "ReadSignedBackupMetadataVersions",
+      "Effect": "Allow",
+      "Action": "s3:GetObjectVersion",
+      "Resource": [
+        "arn:aws:s3:::REPLACE_BUCKET/production/runs/*.json",
+        "arn:aws:s3:::REPLACE_BUCKET/production/completed/*.json"
+      ]
+    },
+    {
       "Sid": "NotifyMissingBackup",
       "Effect": "Allow",
       "Action": "sns:Publish",

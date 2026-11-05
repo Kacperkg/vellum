@@ -318,6 +318,20 @@ jobs:
           restore-keys: go-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ hashFiles('backend/go.mod', 'backend/go.sum') }}-
       - run: python3 -m unittest discover -s deploy/tests -v
         if: steps.scope.outputs.run == 'true'
+      - name: Exercise the synthetic production recovery chain
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          postgres_image=postgres@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+          docker pull "$postgres_image"
+          docker build -t vellum-ci-recovery:synthetic -f backend/Dockerfile.prod backend
+          proof=$(mktemp)
+          trap 'rm -f "$proof"' EXIT
+          python3 deploy/tests/recovery_restore_integration.py --postgres-image "$postgres_image" \
+            --backend-image vellum-ci-recovery:synthetic --emit-synthetic-evidence > "$proof"
+          VELLUM_SYNTHETIC_RECOVERY_EVIDENCE="$proof" \
+            python3 -m unittest discover -s deploy/tests -p test_recovery_authority.py \
+              -k test_approval_ssm_and_controller_lock_to_durable_receipt
       - name: Validate SSM patterns with the Go regex engine
         if: steps.scope.outputs.run == 'true'
         run: go test -count=1 ./deploy/tests/ssm_regex_test.go

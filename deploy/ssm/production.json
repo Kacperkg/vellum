@@ -29,6 +29,7 @@
           "set -eu",
           "test -n \"${SSM_Manifest:-}\" || { echo 'SSM Agent ENV_VAR support required' >&2; exit 1; }",
           "test \"${SSM_ApprovalMode:-}\" = automated || { echo 'SSM Agent ApprovalMode ENV_VAR support required' >&2; exit 1; }",
+          "test -n \"${SSM_COMMAND_ID:-}\" || { echo 'SSM Agent command identity required' >&2; exit 1; }",
           "exec /usr/bin/python3 -I /usr/local/lib/vellum-cd/cd/controller.py production"
         ]
       }

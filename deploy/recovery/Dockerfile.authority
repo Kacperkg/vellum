@@ -1,0 +1,7 @@
+# Build with the repository root as context. Publish by digest through the
+# separately reviewed recovery build, never through the candidate image job.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+COPY deploy/cd/release.py scripts/ci/production_release.py deploy/recovery/authority.py deploy/recovery/aws_authority.py ${LAMBDA_TASK_ROOT}/
+RUN microdnf install -y openssl && microdnf clean all
+CMD ["aws_authority.handler"]

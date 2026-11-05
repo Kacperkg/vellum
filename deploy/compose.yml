@@ -30,6 +30,7 @@ services:
     logging: *logging
 
   backend:
+    command: ${VELLUM_BACKEND_COMMAND:-}
     image: ${IMAGE_PREFIX:?Set IMAGE_PREFIX}-backend:${IMAGE_TAG:?Set IMAGE_TAG to the full Git commit SHA}
     build:
       context: ../backend
@@ -46,8 +47,8 @@ services:
       GIN_MODE: release
       DB_HOST: postgres
       DB_PORT: "5432"
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
+      DB_USER: ${VELLUM_RUNTIME_DB_USER:-${DB_USER}}
+      DB_PASSWORD: ${VELLUM_RUNTIME_DB_PASSWORD:-${DB_PASSWORD}}
       DB_NAME: ${DB_NAME}
       DB_SSLMODE: disable
       JWT_SECRET: ${JWT_SECRET:?Set a unique JWT_SECRET}

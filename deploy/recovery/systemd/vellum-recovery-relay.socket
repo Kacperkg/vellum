@@ -1,0 +1,12 @@
+[Unit]
+Description=Private Vellum production recovery socket
+
+[Socket]
+ListenStream=/var/lib/vellum-cd/production-readiness.sock
+SocketMode=0600
+SocketUser=root
+SocketGroup=root
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Restore a completed Vellum production backup twice weekly
+
+[Timer]
+OnCalendar=Mon,Thu *-*-* 04:20:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=vellum-recovery@drill.service
+
+[Install]
+WantedBy=timers.target

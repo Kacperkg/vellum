@@ -1,0 +1,16 @@
+[Unit]
+Description=Vellum independent production recovery relay
+Requires=vellum-recovery-relay.socket
+After=network-online.target
+
+[Service]
+User=root
+Group=root
+ExecStart=/usr/bin/python3 -I /usr/local/lib/vellum-recovery/relay.py
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/vellum-cd
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

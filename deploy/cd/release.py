@@ -398,6 +398,15 @@ def dispatch(args):
     command = sent.stdout.strip()
     require(re.fullmatch(r"[0-9a-f-]{36}", command)
             and str(uuid.UUID(command)) == command, "invalid command ID")
+    wait_command(command, instance)
+
+
+def wait_command(command, instance, expected_receipt=None):
+    require(str(uuid.UUID(command)) == command, "invalid command ID")
+    require(re.fullmatch(r"i-[0-9a-f]{8,17}", instance), "invalid instance ID")
+    if expected_receipt is not None:
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+            summary.write(f"\nProduction SSM command: `{command}`\n")
     deadline = time.monotonic() + 900
     while time.monotonic() < deadline:
         try:
@@ -427,6 +436,8 @@ def dispatch(args):
                 "SSM status lookup failed; remote command may still be running"
             )
         if result.returncode == 0 and status == "Success":
+            if expected_receipt is not None:
+                verify_command_receipt(command, instance, expected_receipt)
             with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
                 output.write("command_id=" + command + "\n")
             return
@@ -444,6 +455,17 @@ def dispatch(args):
     raise ValueError(
         "SSM deployment timed out; remote command may still be running; do not overlap another deployment"
     )
+
+
+def verify_command_receipt(command, instance, checksum):
+    result = subprocess.run(
+        ["aws", "ssm", "get-command-invocation", "--command-id", command,
+         "--instance-id", instance, "--plugin-name", "deployProduction",
+         "--query", "StandardOutputContent", "--output", "text"],
+        text=True, capture_output=True, timeout=15,
+    )
+    require(result.returncode == 0 and f"Verified production receipt {command} {checksum}"
+            in result.stdout.splitlines(), "SSM completed without a matching production receipt")
 
 
 def main():

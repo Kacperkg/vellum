@@ -87,11 +87,9 @@ class ReadinessEvidenceTests(unittest.TestCase):
             controller.validate_readiness({"evidence": evidence, "signature": "synthetic"}, value, now)
         signature.assert_called_once_with(evidence, "synthetic")
 
-    def test_accepts_weekly_restore_and_candidate_rehearsal_as_distinct_evidence(self):
-        for risk in ("low", "migration"):
-            with self.subTest(risk=risk):
-                value = request(risk)
-                self.validate(value, evidence_for(value))
+    def test_accepts_weekly_restore_for_unchanged_backend(self):
+        value = request("low")
+        self.validate(value, evidence_for(value))
 
     def test_release_live_state_and_attempt_replay_are_rejected(self):
         value = request()
@@ -129,17 +127,11 @@ class ReadinessEvidenceTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.validate(value, evidence)
 
-    def test_migration_requires_same_archive_and_rejects_schema_or_data_changes(self):
+    def test_equal_rehearsal_end_states_do_not_allow_migration(self):
         value = request("migration")
         evidence = evidence_for(value)
-        with self.assertRaisesRegex(ValueError, "missing or mismatched"):
-            self.validate(value, {**evidence, "rehearsal": None})
-        for field in ("archive_sha256", "candidate_backend", "schema_before", "schema_after", "data_after"):
-            with self.subTest(field=field):
-                evidence = evidence_for(value)
-                evidence["rehearsal"][field] = "f" * 64
-                with self.assertRaises(ValueError):
-                    self.validate(value, evidence)
+        with self.assertRaisesRegex(ValueError, "separate reviewed migration"):
+            self.validate(value, evidence)
 
     def test_duplicate_fields_fail_closed(self):
         with self.assertRaisesRegex(ValueError, "duplicate"):
@@ -207,6 +199,8 @@ class ReadinessCoordinationTests(unittest.TestCase):
                 commands = Mock()
                 commands.prepare.return_value = (10, {})
                 baseline = request("migration" if scenario == "migration" else "low")["live"]
+                baseline["migration_contract_sha256"] = "a" * 64
+                baseline["proxy_sha256"] = "b" * 64
                 commands.readiness_baseline.side_effect = [
                     baseline, {**baseline, "schema_sha256": "f" * 64} if scenario == "changed baseline" else baseline,
                 ]
@@ -219,15 +213,16 @@ class ReadinessCoordinationTests(unittest.TestCase):
                     patch.object(coordination, "root_owned", return_value=True),
                     patch.object(controller, "request_readiness", return_value={},
                                  side_effect=ValueError("broker") if scenario == "broker missing" else None),
+                    patch.object(controller, "validate_admission"),
                     patch.object(controller, "validate_readiness",
                                  side_effect=ValueError("evidence") if scenario == "invalid evidence" else None),
                 ):
                     if scenario == "success":
-                        controller.deploy("production", current, commands, "automated")
+                        controller.deploy("production", current, commands, "automated", current["staging"]["command_id"])
                         self.assertTrue((state / "production-current.json").is_file())
                     else:
                         with self.assertRaises((ValueError, RuntimeError)):
-                            controller.deploy("production", current, commands, "automated")
+                            controller.deploy("production", current, commands, "automated", current["staging"]["command_id"])
                 mutated = scenario in ("success", "mutation fails")
                 self.assertEqual(commands.replace.called, mutated)
                 self.assertEqual(len(list(state.glob("production-readiness-*.json"))), int(mutated))

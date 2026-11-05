@@ -331,23 +331,12 @@ class DispatchTests(unittest.TestCase):
                 current.side_effect = None
                 production.dispatch(args)
                 self.assertEqual(dispatch.call_args.args[0].approval_mode, "standard")
-                with patch.dict(os.environ, {
-                    "PRODUCTION_READINESS_MODE": "automated",
-                    "SSM_DOCUMENT_VERSION": "2",
-                    "SSM_DOCUMENT_SHA256": "e" * 64,
-                    "SSM_READINESS_DOCUMENT_VERSION": "3",
-                    "SSM_READINESS_DOCUMENT_SHA256": "f" * 64,
-                }):
+                dispatch.reset_mock()
+                with (patch.dict(os.environ, {"PRODUCTION_READINESS_MODE": "automated"}),
+                      patch.object(production, "independent_dispatch") as independent):
                     production.dispatch(args)
-                    self.assertEqual(dispatch.call_args.args[0].approval_mode, "automated")
-                    self.assertEqual(os.environ["SSM_DOCUMENT_VERSION"], "3")
-                    self.assertEqual(os.environ["SSM_DOCUMENT_SHA256"], "f" * 64)
-                with patch.dict(os.environ, {"PRODUCTION_READINESS_MODE": "automated",
-                                             "SSM_READINESS_DOCUMENT_VERSION": "",
-                                             "SSM_READINESS_DOCUMENT_SHA256": ""}):
-                    production.dispatch(args)
-                    self.assertEqual(os.environ["SSM_DOCUMENT_VERSION"], "")
-                    self.assertEqual(os.environ["SSM_DOCUMENT_SHA256"], "")
+                    independent.assert_called_once_with(manifest())
+                    dispatch.assert_not_called()
                 dispatch.reset_mock()
                 discover.return_value = (identity.replace(":987:", ":988:"), data, manifest())
                 with self.assertRaisesRegex(ValueError, "artifact changed"):
@@ -407,6 +396,7 @@ class WorkflowTests(unittest.TestCase):
             "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
             "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
             "aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd",
+            "aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd",
         ])
         self.assertIn("ref: ${{ github.sha }}", self.promote)
         self.assertIn("fetch-depth: 0", self.promote)
@@ -417,8 +407,8 @@ class WorkflowTests(unittest.TestCase):
         discover = self.workflow.split("  discover:\n", 1)[1].split("  promote:", 1)[0]
         self.assertNotIn("environment:", discover)
         self.assertNotIn("id-token:", discover)
-        for name in ("PRODUCTION_READINESS_MODE", "SSM_READINESS_DOCUMENT_VERSION",
-                     "SSM_READINESS_DOCUMENT_SHA256"):
+        for name in ("PRODUCTION_READINESS_MODE", "VELLUM_DISPATCH_FUNCTION",
+                     "VELLUM_DISPATCH_AUDIENCE", "AWS_READINESS_ROLE_ARN"):
             self.assertIn("${{ vars." + name + " }}", self.promote)
         self.assertIn("SSM_DOCUMENT_VERSION: '2'", self.promote)
         self.assertIn("SSM_DOCUMENT_SHA256: 8d43e90f07c95456d7f781b591cc187eaf448e0c80b3a87d0433b9665297f83a", self.promote)

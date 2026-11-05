@@ -1,13 +1,12 @@
 # Signed production readiness
 
-**Status: blocked for activation.** This change supplies the host verifier, the
-production SSM template and the workflow opt-in. It does not supply the private
-broker, recovery worker, source-bound backup producer or scheduled drill. The
-standard production procedure remains in force until those components are
-implemented, independently reviewed and verified together. Changed backend
-execution or controller bundle requires the standard reviewed maintenance path.
-See the [production recovery evidence decision](PRODUCTION-RECOVERY-DECISION.md)
-for the independent worker design, verified London rates and remaining gates.
+**Status: blocked for activation.** The draft implements a protected backup
+producer, disposable restore and rehearsal worker, separate issuer and
+dispatch functions, root relay and an opt-in migration-free serving profile.
+The [current trust model and installation gates](recovery/README.md) describe
+which components have been exercised. The rest of this runbook records the
+original signed readiness design for reference. Use the current recovery
+runbook for protocol and activation details.
 
 ## Operator quickstart
 
@@ -81,7 +80,7 @@ check relevant invariants at live cutover. Use the separately approved standard
 backup, rehearsal and maintenance procedure in the meantime. Image rollback
 cannot undo committed schema or data changes.
 
-## Version 1 protocol
+## Original version 1 protocol (historical)
 
 The host policy is a root-owned, singly linked 0400 or 0600 file at
 `/var/lib/vellum-cd/production-readiness-policy.json`. It contains
@@ -147,7 +146,7 @@ private AWS object checks, restore and candidate execution. There is no automati
 fallback from a rejected signed request to legacy approval. Installing the host
 policy also blocks legacy mode regardless of what the runner sends.
 
-## Activation prerequisites and rollback
+## Original activation prerequisites and rollback (historical)
 
 1. Implement and review the private relay, issuer, backup source evidence,
    scheduler, restore and rehearsal worker. Prefer an existing approved private

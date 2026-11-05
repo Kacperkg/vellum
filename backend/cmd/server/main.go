@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/kacperkg/vellum/internal/config"
@@ -17,19 +18,58 @@ import (
 )
 
 func main() {
+	mode := startupMode(os.Args[1:])
+	if mode == "migration-contract" {
+		log.SetFlags(0)
+		contract, err := database.MigrationContract()
+		if err != nil {
+			log.Fatal(err)
+		}
+		os.Stdout.WriteString(contract + "\n")
+		return
+	}
+	if mode == "migrate" {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		err := database.MigrateControlled(ctx, config.LoadDatabase())
+		cancel()
+		if err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+	serve(mode)
+}
+
+func startupMode(args []string) string {
+	if len(args) == 0 {
+		return "legacy"
+	}
+	if len(args) == 1 {
+		switch args[0] {
+		case "serve", "migrate", "migration-contract":
+			return args[0]
+		}
+	}
+	log.Fatal("usage: vellum [serve | migrate | migration-contract]")
+	return "" // log.Fatal terminates the process.
+}
+
+func serve(mode string) {
 	cfg := config.Load()
 
-	// Startup schema work has a separate bounded pool so runtime query limits
-	// cannot accidentally turn a larger existing-table migration into a 5s job.
-	migrationCtx, cancelMigration := context.WithTimeout(context.Background(), 3*time.Minute)
-	err := database.MigrateConfigured(migrationCtx, cfg)
-	cancelMigration()
-	if err != nil {
-		log.Fatalf("failed to run migrations: %v", err)
+	var dbErr error
+	if mode == "legacy" {
+		// Existing deployments and local Air startup still use this entry point.
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		dbErr = database.MigrateConfigured(ctx, cfg)
+		cancel()
+		if dbErr != nil {
+			log.Fatalf("failed to run migrations: %v", dbErr)
+		}
 	}
-	db, err := database.Connect(cfg)
+	db, err := database.ConnectForServing(cfg, mode == "serve")
 	if err != nil {
-		log.Fatal("failed to connect to database")
+		log.Fatal(err)
 	}
 
 	jwtExpiry, err := time.ParseDuration(cfg.JWTExpiry)

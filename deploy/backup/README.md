@@ -39,6 +39,74 @@ only after archive and manifest verification. This proves transfer integrity,
 not that the database can be restored. Do not set CD `restore_verified` based on
 `pg_restore --list` or an upload.
 
+## Signed production provenance
+
+The default writer and existing staging backups use format v1. Production can
+opt in to v2 with the protected [configuration example](backup-v2.example.json).
+A v1 archive remains usable for the attended restore procedure. Only v2 has the
+source and snapshot evidence the automated readiness policy requires.
+
+The v2 producer opens a PostgreSQL 17 repeatable-read, read-only transaction in
+the protected production Compose service via its local Unix socket. It checks
+the primary's cluster system identifier and database name/OID against a privately
+approved inventory, exports the same transaction's snapshot, and keeps it open
+while `pg_dump --snapshot` imports it. The transaction start is a conservative
+recovery timestamp. MVCC table reads exclude commits made after the exported
+snapshot. PostgreSQL sequences use non-transactional semantics, so their counters
+can advance beyond the snapshot's visible rows. The dump preserves ownership
+and grants for the worker to validate against approved disposable roles.
+
+The manifest records the source identity, exported snapshot identifier, start
+and completion times, PostgreSQL version, and archive SHA-256 and size. The
+producer uploads and verifies the archive and manifest first. Its Ed25519
+signature then covers canonical completion metadata containing those objects'
+exact S3 keys, version IDs, checksums and sizes, plus the completion key,
+environment, account, bucket, region and timestamps. The completion object is
+also versioned. Since S3 assigns that object's own version when it is written,
+the reader records and verifies its exact returned version and SHA-256 alongside
+the signed key. A missing, stale, unversioned, substituted or incorrectly signed
+object prevents automated acceptance. An incomplete upload may leave private
+archive or manifest objects without publishing valid completion evidence.
+
+Before enabling v2, separately approve the following steps:
+
+1. Complete the [runtime role separation](../recovery/runtime/README.md) and
+   verify the application cannot use the PostgreSQL bootstrap login or reach
+   the host's AWS metadata service. Use the protected production Compose service,
+   trusted PostgreSQL image and host configuration. The v2 exporter uses the
+   existing `POSTGRES_USER` administration identity via the local Unix socket
+   and never gives that identity or the signing key to the backend. A trusted
+   administrator must privately pin the source identity using `SELECT
+   system_identifier FROM pg_control_system()` and `SELECT oid, datname FROM
+   pg_database WHERE datname = current_database()` against the reviewed database.
+   A new cluster or logical database replacement requires independent review
+   and a new pin. The trust boundary includes the producer host and PostgreSQL
+   administration. A clone of the same physical cluster can retain its system
+   identifier, so retain the protected Compose/volume controls.
+2. Provision a dedicated Ed25519 producer key using OpenSSL 3. Keep the PEM
+   private key root-owned, mode 0400 or 0600, under `/etc/vellum-cd/`. Keep
+   it outside all containers, GitHub and the recovery worker. Distribute only
+   the pinned public PEM and key ID to verification hosts. Use different keys
+   for backup production, worker evidence and release readiness issuance. Check
+   the public key fingerprint over the approved private operator channel. During
+   rotation publish a qualifying new backup under the new key, approve the new
+   verifier profile and retain the old public pin with historical evidence. A
+   suspected producer compromise requires revocation and an independently
+   trusted new backup and drill before automation resumes.
+3. Confirm the exact eu-west-2 bucket/account, enable bucket versioning, and
+   apply the reviewed conditional-write and deletion restrictions. Wait for
+   versioning to propagate before the first approved run. V2 stops if location
+   or versioning cannot be verified or if any uploaded object lacks a usable
+   version ID. The producer needs only bucket-scoped location/versioning
+   metadata plus its existing object access. It does not list, download old
+   versions or administer the bucket. On the independent freshness checker use
+   the same v2 source and public-key pin, with `signing_key` set to `null`.
+4. Install reviewed files under the existing host coordination procedure and
+   verify the current permissions, root-owned inputs and on-host cancellation.
+   Approve a production backup and an isolated signed restore drill before
+   enabling automated readiness. The producer signature is transfer and source
+   evidence. The independently retained drill verifies recoverability.
+
 The shared host gate serializes backups, both environments' controller deployments
 and guarded operator schema work. It preserves both environment locks and retains
 a durable pending record after incomplete work, because Docker/database processes
@@ -102,22 +170,31 @@ Before rollout, an authorized operator must:
 Replace every `REPLACE_*` value privately; do not apply an unedited example.
 Use a **dedicated** general-purpose bucket in `eu-west-2` with all four Block
 Public Access settings enabled, bucket-owner-enforced ownership/ACLs disabled,
-default encryption `AES256`, and versioning **never enabled** for this minimal
-policy. These creation settings are operator tasks; no template creates a bucket.
+and default encryption `AES256`. V1-only installations can keep the historical
+unversioned policy. V2 requires versioning enabled. These creation settings are
+operator tasks; no template creates a bucket.
 
-- [Bucket policy](bucket-policy.example.json): deny non-TLS requests and uploads
-  that do not explicitly request SSE-S3. It grants no access itself.
+- [Bucket policy](bucket-policy.example.json): deny non-TLS requests, uploads
+  without explicit SSE-S3 and backup writes without `If-None-Match: *`. Deny
+  manual backup deletion or version deletion, with expiration governed by the
+  reviewed lifecycle. It grants no access itself.
 - [Lifecycle](lifecycle.example.json): expire both prefixes after two days and
   abort incomplete multipart uploads after one day. The uploader itself uses
-  single PUTs. Defensive noncurrent-version and expired-delete-marker rules are
-  included if versioning was previously enabled; inspect retained versions before
-  applying to an existing bucket, because those rules delete them.
+  single PUTs. With versioning enabled, the noncurrent-version and expired
+  delete-marker rules remove older versions after lifecycle expiration. Inspect
+  existing versions before applying these rules. Versioning plus this policy
+  protects the exact objects during the intended short retention window. A
+  privileged bucket/lifecycle administrator can change that policy, and the
+  bucket has no compliance retention lock.
 - [Writer IAM](writer-policy.example.json): exact bucket/prefix `PutObject` and
   `GetObject` (required for HEAD), plus optional exact-topic `sns:Publish`. No
-  deletion, listing, ACL, lifecycle, bucket-policy or other administration grant.
+  deletion, listing, version reads, ACL, lifecycle or bucket-policy administration
+  grant. Remove the location/versioning statement for a v1-only producer.
 - [Independent verifier IAM](verifier-policy.example.json): completion-prefix
   listing, exact backup-prefix reads and optional exact-topic notification. It
-  cannot upload/delete backups. Remove SNS statements if no topic is used.
+  cannot upload/delete backups. The v2 checker also requires bucket location
+  and reads of exact production metadata versions. Remove these grants for a
+  v1-only checker and remove SNS statements if no topic is used.
 
 Both environments share one instance profile; prefix separation does not protect
 production backups from root compromise of that host. Restrict Docker/root access
@@ -220,6 +297,9 @@ references do not match, or if sizes/checksums/encryption fail. The host's own
 monitoring must also alert on failed or missed freshness service runs. This
 catches an EC2 host outage or missed daily backup the following morning, more
 than 26 hours after the prior expected snapshot and before two-day expiration.
+The v2 freshness check additionally requires a signed v2 completion, the
+configured source and the exact signed object versions. The 26-hour alert
+threshold is separate from the automated release gate's strict 24-hour limit.
 
 If no independent host/scheduler exists, use an operator's existing external
 monitor to call an equivalent read-only S3 check daily. Record that dependency

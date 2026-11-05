@@ -2,6 +2,7 @@
 """Operator-installed SSM controller; never execute it from a writable checkout."""
 
 import base64
+from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
 import hashlib
 import json
@@ -15,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 BASE = Path("/usr/local/lib/vellum-cd")
 STATE = Path("/var/lib/vellum-cd")
@@ -68,7 +70,7 @@ from release import (  # noqa: E402 - import only after validating the installed
     validate_manifest,
 )
 from smoke import smoke  # noqa: E402
-from coordination import PENDING, host_locks, operation, sync_state  # noqa: E402
+from coordination import PENDING, host_locks, operation, sync_state, validate_state  # noqa: E402
 
 MAX_ENCODED_MANIFEST_CHARS = 45000
 # Deliberately fixed in reviewed source; extending this needs a new release.
@@ -233,9 +235,10 @@ def atomic_json(path, value):
 
 
 READINESS_MAX_BYTES = 32768
-READINESS_MUTATION_DEADLINE = 480  # Leave 420 seconds of the 900-second SSM budget.
+READINESS_MUTATION_DEADLINE = 330  # Preserve 570 seconds for the bounded mutation path.
 READINESS_ISSUER = "vellum-production-recovery-v1"
 READINESS_POLICY = "production-readiness-policy.json"
+RUNTIME_POLICY_SHA256 = "bd0e329e18eda5a7541cfe93fcf233f7cc81655c96597a499f8653e8416d6124"
 
 
 def strict_json(data):
@@ -264,18 +267,18 @@ def private_file(path):
     return path
 
 
-def request_readiness(request):
+def request_readiness(request, method="sign"):
     path = STATE / "production-readiness.sock"
     try:
         info = path.lstat()
         require(stat.S_ISSOCK(info.st_mode) and info.st_uid == 0
                 and stat.S_IMODE(info.st_mode) == 0o600,
                 "unsafe production readiness socket")
-        deadline = time.monotonic() + 420
+        deadline = time.monotonic() + 35
         with socket.socket(socket.AF_UNIX) as connection:
-            connection.settimeout(420)
+            connection.settimeout(35)
             connection.connect(str(path))
-            connection.sendall(canonical(request))
+            connection.sendall(canonical({"method": method, "request": request}))
             connection.shutdown(socket.SHUT_WR)
             response = bytearray()
             while len(response) <= READINESS_MAX_BYTES:
@@ -296,14 +299,14 @@ def request_readiness(request):
         raise ValueError("invalid production readiness response") from None
 
 
-def verify_readiness_signature(evidence, signature):
+def verify_readiness_signature(evidence, signature, domain=b"vellum-production-readiness-v1\n"):
     require(isinstance(signature, str) and re.fullmatch(r"[0-9a-f]{128}", signature),
             "invalid production readiness signature encoding")
     key = private_file(STATE / "production-readiness-key.pem")
     with tempfile.TemporaryDirectory(prefix=".readiness-", dir=STATE) as temporary:
         message = Path(temporary) / "message"
         detached = Path(temporary) / "signature"
-        message.write_bytes(b"vellum-production-readiness-v1\n" + canonical(evidence))
+        message.write_bytes(domain + canonical(evidence))
         detached.write_bytes(bytes.fromhex(signature))
         result = subprocess.run(
             ["/usr/bin/openssl", "pkeyutl", "-verify", "-rawin", "-pubin",
@@ -324,6 +327,20 @@ def evidence_time(value):
         raise ValueError("invalid production readiness timestamp") from None
 
 
+def validate_admission(envelope, request, now=None):
+    now = now or datetime.now(timezone.utc)
+    require(isinstance(envelope, dict) and set(envelope) == {"admission", "signature"},
+            "missing independent production admission")
+    admission = envelope["admission"]
+    require(isinstance(admission, dict)
+            and set(admission) == {"schema", "request_sha256", "expires_at"}
+            and type(admission["schema"]) is int and admission["schema"] == 2
+            and admission["request_sha256"] == digest(canonical(request))
+            and now < evidence_time(admission["expires_at"]) <= now + timedelta(minutes=4),
+            "production admission is stale or invocation binding differs")
+    verify_readiness_signature(admission, envelope["signature"], b"vellum-production-admission-v1\n")
+
+
 def validate_readiness(envelope, request, now=None):
     now = now or datetime.now(timezone.utc)
     require(isinstance(envelope, dict) and set(envelope) == {"evidence", "signature"},
@@ -334,7 +351,7 @@ def validate_readiness(envelope, request, now=None):
     require(isinstance(evidence, dict) and set(evidence) == fields,
             "invalid production readiness evidence")
     verify_readiness_signature(evidence, envelope["signature"])
-    require(type(evidence["schema"]) is int and evidence["schema"] == 1
+    require(type(evidence["schema"]) is int and evidence["schema"] == request["schema"]
             and evidence["issuer"] == READINESS_ISSUER
             and evidence["request_sha256"] == digest(canonical(request)),
             "production evidence does not cover this invocation, release and live baseline")
@@ -372,29 +389,12 @@ def validate_readiness(envelope, request, now=None):
     require(now - timedelta(days=7) < drill_finished <= issued,
             "isolated restore drill expired")
 
-    rehearsal = evidence["rehearsal"]
-    if live["risk"] == "low":
-        require(rehearsal is None
-                and drill["schema_sha256"] == live["schema_sha256"]
-                and drill["execution_sha256"] == live["execution_sha256"]
-                and drill["runtime_sha256"] == live["runtime_sha256"],
-                "weekly drill does not cover the live schema and backend startup")
-        return
-    require(isinstance(rehearsal, dict)
-            and set(rehearsal) == {"archive_sha256", "postgres", "candidate_backend",
-                                   "schema_before", "schema_after", "data_before", "data_after",
-                                   "finished_at"}
-            and rehearsal["archive_sha256"] == backup["archive_sha256"]
-            and rehearsal["postgres"] == live["postgres"]
-            and rehearsal["candidate_backend"] == request["manifest"]["images"]["backend"]
-            and rehearsal["schema_before"] == live["schema_sha256"]
-            and hex_digest(rehearsal["data_before"]),
-            "missing or mismatched candidate migration rehearsal")
-    require(verified <= evidence_time(rehearsal["finished_at"]) <= issued,
-            "candidate rehearsal does not follow backup verification")
-    require(rehearsal["schema_after"] == rehearsal["schema_before"]
-            and rehearsal["data_after"] == rehearsal["data_before"],
-            "candidate changes schema or retained data; separate reviewed maintenance required")
+    require(live["risk"] == "low", "backend or bundle changed; separate reviewed migration approval required")
+    require(evidence["rehearsal"] is None
+            and drill["schema_sha256"] == live["schema_sha256"]
+            and drill["execution_sha256"] == live["execution_sha256"]
+            and drill["runtime_sha256"] == live["runtime_sha256"],
+            "weekly drill does not cover the live schema and backend startup")
 
 
 class Commands:
@@ -428,17 +428,34 @@ class Commands:
             str(BASE / "compose.registry.yml"),
         ]
 
-    def run(self, label, args, timeout=None):
+    @contextmanager
+    def freeze_environment(self):
+        validate_state(STATE)
+        source = validate_environment_file(self.environment)
+        require(source.stat().st_size <= 65536, "production environment file exceeds its safety limit")
+        self.frozen_environment = source.read_bytes()
+        with tempfile.TemporaryDirectory(prefix=".production-env-", dir=STATE) as directory:
+            frozen = Path(directory) / "production.env"
+            with open(frozen, "xb", opener=lambda name, flags: os.open(name, flags, 0o600)) as output:
+                output.write(self.frozen_environment)
+            self.compose[self.compose.index("--env-file") + 1] = str(frozen)
+            yield
+
+    def run(self, label, args, timeout=None, input_text=None):
         if timeout is None:
             timeout = 20 if self.approval_mode == "automated" else 240
         if args[: len(self.compose)] == self.compose:
-            validate_environment_file(self.environment)
+            source = validate_environment_file(self.environment)
+            if hasattr(self, "frozen_environment"):
+                require(source.stat().st_size <= 65536 and source.read_bytes() == self.frozen_environment,
+                        "production environment changed during the approved operation")
         result = subprocess.run(
             args,
             env=self.env,
             cwd=BASE,
             capture_output=True,
             text=True,
+            input=input_text,
             timeout=timeout,
         )
         # Raw stderr may contain credentials, SQL/financial data or resolved env.
@@ -611,6 +628,11 @@ class Commands:
                 'exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"',
             ],
         )
+        if self.approval_mode != "automated":
+            self.pull_images(manifest)
+        return count, backend_env
+
+    def pull_images(self, manifest):
         # Pull and inspect BOTH immutable images before touching either service.
         self.run(
             "Image pull", self.compose + ["pull", "backend", "frontend"],
@@ -634,18 +656,20 @@ class Commands:
                 == manifest["source_sha"],
                 "image revision label mismatch",
             )
-        return count, backend_env
 
     def apply(self, manifest):
         count, _ = self.prepare(manifest)
         self.replace(manifest, count)
 
-    def replace(self, manifest, count, expected_postgres=None):
+    def replace(self, manifest, count, expected_postgres=None, expected_proxy=None):
         self.stop_backend()
         self.wait_database()
         if expected_postgres is not None:
-            require(self.postgres_baseline() == expected_postgres,
+            require((*self.postgres_baseline(), self.runtime_contract()) == expected_postgres,
                     "production PostgreSQL changed after writer drain; operator recovery required")
+            self.verify_runtime_login(self.resolved_backend_env())
+            policy = strict_json(private_file(STATE / READINESS_POLICY).read_bytes())
+            require(self.proxy_baseline(policy) == expected_proxy, "production proxy changed after writer drain")
         self.run(
             "Application update",
             self.compose
@@ -665,6 +689,25 @@ class Commands:
             timeout=210,
         )
         self.verify_backend(manifest)
+        if self.approval_mode == "automated":
+            running = self.inspect_config(self.backend_ids()[0])
+            image = self.image_config(manifest["images"]["backend"])
+            expected = dict(item.split("=", 1) for item in image["Config"].get("Env") or [])
+            expected.update(self.resolved_backend_env())
+            require(running["image"] == image["Id"] and running["Cmd"] == ["serve"]
+                    and running["Entrypoint"] == ["/app/vellum"] and running["User"] == "10001:10001"
+                    and running["readonly"] is True and running["privileged"] is False
+                    and dict(item.split("=", 1) for item in running["env"]) == expected,
+                    "new backend differs from approved restricted serving configuration")
+            frontend_ids = self.run("Production frontend inventory", self.compose + ["ps", "-q", "frontend"],
+                                    timeout=10).split()
+            require(len(frontend_ids) == 1, "production requires exactly one frontend")
+            frontend = self.inspect_config(frontend_ids[0])
+            require(frontend["reference"] == manifest["images"]["frontend"]
+                    and frontend["image"] == self.image_config(manifest["images"]["frontend"])["Id"],
+                    "running frontend does not match the authorised image")
+            policy = strict_json(private_file(STATE / READINESS_POLICY).read_bytes())
+            require(self.proxy_baseline(policy) == expected_proxy, "production proxy changed before verification")
         smoke(
             ORIGINS[self.environment],
             staging=self.environment == "staging",
@@ -722,7 +765,8 @@ class Commands:
         # to agree. Secret values are compared in memory and never sent.
         require(dict(item.split("=", 1) for item in running["env"]) == expected
                 and all(running[field] == current["Config"].get(field)
-                        for field in ("Entrypoint", "Cmd", "User", "WorkingDir")),
+                        for field in ("Entrypoint", "User", "WorkingDir"))
+                and (running["Cmd"] or []) == self.resolved_backend_command(),
                 "running backend settings differ from reviewed production configuration")
         require(self.resolved_backend_env() == expected_env,
                 "production settings changed during readiness; dispatch again")
@@ -736,15 +780,19 @@ class Commands:
         pg_env = dict(item.split("=", 1) for item in postgres["env"])
         require(expected_env.get("DB_HOST") == "postgres" and expected_env.get("DB_PORT") == "5432"
                 and pg_env.get("POSTGRES_DB") == expected_env.get("DB_NAME")
-                and pg_env.get("POSTGRES_USER") == expected_env.get("DB_USER")
-                and pg_env.get("POSTGRES_PASSWORD") == expected_env.get("DB_PASSWORD"),
+                and self.resolved_backend_command() == ["serve"]
+                and expected_env.get("DB_USER") == "vellum_runtime"
+                and pg_env.get("POSTGRES_USER") != expected_env.get("DB_USER")
+                and pg_env.get("POSTGRES_PASSWORD") != expected_env.get("DB_PASSWORD"),
                 "running PostgreSQL and backend database settings differ")
+        self.verify_runtime_login(expected_env)
         version, source, schema = self.postgres_baseline()
         proxy = self.proxy_baseline(policy)
         return {
             "current_manifest_sha256": digest(canonical(receipt)),
             "postgres": {"image_id": postgres["image"], "version": version},
             "schema_sha256": schema,
+            "migration_contract_sha256": self.runtime_contract(),
             "database_source_sha256": source,
             "proxy_sha256": proxy,
             "backup_contract": policy["backup_contract"],
@@ -761,6 +809,13 @@ class Commands:
             "Production settings recheck",
             self.compose + ["config", "--format", "json"], timeout=15,
         ))["services"]["backend"]["environment"]
+
+    def resolved_backend_command(self):
+        service = json.loads(self.run(
+            "Production entrypoint recheck",
+            self.compose + ["config", "--format", "json"], timeout=15,
+        ))["services"]["backend"]
+        return service.get("command") or []
 
     def inspect_config(self, target):
         template = ('{"image":{{json .Image}},"reference":{{json .Config.Image}},'
@@ -798,6 +853,36 @@ class Commands:
             "architecture": image["Architecture"], "os": image["Os"],
             "rootfs": rootfs, "config": config,
         }))
+
+    def verify_runtime_login(self, environment):
+        password = environment.get("DB_PASSWORD")
+        require(environment.get("DB_USER") == "vellum_runtime" and isinstance(password, str)
+                and 0 < len(password) <= 1024 and "\n" not in password and "\r" not in password,
+                "restricted runtime database credentials are unavailable")
+        script = ('IFS= read -r PGPASSWORD; export PGPASSWORD; '
+                  'exec psql -X -Atq -v ON_ERROR_STOP=1 -h 127.0.0.1 -U vellum_runtime '
+                  '-d "$POSTGRES_DB" -c "SELECT 1"')
+        result = self.run("Restricted runtime database login",
+                          self.compose + ["exec", "-T", "postgres", "sh", "-ec", script],
+                          timeout=10, input_text=password + "\n").strip()
+        require(result == "1", "restricted runtime database login failed")
+
+    def runtime_contract(self):
+        # The independent administrator probe is installed as reviewed inert
+        # SQL, pinned by the six-file controller bundle.
+        query = private_file(ENVIRONMENT_DIRECTORY / "production-runtime-policy.sql").read_bytes()
+        require(digest(query) == RUNTIME_POLICY_SHA256, "restricted database role policy pin differs")
+        postgres = self.compose + ["exec", "-T", "postgres", "sh", "-ec",
+                                   'exec psql -X -v ON_ERROR_STOP=1 -Atqc "$1" '
+                                   '-U "$POSTGRES_USER" -d "$POSTGRES_DB"', "vellum-runtime"]
+        result = self.run("Restricted PostgreSQL serving role", postgres + [query.decode()], timeout=10).strip()
+        require(result == "t", "production database serving role differs from policy")
+        ledger = self.run("Committed migration contract", postgres + [
+            "SELECT version, contract_sha256 FROM public.vellum_schema_migrations "
+            "WHERE current_setting('max_prepared_transactions') = '0' LIMIT 2"
+        ], timeout=10).strip()
+        require(re.fullmatch(r"1\|" + HEX, ledger), "production migration ledger is missing or ambiguous")
+        return ledger.split("|", 1)[1]
 
     def postgres_baseline(self):
         postgres = self.compose + ["exec", "-T", "postgres", "sh", "-ec"]
@@ -873,7 +958,12 @@ class Commands:
             print("Service diagnostics unavailable", file=sys.stderr)
 
 
-def deploy(environment, manifest, commands=None, approval_mode="standard"):
+def deploy(environment, manifest, commands=None, approval_mode="standard", command_id=None):
+    if commands is None and approval_mode == "automated":
+        validate_manifest(manifest, REPOSITORY, verified=True)
+        commands = Commands(environment, manifest, approval_mode=approval_mode)
+        with commands.freeze_environment():
+            return deploy(environment, manifest, commands, approval_mode, command_id)
     started = time.monotonic()
     require(environment in ORIGINS, "unknown deployment environment")
     validate_approval_mode(environment, approval_mode)
@@ -895,6 +985,18 @@ def deploy(environment, manifest, commands=None, approval_mode="standard"):
             require(not os.path.lexists(STATE / READINESS_POLICY),
                     "automated readiness is installed; standard approval requires operator recovery")
     if approval_mode == "automated":
+        require(isinstance(command_id, str) and re.fullmatch(r"[0-9a-f-]{36}", command_id)
+                and str(uuid.UUID(command_id)) == command_id, "missing agent SSM command identity")
+        challenge = {"schema": 2, "nonce": secrets.token_hex(32),
+                     "command_id": command_id, "manifest": manifest}
+        for attempt in range(4):
+            admission = request_readiness(challenge, method="admit")
+            if admission != {"retry": True}:
+                break
+            if attempt < 3:
+                time.sleep(2 ** attempt)
+        validate_admission(admission, challenge)
+        commands.pull_images(manifest)
         with host_locks(STATE):
             require(not os.path.lexists(STATE / PENDING),
                     "unfinished host operation; operator recovery required")
@@ -902,12 +1004,9 @@ def deploy(environment, manifest, commands=None, approval_mode="standard"):
             live = commands.readiness_baseline(manifest, expected_env)
         require(time.monotonic() < started + READINESS_MUTATION_DEADLINE,
                 "production readiness exceeded its preflight budget; dispatch again")
-        request = {
-            "schema": 1,
-            "nonce": secrets.token_hex(32),
-            "manifest": manifest,
-            "live": live,
-        }
+        require(live["risk"] == "low",
+                "backend or bundle changed; separate reviewed migration approval required")
+        request = challenge | {"live": live}
         evidence = request_readiness(request)
 
         def preflight():
@@ -925,7 +1024,8 @@ def deploy(environment, manifest, commands=None, approval_mode="standard"):
             # The challenge is generated by this invocation and never accepted
             # as input. A retry needs new evidence. Existing approvals/closure
             # are left intact.
-            atomic_json(STATE / f"production-readiness-{request['nonce']}.json", evidence)
+            atomic_json(STATE / f"production-readiness-{command_id}.json",
+                        {"request": request, "response": evidence})
             sync_state(STATE)
         elif environment == "production":
             # Re-read/freshness-check after locking; do not consume a pending operation.
@@ -939,7 +1039,8 @@ def deploy(environment, manifest, commands=None, approval_mode="standard"):
             if approval_mode == "automated":
                 commands.replace(manifest, count, (
                     live["postgres"]["version"], live["database_source_sha256"], live["schema_sha256"],
-                ))
+                    live["migration_contract_sha256"],
+                ), expected_proxy=live["proxy_sha256"])
             else:
                 commands.apply(manifest)
         except Exception:
@@ -958,9 +1059,9 @@ def deploy(environment, manifest, commands=None, approval_mode="standard"):
             STATE / f"{environment}-{manifest['run_id']}-{manifest['run_attempt']}.json",
             manifest,
         )
-        print(
-            f"{environment}: healthy deployment, release {manifest['run_id']}/{manifest['run_attempt']}"
-        )
+    print(f"{environment}: healthy deployment, release {manifest['run_id']}/{manifest['run_attempt']}")
+    if approval_mode == "automated":
+        print(f"Verified production receipt {command_id} {digest(canonical(manifest))}")
 
 
 def main():
@@ -982,7 +1083,8 @@ def main():
         "unsafe deployment state directory",
     )
     manifest = decode_manifest_parameter(os.environ["SSM_Manifest"])
-    deploy(environment, manifest, approval_mode=os.environ.get("SSM_ApprovalMode", "standard"))
+    deploy(environment, manifest, approval_mode=os.environ.get("SSM_ApprovalMode", "standard"),
+           command_id=os.environ.get("SSM_COMMAND_ID"))
 
 
 if __name__ == "__main__":

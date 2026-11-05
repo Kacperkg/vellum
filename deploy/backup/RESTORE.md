@@ -4,6 +4,30 @@ This is the manual recovery procedure for existing backups. The
 [signed readiness design](../PRODUCTION-READINESS.md) requires independent
 source-bound backup evidence and isolated worker validation before activation.
 
+The download commands below select historical v1 archives. For a v2 production
+archive, the [signed provenance contract](README.md#signed-production-provenance)
+requires the producer's pinned Ed25519 public key and exact S3 versions. Use
+the installed isolated recovery worker's `drill` mode with the approved profile
+and both `--completion-key` and `--completion-version` for a fresh v2 backup.
+It verifies the source, immutable object versions, checksums and signature
+before starting a disposable restore. It uses its own approved database role
+bootstrap to preserve and validate archived object ownership and grants.
+
+For attended disaster recovery from an older retained v2 object, keep the age
+exception separate from production-readiness evidence. On a private disposable
+host, use the read-only recovery identity, expected bucket owner and approved
+region. Fetch the selected completion version and verify its SHA-256, then
+verify the Ed25519 signature over its UTF-8 JSON `payload` encoded with sorted
+keys, compact separators and ASCII escaping. Check the signed completion scope,
+run ID, snapshot times and historical producer pin. Fetch both signed object
+versions and compare each complete object's size and SHA-256 with the signed
+reference. Compare the manifest's database name, OID and cluster identifier to
+the approved historical source and match its snapshot time, run ID, PostgreSQL
+version and archive hash/size. Retain the exception and verification evidence
+privately. Continue with reviewed target role provisioning and the attended
+restore steps. The generic v1 `--no-owner --no-acl` restore below remaps role
+ownership/grants, so use it only where that remapping has been reviewed.
+
 This procedure is for a future separately approved drill on a private disposable
 host. It must not target either live Compose project or their PostgreSQL volumes.
 A local synthetic-data restore tests dump/restore mechanics; it does not prove

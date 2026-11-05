@@ -1,0 +1,37 @@
+{
+  "account_id": "REPLACE_12_DIGIT_ACCOUNT",
+  "alert_topic": "arn:aws:sns:eu-west-2:REPLACE_ACCOUNT:REPLACE_RECOVERY_ALERT_TOPIC",
+  "backend_image": "ghcr.io/kacperkg/vellum-backend@sha256:REPLACE_APPROVED_BACKEND_DIGEST",
+  "backend_runtime": {
+    "PORT": "8080",
+    "BIND_HOST": "0.0.0.0",
+    "GIN_MODE": "release",
+    "DB_HOST": "postgres",
+    "DB_PORT": "5432",
+    "DB_NAME": "REPLACE_DATABASE_NAME",
+    "DB_USER": "vellum_runtime",
+    "DB_SSLMODE": "disable",
+    "JWT_EXPIRY": "15m",
+    "JWT_REFRESH_EXPIRY": "720h"
+  },
+  "backup_contract": "REPLACE_APPROVED_BACKUP_CONTRACT_SHA256",
+  "bucket": "REPLACE_BACKUP_BUCKET",
+  "execution_sha256": "REPLACE_APPROVED_BACKEND_EXECUTION_SHA256",
+  "harness_sha256": "REPLACE_APPROVED_WORKER_HARNESS_SHA256",
+  "postgres_image": "postgres@sha256:REPLACE_APPROVED_POSTGRES_17_ALPINE_DIGEST",
+  "postgres_image_id": "sha256:REPLACE_APPROVED_POSTGRES_17_IMAGE_ID",
+  "postgres_locale": "C",
+  "postgres_role": "REPLACE_POSTGRES_BOOTSTRAP_ROLE",
+  "postgres_version": "REPLACE_POSTGRES_SERVER_VERSION_NUM",
+  "producer_key_id": "REPLACE_PRODUCER_KEY_ID",
+  "producer_key_sha256": "REPLACE_PRODUCER_PUBLIC_PEM_SHA256",
+  "receipt_bucket": "REPLACE_RECEIPT_BUCKET",
+  "runtime_sha256": "REPLACE_APPROVED_BACKEND_RUNTIME_SHA256",
+  "schema_sha256": "REPLACE_APPROVED_SCHEMA_SHA256",
+  "source": {
+    "database_name": "REPLACE_DATABASE_NAME",
+    "database_oid": 0,
+    "system_identifier": "REPLACE_POSTGRES_SYSTEM_IDENTIFIER"
+  },
+  "worker_key_id": "arn:aws:kms:eu-west-2:REPLACE_ACCOUNT:key/REPLACE_WORKER_KEY_UUID"
+}
