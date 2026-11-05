@@ -11,8 +11,10 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
+import uuid
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "deploy/cd"))
@@ -313,10 +315,22 @@ def independent_dispatch(value):
     result = invoke_authority({"manifest": value})
     release.require(set(result) == {"command_id"}, "independent production dispatch refused or unconfirmed")
     command = result["command_id"]
+    release.require(isinstance(command, str) and re.fullmatch(r"[a-f0-9-]{36}", command)
+                    and str(uuid.UUID(command)) == command, "invalid accepted production command")
     checksum = hashlib.sha256(release.canonical(value)).hexdigest()
-    release.wait_command(command, os.environ["SSM_INSTANCE_ID"], expected_receipt=checksum)
-    release.require(invoke_authority({"command_id": command, "manifest_sha256": checksum}) == {"verified": True},
-                    "host reported successful deployment but independent receipt retention is unconfirmed")
+    with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+        summary.write(f"\nProduction SSM command: `{command}`\n")
+    deadline = time.monotonic() + 900
+    while time.monotonic() < deadline:
+        outcome = invoke_authority({"command_id": command, "manifest_sha256": checksum})
+        if outcome == {"verified": True}:
+            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+                output.write(f"command_id={command}\n")
+            return
+        release.require(outcome == {"pending": True},
+                        "independent production outcome rejected; inspect the command privately")
+        time.sleep(10)
+    raise ValueError("production outcome timed out; investigate the accepted command before retrying")
 
 
 def dispatch(args):

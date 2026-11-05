@@ -187,7 +187,8 @@ class Authority:
         record = self.state.lookup(command)
         require(record and record["approval"] == approval and record["manifest_sha256"] == checksum,
                 "production outcome does not cover this workflow attempt")
-        self.ssm.verify_receipt(command, checksum)
+        if not self.ssm.verify_receipt(command, checksum, allow_pending=True):
+            return {"pending": True}
         self.state.confirm_baseline(checksum, command)
         return {"verified": True}
 
@@ -227,6 +228,8 @@ class Authority:
                 self.state.confirm_baseline(baseline, previous["command"])
         backup, drill = self.recovery.evidence(live, now)
         self.recheck(record["approval"])
+        self.github.verify_latest_attempt(manifest)
+        self.ssm.verify_production(command, manifest)
         now = self.now()
         require(timestamp(record["expires_at"]) > now, "invocation authorisation expired")
         payload |= {"issuer": "vellum-production-recovery-v1", "issued_at": stamp(now),

@@ -313,6 +313,26 @@ class GitEquivalenceTests(unittest.TestCase):
 
 
 class DispatchTests(unittest.TestCase):
+    def test_automated_status_never_reads_account_wide_ssm_output(self):
+        command = "12345678-1234-1234-1234-123456789abc"
+        value = manifest()
+        with tempfile.TemporaryDirectory() as directory:
+            summary = Path(directory) / "summary"
+            output = Path(directory) / "output"
+            with (patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary), "GITHUB_OUTPUT": str(output)}),
+                  patch.object(production, "invoke_authority", side_effect=[
+                      {"command_id": command}, {"pending": True}, {"verified": True},
+                  ]) as invoke, patch.object(production.time, "sleep")):
+                production.independent_dispatch(value)
+            checksum = hashlib.sha256(release.canonical(value)).hexdigest()
+            self.assertEqual([call.args[0] for call in invoke.call_args_list], [
+                {"manifest": value},
+                {"command_id": command, "manifest_sha256": checksum},
+                {"command_id": command, "manifest_sha256": checksum},
+            ])
+            self.assertIn(command, summary.read_text())
+            self.assertEqual(output.read_text(), f"command_id={command}\n")
+
     def test_dispatch_uses_standard_host_approval_and_rechecks_main_last(self):
         data = release.canonical(manifest())
         identity = f"{RUN}:{ATTEMPT}:987:{hashlib.sha256(data).hexdigest()}"

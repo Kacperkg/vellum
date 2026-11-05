@@ -42,7 +42,7 @@ run "separate_signing_dispatch_and_invocation" {
 
   assert {
     condition = alltrue([
-      !strcontains(aws_iam_role_policy.runner.policy, "ssm:SendCommand"),
+      !strcontains(aws_iam_role_policy.runner.policy, "ssm:"),
       !strcontains(aws_iam_role_policy.relay.policy, "ssm:SendCommand"),
       !strcontains(aws_iam_role_policy.runner.policy, "kms:Sign"),
       !strcontains(aws_iam_role_policy.relay.policy, "kms:Sign"),

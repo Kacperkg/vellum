@@ -341,8 +341,7 @@ class AuthorityTests(unittest.TestCase):
 
         checksum = digest(self.value)
         event = {"token": self.token(), "command_id": COMMAND, "manifest_sha256": checksum}
-        with self.assertRaisesRegex(ValueError, "no successful"):
-            self.authority.finish(event, self.jwks)
+        self.assertEqual(self.authority.finish(event, self.jwks), {"pending": True})
         self.ssm.commands[COMMAND].update({
             "Status": "Success",
             "StandardOutputContent": f"Verified production receipt {COMMAND} {checksum}\n",
@@ -371,6 +370,24 @@ class AuthorityTests(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             self.dispatch()
         self.assertNotIn(COMMAND, self.ssm.commands)
+
+    def test_cancellation_during_receipt_reads_refuses_to_sign(self):
+        self.dispatch()
+        event = {"method": "sign", "request": {
+            "schema": 2, "nonce": "f" * 64, "command_id": COMMAND,
+            "manifest": self.value, "live": self.live,
+        }}
+        verify = self.recovery.evidence
+
+        def cancel(live, now):
+            evidence = verify(live, now)
+            self.ssm.commands[COMMAND]["Status"] = "Cancelled"
+            return evidence
+
+        with patch.object(self.recovery, "evidence", side_effect=cancel):
+            with self.assertRaisesRegex(ValueError, "status differs"):
+                self.authority.host(event)
+        self.assertNotIn(COMMAND, self.ledger.consumed)
 
     def test_signed_path_rejects_cancelled_run_wrong_pins_and_wrong_manifest(self):
         self.dispatch()

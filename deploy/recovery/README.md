@@ -27,7 +27,7 @@ flowchart LR
 
 | Identity | Authority and limits |
 | --- | --- |
-| Protected production GitHub job | Invoke only the immutable dispatch function and read SSM status. It has no SSM send, backup read or signing permission on the automated role. |
+| Protected production GitHub job | Invoke only the immutable dispatch function for dispatch and verified status. The automated role has no direct SSM, backup or signing permission. |
 | Independent dispatch function | Read canonical GitHub provenance and signed recovery receipts. Issue only the pinned production command and reserve the workflow attempt before the non-idempotent AWS call. It has no issuer signing permission. |
 | EC2 root and local relay | Measure host state and enforce the writer barrier. A root-only Roles Anywhere certificate provides narrowly scoped host-function invocation. Root and the Docker daemon are trusted for host measurements. Compromise of either can bypass the local controller. |
 | Root backup producer | Authenticate the PostgreSQL source and snapshot and publish versioned objects. Keep its private key out of application mounts, the instance metadata role, GitHub and the issuer. A compromised producer or database administrator can falsify origin or data. |
@@ -40,8 +40,8 @@ job condition requires the affirmative checkbox. The token has no checkbox
 claim. The issuer also pins the Environment's branch rules and the reviewed
 protection rules. It checks approval/run state at dispatch and again while the
 command is executing. A cancelled or rerun attempt cannot obtain a new signature.
-Cancellation after the host accepts fresh evidence and begins mutation is
-handled as an interrupted deployment through the pending marker. Where the
+A short revocation window remains between issuance and the host's locked
+expiry check. An interruption after mutation begins retains the pending marker. Where the
 Environment requires a reviewer, the authority also checks review history.
 That GitHub history is run-scoped, so use a fresh dispatch after a rerun.
 

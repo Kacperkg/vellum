@@ -23,6 +23,22 @@ class GitHub:
     def __call__(self, path, raw=False):
         return release.api(path, raw=raw)
 
+    def release_tree(self, tree):
+        value = self(f"{API}/git/trees/{tree}?recursive=1")
+        require(value["sha"] == tree and value["truncated"] is False, "incomplete Git release tree")
+        files = {}
+        for item in value["tree"]:
+            path = item["path"]
+            if item["type"] == "tree":
+                continue
+            # Match the runner's reviewed Git pathspec exclusions.
+            if (path in ("README.md", "docs", "deploy/production-release.json")
+                    or path.startswith("docs/") or re.fullmatch(r"deploy/[^/]+\.md", path)):
+                continue
+            require(path not in files, "ambiguous Git release tree")
+            files[path] = (item["mode"], item["type"], item["sha"])
+        return files
+
     def verify_release(self, sha, manifest):
         staging = self(f"{API}/git/ref/heads/staging")["object"]["sha"]
         tree = self(f"{API}/git/commits/{sha}")["tree"]["sha"]
@@ -37,6 +53,7 @@ class GitHub:
                                         "workflow_runs", limit=1000, count=True)
         matched = []
         seen = set()
+        main_files = None
         for run in runs:
             run_id, attempt, source = run["id"], run["run_attempt"], run["head_sha"]
             require(release.positive(run_id) and run_id not in seen, "ambiguous staging history")
@@ -47,8 +64,12 @@ class GitHub:
                 continue
             production_release.exact_run(run, run_id, attempt, source)
             require(re.fullmatch(release.SHA, source), "invalid staging SHA")
-            if self(f"{API}/git/commits/{source}")["tree"]["sha"] != tree:
-                continue
+            source_tree = self(f"{API}/git/commits/{source}")["tree"]["sha"]
+            if source_tree != tree:
+                if main_files is None:
+                    main_files = self.release_tree(tree)
+                if self.release_tree(source_tree) != main_files:
+                    continue
             comparison = self(f"{API}/compare/{source}...{staging}?per_page=1")
             if comparison["status"] not in ("ahead", "identical") or comparison["merge_base_commit"]["sha"] != source:
                 continue
@@ -149,14 +170,26 @@ class SSM:
     def verify_production(self, command, manifest):
         self.verify_command(command, manifest, "production", "InProgress")
 
-    def verify_receipt(self, command, checksum):
+    def verify_receipt(self, command, checksum, allow_pending=False):
         pin = self.pins("production")
-        item = self.client.get_command_invocation(CommandId=command, InstanceId=pin["instance"],
-                                                  PluginName="deployProduction")
-        require(item["Status"] == "Success" and item["CommandId"] == command
-                and item["InstanceId"] == pin["instance"] and item["PluginName"] == "deployProduction"
+        try:
+            item = self.client.get_command_invocation(CommandId=command, InstanceId=pin["instance"],
+                                                      PluginName="deployProduction")
+        except self.client.exceptions.InvocationDoesNotExist:
+            if allow_pending:
+                return False
+            raise
+        name = pin["document"].rsplit("/", 1)[-1]
+        require(item["CommandId"] == command and item["InstanceId"] == pin["instance"]
+                and item["PluginName"] == "deployProduction"
+                and item["DocumentName"] in (name, pin["document"])
+                and item["DocumentVersion"] == pin["version"], "production outcome invocation differs")
+        if allow_pending and item["Status"] in ("Pending", "InProgress", "Delayed"):
+            return False
+        require(item["Status"] == "Success"
                 and f"Verified production receipt {command} {checksum}" in item["StandardOutputContent"].splitlines(),
                 "current production receipt has no successful independent SSM outcome")
+        return True
 
 
 class Ledger:
@@ -190,14 +223,19 @@ class Ledger:
     def confirm_baseline(self, checksum, command):
         self.client.update_item(TableName=self.table, Key={"key": {"S": f"baseline:{checksum}"}},
                                 UpdateExpression="SET confirmed = :yes",
-                                ConditionExpression="#command = :command",
+                                ConditionExpression="#command = :command OR confirmed = :yes",
                                 ExpressionAttributeNames={"#command": "command"},
                                 ExpressionAttributeValues={":command": {"S": command}, ":yes": {"BOOL": True}})
 
     def remember_baseline(self, checksum, command):
-        self.client.put_item(TableName=self.table, Item={
-            "key": {"S": f"baseline:{checksum}"}, "command": {"S": command},
-        })
+        try:
+            self.client.put_item(TableName=self.table, Item={
+                "key": {"S": f"baseline:{checksum}"}, "command": {"S": command},
+            }, ConditionExpression="attribute_not_exists(confirmed)")
+        except self.client.exceptions.ConditionalCheckFailedException:
+            # A new attempt must never replace an independently confirmed
+            # historical outcome, even if the new attempt subsequently fails.
+            return
 
     def consume(self, command):
         self.client.update_item(TableName=self.table, Key={"key": {"S": f"command:{command}"}},
