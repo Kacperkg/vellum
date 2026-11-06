@@ -1,155 +1,99 @@
 # Vellum
 
-Vellum is a personal finance application for people who want to track their money
-manually across accounts, spending categories, budgets, and savings goals. It
-brings recorded balances and activity into one place, with summaries that help
-explain where money goes and how much remains available.
+Vellum is a manual personal finance tracker. Record income, expenses and
+transfers across your accounts, then see how much you have available, where
+you are spending and what you have set aside for savings goals.
 
-[Production application](https://vellum.kacpergajdarski.com) ·
-[Staging environment](https://staging.vellum.kacpergajdarski.com)
+[Open Vellum](https://vellum.kacpergajdarski.com/) · [Run it locally](#run-locally) · [Technical architecture](TECHNICAL.md)
 
-## Code walkthrough: Transfers
+![Vellum desktop overview showing recorded balance, remaining monthly budget and recent activity using synthetic data](docs/screenshots/overview.webp)
 
-Moving money between your accounts changes both balances without counting as
-income or spending. Follow this five-minute path through the implementation:
+Sign in or create an account to open the workspace. Vellum asks you to add at
+least one tracking account on first use. It uses a label you choose and requires
+no bank credentials.
 
-- **Submit:** [`NewTransactionDialog.handleSubmit`](frontend/src/features/transactions/components/NewTransactionDialog.tsx#L91)
-  converts the amount to integer minor units and passes the source and destination
-  to [`createTransfer`](frontend/src/api/endpoints/transfers.ts#L15), which sends
-  `POST /api/transfers`. A rejected request keeps the form open with its inputs
-  and an error; submission is re-enabled.
-- **Update the UI:** after a successful save,
-  [`FinanceDataContext.refresh`](frontend/src/contexts/FinanceDataContext.tsx#L78)
-  reloads the shared resources before the form closes.
-  [Account cards](frontend/src/features/accounts/pages/Accounts.tsx#L197) render
-  the refreshed server balance: the [account calculation](backend/internal/repository/financial.go#L16)
-  subtracts outgoing transfers and adds incoming ones.
-- **Keep spending separate:** the [overview totals](frontend/src/features/overview/pages/Home.tsx#L66)
-  sum income and expenses from transactions only. Transfers are separate records;
-  the [activity helpers](frontend/src/features/transactions/utils/activity.ts#L82)
-  give them opposite account impacts and zero overall net impact, and calculate
-  the form's source-balance preview.
-- **Verify the rule:** the [salary → transfer → subscription regression](frontend/src/features/transactions/utils/activity.test.mjs#L57)
-  checks that £1,000 income, a £200 transfer and a £10 expense leave £800 in the
-  source and £190 in the destination, while overall net remains £990. This tests
-  the production calculation helpers; the [browser workflow](frontend/e2e/workflows.spec.ts#L85)
-  separately exercises form submission, persisted balances and an account card.
+## What you can do
 
-Run the calculation regressions locally (Node.js and pnpm required; no database):
+- **Track accounts and activity.** Record income and expenses, search and filter
+  activity, and export the visible rows as CSV. Transfers change both account
+  balances without counting as income or spending.
+- **Budget and save.** Compare current-month category spending with budget
+  limits. Track savings progress manually, and optionally allocate a goal's
+  target against the balance of a linked account.
+- **See the bigger picture.** Review recorded balances, recent activity,
+  six-month income and spending trends, and expense categories. The
+  Subscriptions page groups entries you have marked as recurring.
+- **Manage access and preferences.** Register, sign in and sign out across
+  browser tabs, and save currency display and formatting preferences. Email
+  password recovery is available where sending is configured.
 
-```sh
-cd frontend
-pnpm install --frozen-lockfile
-pnpm test:finance
-```
+## Screenshots
 
-![Vellum overview with synthetic demo data](docs/screenshots/overview.png)
+These captures use synthetic records entered through the local API.
 
-## Features
+| Transactions                                                                                     | Budgets                                                                                                    | Goals                                                                                                  |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| ![Desktop transaction table with search, filters and export](docs/screenshots/transactions.webp) | ![Budget cards showing current spending, limits and money left by category](docs/screenshots/budgets.webp) | ![Savings goals with linked accounts, progress and monthly contributions](docs/screenshots/goals.webp) |
 
-- **Accounts and activity:** create and manage accounts, record income and
-  expenses, and search, filter, sort, edit, or export visible activity as CSV.
-- **Transfers:** move recorded money between accounts without inflating income,
-  expenses, or budget spending. Editing or deleting a transfer updates both sides.
-- **Budgets:** set category limits and compare them with current-month spending.
-- **Savings goals:** enter progress manually and optionally link goals to an
-  account. Linked targets reserve an allocation and show remaining availability
-  or a shortfall; they do not move money.
-- **Summaries:** review account balances, six-month income/expense charts, and an
-  expense-category breakdown.
-- **Recurring activity:** view entries marked daily, weekly, monthly, or yearly
-  together on the subscriptions page.
-- **User access and preferences:** register, log in, refresh sessions, log out,
-  and save display preferences across desktop and mobile layouts.
+<details>
+<summary>Mobile overview</summary>
 
-Before entering the workspace, users must create at least one bank account in
-Vellum. Setup resumes after refreshing or signing in again until an account has
-been saved. Existing users with no accounts, including users who delete their
-last account, also return to setup. If the account check fails, the workspace
-stays hidden while the user retries. Accounts are manual tracking records and
-do not require bank credentials.
+![Mobile overview with a balance chart, income and expenses, and the remaining monthly budget](docs/screenshots/overview-mobile.webp)
 
-Vellum is a manual tracker. Frequency labels do not schedule payments or generate
-future ledger entries. Bank synchronization, opening balances, and currency
-conversion are not implemented. Budgets are current category limits rather than
-historical budget periods.
+</details>
 
 ## Technology and architecture
 
-| Area                 | Technologies                                                                                             |
-| -------------------- | -------------------------------------------------------------------------------------------------------- |
-| Frontend             | React 19, TypeScript 6, Vite 8, TanStack Router, Tailwind CSS 4, Axios                                   |
-| Backend              | Go 1.26.10, Gin, GORM                                                                                    |
-| Database             | PostgreSQL 17; money stored in integer minor units                                                       |
-| Development          | Docker Compose, Air, Node.js 24.22.1, pnpm 10.34.8                                                       |
-| Hosting and delivery | AWS EC2, Caddy, Nginx, GHCR, GitHub Actions, AWS OIDC and Systems Manager                                |
-| Verification         | Go tests and race detector, PostgreSQL integration tests, Node test runner, Playwright, ESLint, Prettier |
+| Area                 | Stack                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------- |
+| Frontend             | React, TypeScript, Vite, TanStack Router, Tailwind CSS, Axios                                           |
+| Backend              | Go, Gin, GORM                                                                                           |
+| Data                 | PostgreSQL 17, with money represented in integer minor units                                            |
+| Hosting and delivery | Docker Compose, Caddy, Nginx, AWS EC2 and Systems Manager, GitHub Actions and GitHub Container Registry |
+| Verification         | Go unit, integration and race tests, Node's test runner, Playwright, ESLint and Prettier                |
 
-The React client calls the Go API through typed Axios modules. Gin routes pass
-requests through authentication middleware to handlers, services, and GORM
-repositories. PostgreSQL stores user-owned resources; account balances and goal
-allocations are calculated on the server.
+In the deployed design, Caddy terminates HTTPS and routes browser pages and
+assets to Nginx. API and authentication requests go to the Go service, which
+uses PostgreSQL for application and session data. Staging and production use
+separate databases and Compose projects on the same host. See the
+[technical guide](TECHNICAL.md) for request flow, financial invariants and
+release provenance.
 
-Local Compose runs Vite, the API with Air reload, and PostgreSQL. Deployment uses
-separate production Dockerfiles: Nginx serves the built frontend, and a compiled
-Go binary serves the API. An existing Caddy proxy terminates HTTPS and routes
-browser/API traffic on EC2. Staging and production have separate Compose projects,
-databases, credentials, and volumes, while sharing the host and Caddy proxy.
-Deployment services do not publish application or database ports to the host.
+## Run locally
 
-## Getting started
-
-### Prerequisites
-
-For the container workflow, install Git, Docker Engine or Docker Desktop, and
-Docker Compose v2. For host development, also use **Go 1.26.10**, **Node.js
-24.22.1**, and **pnpm 10.34.8**, matching the repository's CI and toolchain files.
+Install Git and Docker with Compose v2. The container setup supplies Go, Node.js
+and pnpm. Clone the repository and use the development environment template.
 
 ```sh
-git clone https://github.com/Kacperkg/Vellum.git
+git clone --branch staging https://github.com/Kacperkg/Vellum.git
 cd Vellum
 cp backend/.env.example backend/.env
 ```
 
-Replace `JWT_SECRET` in `backend/.env` with a long random development secret.
-The remaining example values match the local Compose database. Keep this file
-private and untracked.
-
-### Run with Docker Compose
-
-From the repository root, start PostgreSQL first and wait until it is ready:
+Set `JWT_SECRET` in `backend/.env` to a long random development value. The other
+example database settings match the local Compose service. Keep the file private.
+Start PostgreSQL and wait for it to accept connections before starting the app.
 
 ```sh
 docker compose up -d postgres
 docker compose exec postgres pg_isready -U vellum -d vellum
 ```
 
-If the readiness check reports no response, repeat it before starting the app:
+Repeat the readiness check until PostgreSQL accepts connections, then start the app.
 
 ```sh
 docker compose up --build
 ```
 
-| Service          | Local address                |
-| ---------------- | ---------------------------- |
-| Web client       | <http://localhost:5173>      |
-| REST API         | <http://localhost:8080>      |
-| API health check | <http://localhost:8080/ping> |
-| PostgreSQL       | `localhost:5432`             |
+Open <http://localhost:5173>, register and add a tracking account.
+The API runs at <http://localhost:8080>, with a health endpoint at
+<http://localhost:8080/ping>. On startup it migrates the schema and seeds shared
+categories. Compose exposes development ports on the host, so use this stack on
+a trusted machine. Stop it with `docker compose down` to keep the local data volume.
 
-Register a user in the browser. API startup runs GORM migrations and seeds the
-canonical categories; no manual schema import is needed. These Compose settings
-are for development on a trusted machine: they use local database defaults and
-publish ports on host interfaces. Use the deployment configuration for hosting.
-
-Stop the local stack with `docker compose down`. Its named PostgreSQL volume is
-retained; avoid volume removal if you want to preserve local records.
-
-### Run the API and frontend on the host
-
-Start PostgreSQL with the same commands above, then set `DB_HOST=localhost` in
-`backend/.env` (the container workflow uses `DB_HOST=postgres`). In separate
-terminals, starting from the repository root:
+For host development use Go 1.26.10, Node.js 24.22.1 and pnpm 10.34.8, matching
+the repository pins. Start PostgreSQL with Compose as above, set
+`DB_HOST=localhost` in `backend/.env`, then start the services in separate terminals.
 
 ```sh
 cd backend
@@ -162,26 +106,33 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-The addresses are the same as in the table above. The client defaults to
-`http://localhost:8080`; set `VITE_API_BASE_URL` before starting Vite to override
-it. The API's `CORS_ALLOWED_ORIGINS` defaults to `http://localhost:5173`.
-Stop each host process with Ctrl+C and stop the database with
-`docker compose down` from the repository root.
+## Test and build
 
-## Testing and quality checks
-
-Run frontend checks from `frontend/` after installing dependencies:
+From `frontend/`, after installing the locked dependencies:
 
 ```sh
-pnpm test                 # finance regressions and architecture boundaries
-pnpm exec tsc -b           # application TypeScript checks
-pnpm test:e2e:check        # browser-test TypeScript checks
+pnpm test
+pnpm test:e2e:check
 pnpm lint
 pnpm format:check
-pnpm build                # application TypeScript checks and production bundle
+pnpm build
 ```
 
-Run backend checks from `backend/`:
+The build also checks application TypeScript. For browser tests, have Go and
+Docker available and install the Playwright engines from `frontend/`.
+
+```sh
+pnpm exec playwright install chromium firefox webkit
+pnpm test:e2e
+```
+
+On Linux, Playwright may also need system packages. CI uses the same install
+command with `--with-deps`. The runner starts an isolated PostgreSQL database,
+API and built frontend behind Nginx and Caddy, and requires ports 18080 and
+15173 to be free. The [frontend guide](frontend/README.md#browser-tests-and-screenshots)
+covers browser matrices, screenshot capture and failure artefacts.
+
+From `backend/`:
 
 ```sh
 go build ./...
@@ -189,111 +140,21 @@ go vet ./...
 go test ./...
 ```
 
-Without `TEST_DATABASE_DSN`, PostgreSQL integration tests skip. For the complete
-suite, point that variable at a **disposable test database**, then run:
+PostgreSQL integration tests skip without `TEST_DATABASE_DSN`. Point it at a
+disposable test database before running `go test -race -count=1 -p 1 ./...`.
+The tests run migrations and create and drop test schemas. See the
+[backend test setup](backend/README.md#testing) for an example DSN.
 
-```sh
-go test -count=1 -p 1 ./...
-go test -race -count=1 -p 1 ./...
-```
+## Project scope
 
-Integration tests run migrations and create/drop test schemas. Never point them
-at a personal or deployed database. See the [backend testing guide](backend/README.md#testing)
-for DSN configuration. CI provides PostgreSQL and rejects unexpected test skips
-when the backend checks are selected.
-
-Browser tests require Docker, Go, frontend dependencies, and Chromium. From
-`frontend/`:
-
-```sh
-pnpm exec playwright install chromium
-pnpm test:e2e
-```
-
-On Linux, Playwright may also require system browser dependencies; CI uses
-`pnpm exec playwright install --with-deps chromium`. The runner creates its own
-throwaway PostgreSQL container and dedicated API/frontend servers on ports
-**18080/15173**, refuses occupied ports, and cleans up afterward. It covers
-authentication, transfers, goal allocations, budgets, activity, preferences, and
-mobile navigation using synthetic records. See the
-[frontend testing guide](frontend/README.md#browser-tests-and-screenshots) for
-failure artifacts and screenshot generation.
-
-## Development and delivery
-
-Use `feature/*`, `fix/*`, or `chore/*` branches and open focused pull requests
-against `staging`. Discuss larger changes before implementation and include
-relevant validation. `main` is the production branch; promotion and merging
-require explicit maintainer approval.
-
-[CI](.github/workflows/ci.yml) runs on pull requests to `staging` and `main` and is
-reused for staging pushes by the release workflow. Checks cover frontend quality,
-Go/PostgreSQL tests including race detection, browser workflows, Docker secret
-exclusions, deployment safety, and production image builds. A change plan selects
-relevant work while keeping check contexts present; documentation-only root
-README changes do not request an application release. See
-[CI check selection](deploy/CI-OPTIMISATION.md) for the details.
-
-The [staging release workflow](.github/workflows/release-staging.yml) validates
-eligible pushes to protected `staging`. When delivery is enabled and changes
-require a release, it builds and publishes images to GHCR and deploys through
-AWS OIDC and Systems Manager. Release manifests record
-immutable image digests and staging verification evidence. The
-[delivery guide](deploy/CI-CD.md) records a successful end-to-end staging release.
-
-For production, merge the reviewed `staging` changes into protected `main`
-when ready. Open **Actions → Promote production → Run workflow**, select
-`main` and tick the deployment confirmation. The workflow finds the one
-eligible staging release whose tested inputs match `main`, deploys its existing
-image digests and checks service health. Backups run independently and their
-status is advisory. The merge itself leaves production running its current
-release. See the [production runbook](deploy/PRODUCTION-ACTIVATION.md) for the
-one-time controller rollout and how to verify a deployment.
-
-## Security and operational limits
-
-- Passwords use bcrypt. Access tokens use JWTs; random refresh tokens are stored
-  hashed, rotated transactionally, and revoked on logout.
-- Protected API routes validate access tokens, with server-side ownership checks
-  for user resources. Authentication endpoints have in-memory rate limiting;
-  application restart resets limiter state.
-- Browser tokens currently live in `localStorage`. Browser script compromise
-  remains a session risk; session storage and CSP policy need continued review.
-- Production API/frontend containers run without root, with read-only filesystems
-  and dropped capabilities. Docker ignore rules exclude runtime environment files
-  and credential patterns from builds.
-- Staging and production share an EC2 host and proxy network. Separate database
-  volumes do not provide independent infrastructure failure boundaries.
-- Schema changes run through startup AutoMigrate. Rolling back an image does not
-  reverse a database migration or undo subsequent writes. Review schema and
-  session compatibility before recovering an earlier image.
-
-## Project status
-
-The features above are implemented in `staging`. The public environments can run
-different revisions; this README does not establish that every current feature
-has been promoted to production. Staging deployment is recorded in the delivery
-guide; production promotion is controlled separately.
-
-| Area                                             | Current repository status                                                                 |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| Production runtime images and staging delivery   | Implemented; staging release verification recorded                                        |
-| Production deployment automation                 | Manual dispatch on protected `main` with a verified staging release                       |
-| AWS SES password recovery and email verification | Not implemented                                                                           |
-| Automated PostgreSQL backups to S3               | Independent daily backup and freshness checks, configured on the host                       |
-| Terraform and SOPS migration                     | Not implemented; future infrastructure work                                               |
+Balances reflect the records you enter. Vellum has no bank feeds, opening
+balances or currency conversion. Recurrence labels group activity without
+creating future entries or moving money. Budgets apply current category limits
+rather than storing historical periods. The public site can run a different
+revision from `staging`.
 
 ## Further reading
 
-- [Frontend structure and authentication](frontend/README.md)
-- [Backend API contracts, configuration, and testing](backend/README.md)
-- [Deployment and recovery](deploy/README.md)
-- [CI/CD and promotion design](deploy/CI-CD.md)
-
-## Licence
-
-Staging CI/CD deployment verification.
-Verify the updated deployment controller.
-
-No licence file is currently included. Public visibility does not grant an
-open-source licence; contact the maintainer about reuse or licensing.
+- [Technical architecture](TECHNICAL.md) for system design, data, security and trade-offs.
+- [Frontend guide](frontend/README.md) and [backend guide](backend/README.md) for development and tests.
+- [Deployment overview](deploy/README.md) and [production promotion runbook](deploy/PRODUCTION-ACTIVATION.md) for operations.
